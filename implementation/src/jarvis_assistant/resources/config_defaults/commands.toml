@@ -1,0 +1,45 @@
+# Lista cerrada de binarios que se pueden ejecutar por voz.
+# El asistente solo lee este archivo.
+#
+# name: nombre que se dice. executable: nombre en el PATH o ruta absoluta.
+# aliases: otras formas de decirlo o de transcribirlo.
+# timeout_seconds: tiempo máximo; si falta, vale commands.default_timeout_seconds.
+
+[[binaries]]
+name = "git"
+executable = "git"
+aliases = ["guit"]
+
+[[binaries]]
+name = "gcc"
+executable = "gcc"
+aliases = ["ge ce ce"]
+
+[[binaries]]
+name = "g++"
+executable = "g++"
+aliases = ["ge más más"]
+
+[[binaries]]
+name = "make"
+executable = "make"
+aliases = ["meik"]
+
+[[binaries]]
+name = "python"
+executable = "python"
+aliases = ["paiton", "pitón"]
+
+[[binaries]]
+name = "pip"
+executable = "pip"
+
+[[binaries]]
+name = "node"
+executable = "node"
+aliases = ["noud"]
+
+[[binaries]]
+name = "npm"
+executable = "npm"
+aliases = ["ene pe eme"]

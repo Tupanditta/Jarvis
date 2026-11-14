@@ -1,0 +1,20 @@
+# Catálogo de aplicaciones y páginas que se pueden abrir por voz.
+# El asistente solo lee este archivo.
+
+# Añadir al catálogo las aplicaciones del menú Inicio.
+discover_installed_apps = true
+
+# Una aplicación: nombre que se dice, otras formas de decirlo, y qué se lanza
+# (ejecutable, acceso directo o nombre en el PATH).
+#
+# [[apps]]
+# name = "Visual Studio Code"
+# aliases = ["code", "vs code", "el editor"]
+# path = "C:/Users/usuario/AppData/Local/Programs/Microsoft VS Code/Code.exe"
+# args = []
+
+# Una página: se abre en Microsoft Edge.
+[[pages]]
+name = "GitHub"
+aliases = ["git hub"]
+url = "https://github.com"

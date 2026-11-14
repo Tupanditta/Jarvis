@@ -1,0 +1,7 @@
+# Correcciones de transcripción: lo que se oye a la izquierda se sustituye por lo de la
+# derecha antes de interpretar la orden. El asistente solo lee este archivo.
+
+[aliases]
+"ce de" = "cd"
+"ele ese" = "ls"
+"guit" = "git"

@@ -1,0 +1,6 @@
+# Estructuras de carpetas que se crean con una sola orden.
+# El asistente solo lee este archivo.
+
+[[structures]]
+name = "proyecto python"
+folders = ["src", "tests", "docs", "scripts"]

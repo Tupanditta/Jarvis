@@ -1,0 +1,114 @@
+# Ajustes del asistente.
+# El asistente solo lee este archivo: edítelo a mano. Se vuelve a cargar al abrir cada sesión.
+# Toda clave que falte toma su valor predeterminado. Los valores que se muestran son los
+# predeterminados.
+
+[audio]
+# Parte del nombre del micrófono; vacío = el predeterminado del sistema.
+input_device = ""
+# Umbral de «Hey Jarvis» (0-1). Más alto: menos activaciones falsas, más fallos.
+wakeword_threshold = 0.5
+# API de audio del micrófono ("MME", "Windows WASAPI"…); vacío = por preferencia.
+input_hostapi = ""
+# Ganancia de entrada (0.5-8). La recomienda scripts/calibrate_wakeword.py.
+input_gain = 1.0
+# Usar el verificador personal de «Hey Jarvis» si existe.
+wakeword_verifier = true
+# Puntuación mínima del modelo preentrenado para consultar al verificador (0-1).
+wakeword_verifier_gate = 0.2
+# Umbral de detección de voz (0-1).
+vad_threshold = 0.5
+# Segundos de pausa que terminan una orden.
+end_of_speech_seconds = 1.0
+# Duración máxima de una orden, en segundos.
+max_utterance_seconds = 15
+# Segundos de silencio tras los que el asistente pasa a reposo.
+silence_to_idle_seconds = 30
+# Margen, en segundos, antes de volver a escuchar tras cada locución.
+reopen_delay_seconds = 0.3
+# Segundos entre reintentos cuando el micrófono no está disponible.
+mic_retry_seconds = 5
+# Atender «Buenas noches Jarvis» también en reposo.
+closing_phrase_in_idle = true
+
+[stt]
+# Modelo de transcripción: "small" o "base" (más rápido, menos preciso).
+model = "small"
+# Tamaño del haz (1-10). Más bajo: más rápido.
+beam_size = 3
+# Hilos de CPU de la transcripción; 0 = automático.
+cpu_threads = 0
+# Filtro de «sin voz» (0-1).
+no_speech_threshold = 0.6
+# Carpetas y archivos del directorio de trabajo que entran en el vocabulario.
+vocabulary_workdir_entries = 30
+# Longitud máxima, en caracteres, de la indicación de vocabulario.
+vocabulary_max_chars = 600
+
+[tts]
+# Voz de Piper (archivo de models/piper, sin extensión).
+voice = "es_ES-davefx-medium"
+# Volumen de la voz (0-1).
+volume = 1.0
+# Número de frases sintetizadas que se guardan en memoria.
+cache_size = 64
+
+[router]
+# Similitud mínima (0-100) para reconocer una orden.
+intent_threshold = 80
+# Similitud mínima (0-100) de las frases de control («Gracias Jarvis»…).
+control_threshold = 80
+# Similitud mínima (0-100) de «Buenas noches Jarvis» en reposo.
+idle_closing_threshold = 85
+# Similitud mínima (0-100) de un elemento de una lista (aplicaciones, páginas…).
+catalog_threshold = 75
+# Similitud mínima (0-100) de una carpeta dictada.
+path_threshold = 80
+# Hora (0-23) de una fecha dicha sin hora.
+default_hour = 9
+
+[dialogue]
+# Segundos que el asistente espera una respuesta.
+timeout_seconds = 20
+# Colisiones de nombre seguidas antes de cancelar.
+max_collisions = 3
+
+[commands]
+# Tiempo máximo, en segundos, de un binario externo.
+default_timeout_seconds = 120
+# Líneas de salida que se muestran.
+output_lines = 200
+
+[search]
+# Resultados que se muestran.
+max_results = 10
+# Segundos tras los que se corta la búsqueda sin índice.
+fallback_timeout_seconds = 5
+
+[reminders]
+# Minutos que se pospone un aviso si no se dice cuánto.
+snooze_minutes = 10
+# Número máximo de fechas de aviso por recordatorio.
+max_triggers = 5
+# Segundos tras los que un aviso sin respuesta se da por recibido.
+autoconfirm_seconds = 300
+
+[ui]
+# Esquina del HUD: "top-right", "top-left", "bottom-right" o "bottom-left".
+hud_corner = "top-right"
+# Segundos de inactividad antes de contraer el HUD.
+hud_collapse_seconds = 8
+# Traer la pantalla de sesión al frente al despertar desde reposo.
+wake_brings_screen_to_front = false
+# Calidad gráfica: "high", "medium" o "low" (cantidad de partículas y efectos).
+quality = "high"
+# Sustituir las animaciones por fundidos.
+reduce_motion = false
+
+[startup]
+# Solo para desarrollo: abrir una sesión al arrancar.
+open_session_on_start = false
+
+[logging]
+# Nivel del registro: "DEBUG", "INFO", "WARNING" o "ERROR".
+level = "INFO"

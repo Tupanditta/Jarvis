@@ -1,0 +1,3 @@
+"""Asistente de voz personal local."""
+
+__version__ = "1.0.0.dev0"

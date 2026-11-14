@@ -1,0 +1,8 @@
+# Entorno virtual y cachés locales.
+implementation/.venv/
+implementation/.pytest_cache/
+implementation/.ruff_cache/
+
+# Modelos descargados localmente por fetch_models.py.
+implementation/models/*
+!implementation/models/.gitkeep

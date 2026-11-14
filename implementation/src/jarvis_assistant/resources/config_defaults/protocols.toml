@@ -1,0 +1,26 @@
+# Protocolos: secuencias de tareas que se lanzan con una sola orden («protocolo modo trabajo»).
+# El asistente solo lee este archivo. Los parámetros se escriben como se dirían por voz.
+#
+# Ejemplo; quite los «#» y adáptelo:
+#
+# [[protocols]]
+# id = "modo-trabajo"
+# name = "modo trabajo"                # nombre que se dice y que se propone para la sesión
+# aliases = ["a trabajar"]
+# important = true                     # marca la sesión como importante
+#
+#   [[protocols.tasks]]
+#   module = "comandos"
+#   action = "cd"
+#   params = { ruta = "proyectos barra jarvis" }
+#
+#   [[protocols.tasks]]
+#   module = "apertura"
+#   action = "abrir"
+#   params = { objetivo = "Visual Studio Code" }
+#
+#   [[protocols.tasks]]
+#   module = "comandos"
+#   action = "ejecutar"
+#   params = { comando = "git status" }
+#   stop_on_error = true               # opcional; predeterminado false
