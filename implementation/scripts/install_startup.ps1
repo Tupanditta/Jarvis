@@ -12,10 +12,14 @@ Directorio del venv. Por defecto implementation\.venv relativo a este script.
 [CmdletBinding()]
 param(
     [string]$StartupDir,
-    [string]$VenvDir = (Join-Path $PSScriptRoot '..\.venv')
+    [string]$VenvDir
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $VenvDir) {
+    $VenvDir = Join-Path $PSScriptRoot '..\.venv'
+}
 
 $windowStyleMinimized = 7
 $shell = New-Object -ComObject WScript.Shell

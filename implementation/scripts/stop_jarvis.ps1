@@ -6,10 +6,14 @@ Directorio del venv. Por defecto implementation\.venv relativo a este script.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$VenvDir = (Join-Path $PSScriptRoot '..\.venv')
+    [string]$VenvDir
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $VenvDir) {
+    $VenvDir = Join-Path $PSScriptRoot '..\.venv'
+}
 
 $venvFull = [System.IO.Path]::GetFullPath($VenvDir).TrimEnd('\') + '\'
 

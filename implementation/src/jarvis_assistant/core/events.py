@@ -3,8 +3,8 @@
 Todos son `dataclass` inmutables y la suscripción es por clase. El bus no guarda eventos:
 la interfaz reconstruye su estado solo con los que recibe.
 
-Este módulo contiene los eventos del ciclo de vida y de estado; los de voz, diálogo, tareas,
-paneles y acciones del usuario se añaden con los componentes que los publican.
+Este módulo contiene los eventos del ciclo de vida, de estado, de voz y las acciones del
+usuario; los de diálogo, tareas y paneles se añaden con los componentes que los publican.
 """
 from dataclasses import dataclass
 from enum import StrEnum
@@ -86,3 +86,64 @@ class AudioLevel(Event):
             raise ValueError(f"El nivel de audio debe estar entre 0 y 1: {self.level}")
         if self.source not in _AUDIO_SOURCES:
             raise ValueError(f"Origen de audio desconocido: {self.source!r}")
+
+
+# --- Sesión ----------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SessionChanged(Event):
+    """Datos de la sesión actual: al abrirla y cada vez que cambian."""
+
+    session_id: int
+    name: str
+    is_important: bool
+
+
+# --- Voz -------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TranscriptReady(Event):
+    """Texto de una orden transcrita. `recognized=False`: frase no reconocida (RN-51)."""
+
+    text: str
+    recognized: bool
+
+
+@dataclass(frozen=True)
+class SpeechStarted(Event):
+    """El asistente empieza a decir `text`. `interruptible`: no es del ciclo de vida."""
+
+    text: str
+    interruptible: bool
+
+
+@dataclass(frozen=True)
+class SpeechFinished(Event):
+    interrupted: bool
+
+
+# --- Acciones del usuario (interfaz → núcleo, con `publish_threadsafe`) ----------------------
+
+
+@dataclass(frozen=True)
+class SilenceRequested(Event):
+    """Botón de silencio: calla la locución en curso."""
+
+
+@dataclass(frozen=True)
+class OpenSessionRequested(Event):
+    """«Abrir sesión» en el menú de la bandeja."""
+
+
+@dataclass(frozen=True)
+class ShowScreenRequested(Event):
+    """«Mostrar pantalla» en el menú de la bandeja."""
+
+    visible: bool = True
+
+
+@dataclass(frozen=True)
+class QuitRequested(Event):
+    """«Salir» en el menú de la bandeja o fin de la sesión del sistema operativo."""

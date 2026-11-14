@@ -9,10 +9,14 @@ Directorio del venv. Por defecto implementation\.venv relativo a este script.
 [CmdletBinding()]
 param(
     [switch]$Console,
-    [string]$VenvDir = (Join-Path $PSScriptRoot '..\.venv')
+    [string]$VenvDir
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $VenvDir) {
+    $VenvDir = Join-Path $PSScriptRoot '..\.venv'
+}
 
 $implementationDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $exeName = if ($Console) { 'python.exe' } else { 'pythonw.exe' }
@@ -23,7 +27,7 @@ if (-not (Test-Path -LiteralPath $exe)) {
 }
 
 $argumentos = @('-I', '-m', 'jarvis_assistant')
-$logPath = Join-Path $env:LOCALAPPDATA 'jarvis_assistant\logs\jarvis.log'
+$logPath = Join-Path $env:LOCALAPPDATA 'Jarvis\logs\jarvis.log'
 
 if ($Console) {
     Write-Output "Log: $logPath"
