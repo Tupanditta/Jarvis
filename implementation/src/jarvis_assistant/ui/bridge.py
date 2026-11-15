@@ -22,10 +22,22 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.SpeechStarted,
     events.SpeechFinished,
     events.ShowScreenRequested,
+    events.ShowHudRequested,
     events.TaskUpdated,
     events.DialogueOpened,
     events.DialogueClosed,
     events.PanelActivated,
+    # Contenido de los paneles
+    events.WorkdirChanged,
+    events.DirectoryListed,
+    events.DirectoryTreeBuilt,
+    events.CommandOutputAppended,
+    events.CommandPanelCleared,
+    events.OpenedItemsChanged,
+    events.SearchResultsReady,
+    events.HistoryShown,
+    events.SessionActivitiesShown,
+    events.HelpShown,
 )
 
 

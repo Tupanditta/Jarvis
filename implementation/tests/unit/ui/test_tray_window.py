@@ -61,15 +61,18 @@ def test_el_icono_tiene_tamanos_de_16_a_48(qapp):
 def test_el_menu_cambia_con_la_sesion(qapp):
     tray, _ = make_tray()
     assert tray.open_action.isVisible() and tray.show_action.isVisible()
+    assert not tray.hud_action.isVisible()
     tray.on_event(events.SessionOpened(3, "2026-11-14"))
     tray.on_event(activity(Activity.ESCUCHANDO))
     assert not tray.open_action.isVisible() and tray.show_action.isVisible()
+    assert tray.hud_action.isVisible()
     assert tray.icon.toolTip() == "Jarvis: escuchando\n2026-11-14"
     tray.on_event(events.SessionChanged(3, "prácticas", False))
     assert tray.icon.toolTip() == "Jarvis: escuchando\nprácticas"
     tray.on_event(events.SessionClosed())
     tray.on_event(activity(Activity.DORMIDO, "DORMIDO"))
     assert tray.open_action.isVisible() and tray.show_action.isVisible()
+    assert not tray.hud_action.isVisible()
     assert tray.icon.toolTip() == "Jarvis: dormido"
 
 
@@ -77,14 +80,18 @@ def test_las_opciones_del_menu_publican_sus_acciones(qapp):
     tray, log = make_tray()
     tray.open_action.trigger()
     tray.show_action.trigger()
+    tray.hud_action.trigger()
     tray.config_action.trigger()
     tray.log_action.trigger()
     tray.quit_action.trigger()
-    assert log["published"] == [events.OpenSessionRequested(), events.ShowScreenRequested(True)]
+    assert log["published"] == [
+        events.OpenSessionRequested(), events.ShowScreenRequested(True), events.ShowHudRequested(),
+    ]
     assert log["opened"] == [Path("C:/cfg"), Path("C:/logs")]
     assert log["quit"] == [True]
     assert [a.text() for a in tray.menu.actions() if not a.isSeparator()] == [
-        "Abrir sesión", "Mostrar pantalla", "Abrir configuración", "Abrir registro", "Salir",
+        "Abrir sesión", "Mostrar pantalla", "Mostrar HUD", "Abrir configuración", "Abrir registro",
+        "Salir",
     ]
 
 

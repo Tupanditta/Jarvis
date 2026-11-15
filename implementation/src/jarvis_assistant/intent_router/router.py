@@ -1,16 +1,27 @@
-"""Despacho del texto escrito según el estado (enrutador-intenciones.md, sección 1).
+"""Despacho del texto escrito según el estado (enrutador-intenciones.md).
 
-Código puro: no ejecuta acciones, no habla y no publica eventos. De momento reconoce la frase
-de activación, las frases de control, el cierre en reposo y las intenciones del núcleo para
-mostrar y ocultar la pantalla. En reposo, cualquier otro texto se atiende como orden: la FSM
-despierta en silencio. El registro de módulos, los patrones y las respuestas de diálogo llegan
-con las órdenes y con el diálogo.
+Código puro: no ejecuta acciones, no habla y no publica eventos. Reconoce la frase de
+activación, las frases de control y el cierre en reposo, y clasifica las órdenes contra los
+patrones que registran los módulos de acción, resolviendo sus entidades. En reposo, cualquier
+otro texto se atiende como orden: la FSM despierta en silencio. Las respuestas de diálogo
+llegan con el diálogo de varios turnos.
 """
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 from rapidfuzz import fuzz
 
-from jarvis_assistant.config import RouterSettings
+from jarvis_assistant.config import DEFAULT_BINARIES, Binary, RouterSettings
+from jarvis_assistant.core.action_api import (
+    HelpEntry,
+    HelpGroup,
+    Intent,
+    IntentSpec,
+    Phrase,
+    Slot,
+    SlotType,
+)
 from jarvis_assistant.core.state_machine import (
     AssistantState,
     ClosingPhraseInIdle,
@@ -21,7 +32,10 @@ from jarvis_assistant.core.state_machine import (
     NoMatch,
     WakeWord,
 )
-from jarvis_assistant.intent_router.normalizer import normalize
+from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.intent_router import patterns
+from jarvis_assistant.intent_router.normalizer import Tokens, normalize, tokenize
+from jarvis_assistant.intent_router.slots import catalogs, command_line, names, numbers, paths
 
 CLOSING_PHRASE = "buenas noches jarvis"
 
@@ -38,16 +52,16 @@ CONTROL_PHRASES: tuple[tuple[str, ControlKind], ...] = (
     ("dejalo", ControlKind.CANCELAR),
 )
 
-SHOW_SCREEN = "nucleo.mostrar_pantalla"
-HIDE_SCREEN = "nucleo.ocultar_pantalla"
+CORE_MODULE = "nucleo"
+SHOW_SCREEN = Intent(CORE_MODULE, "mostrar_pantalla")
+HIDE_SCREEN = Intent(CORE_MODULE, "ocultar_pantalla")
+HELP = Intent(CORE_MODULE, "ayuda")
+REPEAT = Intent(CORE_MODULE, "repetir")
 
-# Intenciones del núcleo sin entidades (catalogo-intenciones.md, sección 2), ya normalizadas.
-CORE_PHRASES: tuple[tuple[str, str], ...] = (
-    ("muestra la pantalla", SHOW_SCREEN),
-    ("pantalla completa", SHOW_SCREEN),
-    ("oculta la pantalla", HIDE_SCREEN),
-    ("minimiza la pantalla", HIDE_SCREEN),
-)
+SAME_SCORE_MARGIN = 3  # puntos por debajo de los cuales dos candidatos empatan
+_TEXT_EDGES = " .,;:!?¿¡\"'«»"
+
+_UNSUPPORTED = (SlotType.DURATION, SlotType.DATETIME)  # llegan con Recordatorios
 
 _ATTENDING = (
     AssistantState.LISTENING_COMMAND,
@@ -55,15 +69,167 @@ _ATTENDING = (
     AssistantState.AWAITING_PARAMETER,
 )
 
+Provider = Callable[[], Sequence[str]]
+
+
+class _CoreIntents:
+    """Intenciones del núcleo (catalogo-intenciones.md, sección 2). Las ejecuta el
+    orquestador: no pertenecen a ningún módulo de acción."""
+
+    name = CORE_MODULE
+    title = "Asistente"
+
+    def intents(self) -> Sequence[IntentSpec]:
+        return (
+            IntentSpec(
+                "ayuda", ("ayuda", "qué puedes hacer", "qué sabes hacer"),
+                description="Mostrar las órdenes disponibles", example="Ayuda",
+                panel="ayuda", in_protocols=False,
+            ),
+            IntentSpec(
+                "repetir", ("repite", "repítelo", "puedes repetir"),
+                description="Repetir la última respuesta", example="Repite",
+                in_protocols=False,
+            ),
+            IntentSpec(
+                "mostrar_pantalla", ("muestra la pantalla", "pantalla completa"),
+                description="Traer la pantalla de sesión al frente",
+                example="Muestra la pantalla", in_protocols=False,
+            ),
+            IntentSpec(
+                "ocultar_pantalla", ("oculta la pantalla", "minimiza la pantalla"),
+                description="Minimizar la pantalla de sesión", example="Oculta la pantalla",
+                in_protocols=False,
+            ),
+        )  # fmt: skip
+
+
+class RegistrationError(ValueError):
+    """Un módulo declara una intención que no se puede registrar."""
+
+
+class ParamError(ValueError):
+    """Una entidad no se puede resolver. `phrase`: el motivo, para decirlo."""
+
+    def __init__(self, phrase: Phrase) -> None:
+        super().__init__(phrase.id)
+        self.phrase = phrase
+
+
+@dataclass(frozen=True)
+class _Registered:
+    module: str
+    spec: IntentSpec
+    pattern: patterns.Pattern
+    order: int
+
 
 def _best(normalized: str, phrases: Iterable[str]) -> float:
     return max(fuzz.ratio(normalized, phrase) for phrase in phrases)
 
 
 class IntentRouter:
-    def __init__(self, settings: RouterSettings, aliases: Mapping[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        settings: RouterSettings,
+        aliases: Mapping[str, str] | None = None,
+        *,
+        binaries: Sequence[Binary] = DEFAULT_BINARIES,
+        places: Mapping[str, Path] | None = None,
+        workdir: Workdir | None = None,
+    ) -> None:
+        self._workdir = workdir or Workdir(Path.home())
+        self._patterns: list[_Registered] = []
+        self._keys: dict[str, str] = {}
+        self._specs: dict[tuple[str, str], list[IntentSpec]] = {}
+        self._titles: dict[str, str] = {}
+        self._catalogs: dict[str, tuple[Provider, ...]] = {}
+        self.configure(settings, aliases, binaries=binaries, places=places)
+        self.register(_CoreIntents())
+
+    def configure(
+        self,
+        settings: RouterSettings,
+        aliases: Mapping[str, str] | None = None,
+        *,
+        binaries: Sequence[Binary] = DEFAULT_BINARIES,
+        places: Mapping[str, Path] | None = None,
+    ) -> None:
+        """Aplica la configuración vigente (se recarga al abrir cada sesión, RF-96)."""
         self._settings = settings
         self._aliases = dict(aliases or {})
+        self._binaries = tuple(binaries)
+        self._places = dict(places or {})
+
+    # --- Registro ----------------------------------------------------------------------------
+
+    def register(self, module: object) -> None:
+        """Valida y compila los patrones de las intenciones de `module`."""
+        name: str = module.name  # type: ignore[attr-defined]
+        if name in self._titles:
+            raise RegistrationError(f"El módulo «{name}» ya está registrado")
+        for catalog, providers in getattr(module, "catalogs", dict)().items():
+            self.register_catalog(catalog, *providers)
+        compiled: list[_Registered] = []
+        keys: dict[str, str] = {}
+        for spec in module.intents():  # type: ignore[attr-defined]
+            intent = f"{name}.{spec.action}"
+            slots = {slot.name: slot for slot in spec.slots}
+            for slot in spec.slots:
+                if slot.type in _UNSUPPORTED:
+                    raise RegistrationError(f"{intent}: el tipo {slot.type.name} no se admite")
+                if slot.type is SlotType.CATALOG and slot.catalog not in self._catalogs:
+                    raise RegistrationError(f"{intent}: catálogo desconocido «{slot.catalog}»")
+            if not spec.patterns:
+                raise RegistrationError(f"{intent}: no tiene patrones")
+            for source in spec.patterns:
+                try:
+                    pattern = patterns.compile_pattern(source)
+                except patterns.PatternError as error:
+                    raise RegistrationError(f"{intent}: {error}") from error
+                if any(hole not in slots for hole in pattern.holes):
+                    raise RegistrationError(f"{intent}: «{source}» usa huecos sin declarar")
+                owner = self._keys.get(pattern.key) or keys.get(pattern.key)
+                if owner is not None:
+                    raise RegistrationError(
+                        f"El patrón «{source}» de {intent} ya pertenece a {owner}"
+                    )
+                keys[pattern.key] = intent
+                compiled.append(
+                    _Registered(name, spec, pattern, len(self._patterns) + len(compiled))
+                )
+        self._patterns.extend(compiled)
+        self._keys.update(keys)
+        self._titles[name] = getattr(module, "title", name)
+        for item in compiled:
+            specs = self._specs.setdefault((name, item.spec.action), [])
+            if item.spec not in specs:
+                specs.append(item.spec)
+
+    def register_catalog(self, name: str, *providers: Provider) -> None:
+        """Lista para las entidades `CATALOG`. Con varias fuentes, gana la primera que tenga
+        una coincidencia que supere el umbral. Se consultan al resolver."""
+        if name in self._catalogs:
+            raise RegistrationError(f"El catálogo «{name}» ya está registrado")
+        self._catalogs[name] = tuple(providers)
+
+    def specs(self) -> list[tuple[str, IntentSpec]]:
+        """Todas las intenciones registradas, con su módulo, en orden de registro."""
+        return [(module, spec) for (module, _), specs in self._specs.items() for spec in specs]
+
+    def help(self) -> tuple[HelpGroup, ...]:
+        """Órdenes disponibles con un ejemplo, agrupadas por módulo (RF-92)."""
+        groups: dict[str, list[HelpEntry]] = {}
+        for (module, _action), specs in self._specs.items():
+            spec = next((spec for spec in specs if spec.description), None)
+            if spec is not None:
+                groups.setdefault(module, []).append(HelpEntry(spec.description, spec.example))
+        ordered = [name for name in groups if name != CORE_MODULE]
+        if CORE_MODULE in groups:
+            ordered.append(CORE_MODULE)  # las órdenes del propio asistente, al final
+        return tuple(HelpGroup(name, self._titles[name], tuple(groups[name])) for name in ordered)
+
+    # --- Despacho ----------------------------------------------------------------------------
 
     def route(self, text: str, state: AssistantState, dialogue: object = None) -> Input | None:
         """Entrada para la FSM, o None si el texto se descarta sin efecto."""
@@ -71,7 +237,7 @@ class IntentRouter:
         if state in _ATTENDING:
             entry = self._attending(normalized)
             if entry is None and state is AssistantState.LISTENING_COMMAND:
-                entry = self._core_intent(normalized)
+                entry = self._classify(text)
             return entry or NoMatch(text)
         if self._is_wake(normalized):
             return WakeWord()
@@ -89,7 +255,7 @@ class IntentRouter:
         control = self._attending(normalized)
         if isinstance(control, Control) and control.kind is not ControlKind.CERRAR:
             return None
-        return self._core_intent(normalized) or NoMatch(text)
+        return self._classify(text) or NoMatch(text)
 
     def _is_wake(self, normalized: str) -> bool:
         return bool(normalized) and _best(normalized, WAKE_PHRASES) >= self._settings.wake_threshold
@@ -109,11 +275,119 @@ class IntentRouter:
             return WakeWord()
         return Control(kind) if is_control else None
 
-    def _core_intent(self, normalized: str) -> Input | None:
-        if not normalized:
+    # --- Clasificación -----------------------------------------------------------------------
+
+    def _classify(self, text: str) -> IntentMatched | None:
+        """La intención del texto, con sus entidades, o None si ningún patrón coincide."""
+        tokens = tokenize(text, self._aliases)
+        if not tokens.words:
             return None
-        score, intent = max(
-            ((fuzz.ratio(normalized, phrase), intent) for phrase, intent in CORE_PHRASES),
-            key=lambda scored: scored[0],
-        )
-        return IntentMatched(intent) if score >= self._settings.intent_threshold else None
+        candidates = []
+        for item in self._patterns:
+            found = patterns.match(item.pattern, tokens.words, self._settings.intent_threshold)
+            if found is not None:
+                candidates.append((found, item))
+        description = text.strip()
+        failed: Intent | None = None
+        for found, item in _ranked(candidates):
+            spec = item.spec
+            try:
+                params = {
+                    hole: self._resolve(_slot(spec, hole), tokens, *found.spans[hole])
+                    for hole in item.pattern.holes
+                }
+            except ParamError as unresolved:
+                # Se prueba el siguiente candidato; si ninguno se resuelve, vale este error.
+                failed = failed or Intent(
+                    item.module, spec.action, error=unresolved.phrase,
+                    description=description, panel=spec.panel,
+                )  # fmt: skip
+                continue
+            return IntentMatched(
+                Intent(
+                    item.module, spec.action, {**params, **spec.fixed},
+                    description=description, panel=spec.panel,
+                )
+            )
+        return None if failed is None else IntentMatched(failed)
+
+    def resolve_params(
+        self, module: str, action: str, raw: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        """Resuelve los parámetros de una tarea de protocolo, que llegan como texto.
+
+        Lanza `ParamError` si alguno no se puede resolver.
+        """
+        specs = self._specs.get((module, action))
+        if not specs:
+            raise KeyError(f"{module}.{action}")
+        slots = {slot.name: slot for spec in specs for slot in spec.slots}
+        params: dict[str, object] = dict(specs[0].fixed)
+        for name, value in raw.items():
+            slot = slots.get(name)
+            if slot is None or not isinstance(value, str):
+                params[name] = value
+                continue
+            tokens = tokenize(value, self._aliases)
+            params[name] = self._resolve(slot, tokens, 0, len(tokens.words))
+        return params
+
+    def _resolve(self, slot: Slot, tokens: Tokens, start: int, end: int) -> object:
+        original = tokens.original(start, end)
+        spoken = " ".join(tokens.words[start:end])
+        match slot.type:
+            case SlotType.TEXT:
+                return original.strip(_TEXT_EDGES)
+            case SlotType.INTEGER:
+                number = numbers.parse(spoken)
+                if number is None:
+                    raise ParamError(Phrase("entidad.numero"))
+                return number
+            case SlotType.DIR_PATH:
+                try:
+                    return paths.resolve(
+                        original, self._workdir.path, self._places,
+                        home=self._workdir.home, threshold=self._settings.path_threshold,
+                    )  # fmt: skip
+                except paths.PathError as error:
+                    phrase = f"ruta.{error.kind}"
+                    raise ParamError(Phrase(phrase, {"nombre": error.name})) from None
+            case SlotType.NEW_NAME | SlotType.NEW_PATH:
+                build = names.build if slot.type is SlotType.NEW_NAME else names.build_path
+                try:
+                    return build(original.strip(_TEXT_EDGES))
+                except names.InvalidNameError:
+                    raise ParamError(Phrase("entidad.nombre")) from None
+            case SlotType.CATALOG:
+                for provider in self._catalogs[slot.catalog or ""]:
+                    found = catalogs.best_match(
+                        spoken, provider(), self._settings.catalog_threshold
+                    )
+                    if found is not None:
+                        return found
+                name = original.strip(_TEXT_EDGES)
+                raise ParamError(Phrase("entidad.no_encontrado", {"nombre": name}))
+            case SlotType.COMMAND_LINE:
+                try:
+                    return command_line.parse(tokens, start, end, self._binaries)
+                except command_line.NotAllowedError:
+                    raise ParamError(Phrase("comandos.no_permitido")) from None
+        raise ParamError(Phrase("general.error"))
+
+
+def _slot(spec: IntentSpec, name: str) -> Slot:
+    return next(slot for slot in spec.slots if slot.name == name)
+
+
+def _ranked(candidates: list) -> list:
+    """Orden de elección: mayor puntuación; a igualdad (menos de 3 puntos), el patrón con
+    más texto fijo; a igualdad, el orden de registro."""
+    remaining = list(candidates)
+    ordered = []
+    while remaining:
+        top = max(found.score for found, _ in remaining)
+        tied = [c for c in remaining if top - c[0].score < SAME_SCORE_MARGIN]
+        chosen = min(tied, key=lambda c: (-c[1].pattern.fixed_words, c[1].order))
+        ordered.append(chosen)
+        remaining.remove(chosen)
+    return ordered

@@ -143,3 +143,41 @@ def test_session_opened_durante_la_animacion_de_cierre_la_funde_con_el_despertar
 def test_los_demas_eventos_no_mueven_las_ventanas():
     controller = opened()
     assert controller.on_event(events.CommandReceived("hola", False)) == []
+
+
+def test_ocultar_el_hud_lo_oculta_y_no_vuelve_al_cambiar_de_ventana():
+    controller = opened(screen_active=False)
+    assert controller.hud_dismissed() == [HideHud()]
+    assert not controller.hud_visible
+    assert controller.on_event(events.ListeningResumed()) == [AnimateHud(Animation.WAKE_FROM_REST)]
+    assert controller.screen_active_changed(False) == []
+    assert not controller.hud_visible
+
+
+def test_el_hud_oculto_vuelve_con_la_bandeja():
+    controller = opened(screen_active=False)
+    controller.hud_dismissed()
+    assert controller.on_event(events.ShowHudRequested()) == [ShowHud()]
+    assert controller.hud_visible
+
+
+def test_el_hud_oculto_vuelve_al_pasar_por_la_pantalla_de_sesion():
+    controller = opened(screen_active=False)
+    controller.hud_dismissed()
+    assert controller.screen_active_changed(True) == []
+    assert controller.screen_active_changed(False) == [ShowHud()]
+
+
+def test_el_hud_oculto_vuelve_con_una_sesion_nueva():
+    controller = opened(screen_active=False)
+    controller.hud_dismissed()
+    controller.on_event(events.SessionClosed())
+    controller.on_event(events.SessionOpened(2, "2026-11-15"))
+    assert controller.screen_active_changed(False) == [ShowHud()]
+
+
+def test_mostrar_hud_sin_sesion_no_muestra_nada():
+    controller = WindowController()
+    controller.start()
+    controller.screen_active_changed(False)
+    assert controller.on_event(events.ShowHudRequested()) == []

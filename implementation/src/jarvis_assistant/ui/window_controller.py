@@ -73,6 +73,7 @@ class WindowController:
         self._screen_active = False
         self._hud_visible = False
         self._closing = False  # animación de cierre en curso con el HUD a la vista
+        self._hud_dismissed = False  # el usuario ha ocultado el HUD con su botón
 
     @property
     def hud_visible(self) -> bool:
@@ -87,6 +88,7 @@ class WindowController:
         if isinstance(event, events.SessionOpened):
             self._session_open = True
             self._closing = False
+            self._hud_dismissed = False
             self._screen_active = True
             return [BringScreenToFront(), AnimateScreen(Animation.WAKE), *self._sync_hud()]
         if isinstance(event, events.ListeningResumed):
@@ -109,14 +111,26 @@ class WindowController:
         if isinstance(event, events.ShowScreenRequested):
             if event.visible:
                 self._screen_active = True
+                self._hud_dismissed = False
                 return [BringScreenToFront(), *self._sync_hud()]
             self._screen_active = False
             return [MinimizeScreen(), *self._sync_hud()]
+        if isinstance(event, events.ShowHudRequested):
+            self._hud_dismissed = False
+            return self._sync_hud()
         return []
 
     def screen_active_changed(self, active: bool) -> list[Action]:
         """La pantalla de sesión ha pasado a ser, o ha dejado de ser, la ventana activa."""
         self._screen_active = active
+        if active:
+            self._hud_dismissed = False  # al volver a salir de la pantalla, el HUD reaparece
+        return self._sync_hud()
+
+    def hud_dismissed(self) -> list[Action]:
+        """El usuario oculta el HUD con su botón. Vuelve a mostrarse al abrir otra sesión, al
+        pasar por la pantalla de sesión o con «Mostrar HUD» en la bandeja."""
+        self._hud_dismissed = True
         return self._sync_hud()
 
     def screen_closed(self) -> list[Action]:
@@ -131,11 +145,12 @@ class WindowController:
         return self._sync_hud()
 
     def _sync_hud(self) -> list[Action]:
-        """El HUD se ve con la sesión abierta y la pantalla sin ser la ventana activa. Durante
-        la animación de cierre sigue a la vista hasta que termina."""
+        """El HUD se ve con la sesión abierta, la pantalla sin ser la ventana activa y sin que
+        el usuario lo haya ocultado. Durante la animación de cierre sigue a la vista hasta que
+        termina."""
         if self._closing:
             return []
-        wanted = self._session_open and not self._screen_active
+        wanted = self._session_open and not self._screen_active and not self._hud_dismissed
         if wanted == self._hud_visible:
             return []
         self._hud_visible = wanted

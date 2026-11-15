@@ -88,6 +88,7 @@ class TrayController(QObject):
         self.show_action = self._add(
             "Mostrar pantalla", lambda: publish(events.ShowScreenRequested())
         )
+        self.hud_action = self._add("Mostrar HUD", lambda: publish(events.ShowHudRequested()))
         self.menu.addSeparator()
         self.config_action = self._add("Abrir configuración", lambda: self._open_folder(config_dir))
         self.log_action = self._add("Abrir registro", lambda: self._open_folder(log_dir))
@@ -125,6 +126,7 @@ class TrayController(QObject):
     def _update(self) -> None:
         asleep = self._session_name is None
         self.open_action.setVisible(asleep)
+        self.hud_action.setVisible(not asleep)  # el HUD solo existe con la sesión abierta
         self.variant = ICON_VARIANT_OF[self._activity]
         self.icon.setIcon(self._icons[self.variant])
         self.icon.setToolTip(tooltip(self._activity, self._session_name))

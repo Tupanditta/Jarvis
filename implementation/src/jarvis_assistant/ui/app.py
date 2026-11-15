@@ -17,6 +17,14 @@ from PySide6.QtQuick import QQuickWindow
 from jarvis_assistant.config import UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.ui import window_controller as wc
+from jarvis_assistant.ui.panel_models import (
+    DEFAULT_OUTPUT_LINES,
+    CommandsModel,
+    HelpModel,
+    HistoryModel,
+    OpenedModel,
+    SearchModel,
+)
 from jarvis_assistant.ui.view_models import (
     AssistantModel,
     DialogueModel,
@@ -61,6 +69,7 @@ class UiApp(QObject):
         platform: Any = None,
         debug: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
+        output_lines: int = DEFAULT_OUTPUT_LINES,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -77,6 +86,15 @@ class UiApp(QObject):
             parent=self,
         )
         self.options = UiOptions(settings, debug, self)
+        self.commands = CommandsModel(output_lines, self)
+        self.opened = OpenedModel(publish, self)
+        self.search = SearchModel(self)
+        self.history = HistoryModel(self)
+        self.help = HelpModel(self)
+        self._models = (
+            self.assistant, self.tasks, self.dialogue, self.hud,
+            self.commands, self.opened, self.search, self.history, self.help,
+        )  # fmt: skip
         self.controller = wc.WindowController()
         self._collapse_timer = self._single_shot(self.hud.collapse)
         self._close_timer = self._single_shot(
@@ -92,6 +110,11 @@ class UiApp(QObject):
             ("tasks", self.tasks),
             ("dialogue", self.dialogue),
             ("hud", self.hud),
+            ("commands", self.commands),
+            ("opened", self.opened),
+            ("search", self.search),
+            ("history", self.history),
+            ("help", self.help),
             ("ui", self.options),
             ("windows", self),
         ):
@@ -132,7 +155,7 @@ class UiApp(QObject):
 
     @Slot(object)
     def on_event(self, event: object) -> None:
-        for model in (self.assistant, self.tasks, self.dialogue, self.hud):
+        for model in self._models:
             model.apply(event)
         self._execute(self.controller.on_event(event))
 
@@ -161,6 +184,11 @@ class UiApp(QObject):
         self.hud_window.setFlag(Qt.WindowType.WindowDoesNotAcceptFocus, False)
         self._non_activating(self.hud_window, False)
         self.hud_window.requestActivate()
+
+    @Slot()
+    def hudDismissed(self) -> None:
+        """Botón de ocultar del HUD."""
+        self._execute(self.controller.hud_dismissed())
 
     def _screen_active_changed(self) -> None:
         self._execute(self.controller.screen_active_changed(self.screen.isActive()))

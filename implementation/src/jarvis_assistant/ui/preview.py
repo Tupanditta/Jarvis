@@ -13,7 +13,10 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QTimer
 
 from jarvis_assistant.core import events
+from jarvis_assistant.core.action_api import HelpEntry, HelpGroup
+from jarvis_assistant.core.content import Entry, OpenedItem, SearchResult, TreeNode
 from jarvis_assistant.core.events import Activity
+from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 
 LEVEL_INTERVAL_MS = 50  # 20 Hz, como el núcleo
 
@@ -48,6 +51,62 @@ def _done_speaking(state: str, activity: Activity, after: float) -> list[Step]:
     return [Step(after, events.SpeechFinished(False)), Step(0.0, _activity(state, activity))]
 
 
+def _session(session_id: int, name: str, important: bool = False) -> SessionRow:
+    return SessionRow(session_id, name, datetime.now(), None, None, important, False, False,
+                      False, None, False)
+
+
+def panel_tour() -> list[Step]:
+    """Contenido de ejemplo de los paneles de los módulos: comandos (listado, árbol y salida
+    de un binario), aperturas, búsqueda, historial y ayuda."""
+    home = "C:/Users/usuario"
+    current = _session(12, "prácticas de redes", important=True)
+    return [
+        Step(0.6, events.PanelActivated("comandos")),
+        Step(0.0, events.WorkdirChanged(home + "/Proyectos")),
+        Step(0.0, events.DirectoryListed(home + "/Proyectos", (
+            Entry("jarvis", True), Entry("web", True), Entry("notas.txt", False),
+        ), 3)),
+        Step(1.2, events.DirectoryTreeBuilt(home + "/Proyectos", (
+            TreeNode("jarvis", 1, True), TreeNode("src", 2, True), TreeNode("main.py", 3, False),
+            TreeNode("README.md", 2, False), TreeNode("web", 1, True),
+            TreeNode("notas.txt", 1, False),
+        ), 3, 3, True)),
+        Step(1.2, _task(4, "pendiente", "git status")),
+        Step(0.0, events.CommandOutputAppended(4, "git status", ("On branch main",), "out")),
+        Step(0.4, events.CommandOutputAppended(4, "git status", ("aviso: sin cambios",), "err")),
+        Step(0.4, _task(4, "completado", "git status")),
+        Step(1.0, events.CommandPanelCleared()),
+        Step(0.6, events.PanelActivated("aperturas")),
+        Step(0.0, events.OpenedItemsChanged((
+            OpenedItem(1, "Visual Studio Code", "aplicacion", "completado", True),
+            OpenedItem(2, "GitHub", "pagina", "completado", False),
+            OpenedItem(3, "Descargas", "carpeta", "error", False),
+        ))),
+        Step(1.2, events.PanelActivated("busqueda")),
+        Step(0.0, events.SearchResultsReady("informe", "ambos", (
+            SearchResult(1, "informe.txt", False, home + "/Documentos", ""),
+            SearchResult(2, "informes", True, home + "/Documentos", ""),
+        ), 14, True)),
+        Step(1.2, events.PanelActivated("historial")),
+        Step(0.0, events.HistoryShown((current, _session(11, "2026-11-14")), 12)),
+        Step(1.2, events.SessionActivitiesShown(current, (
+            ActivityRow(1, 12, None, "comandos", "git status", "completado", datetime.now(), None),
+            ActivityRow(2, 12, None, "apertura", "abrir GitHub", "error", datetime.now(), None),
+        ))),
+        Step(1.2, events.PanelActivated("ayuda")),
+        Step(0.0, events.HelpShown((
+            HelpGroup("comandos", "Comandos", (
+                HelpEntry("Cambiar de carpeta", "Ve a proyectos barra jarvis"),
+                HelpEntry("Ejecutar un programa permitido", "Ejecuta git status"),
+            )),
+            HelpGroup("apertura", "Aperturas", (
+                HelpEntry("Abrir una aplicación o una página", "Abre GitHub"),
+            )),
+        ))),
+    ]
+
+
 def script() -> list[Step]:
     """Recorrido completo: dormido, despertar, escucha, orden, procesando, hablando, tareas,
     pregunta (esperando), reposo, vuelta a escucha y cierre."""
@@ -73,6 +132,7 @@ def script() -> list[Step]:
                         detail="No se encuentra la aplicación")),
         Step(0.5, _task(3, "pendiente", "buscar informe", module="busqueda")),
         Step(1.5, events.CommandReceived("qué tiempo hace", False)),
+        *panel_tour(),
         # Una pregunta: esperando.
         Step(1.5, events.SessionChanged(1, "prácticas de redes", True)),
         Step(0.0, events.DialogueOpened("¿Elimino la sesión 12?", "CONFIRMATION",

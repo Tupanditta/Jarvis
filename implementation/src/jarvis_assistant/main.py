@@ -12,19 +12,24 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
-from jarvis_assistant.action_modules.session_manager import SessionManager
+from jarvis_assistant.action_modules.app_launcher import AppLauncher
+from jarvis_assistant.action_modules.command_runner import CommandRunner
+from jarvis_assistant.action_modules.file_manager import FileSearch
+from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.orchestrator import Orchestrator
+from jarvis_assistant.core.orchestrator import Orchestrator, Reload
 from jarvis_assistant.core.state_machine import StateMachine
+from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.paths import AppPaths, missing_models
 from jarvis_assistant.process.logging_setup import (
@@ -44,8 +49,9 @@ MUTEX_NAME = "Local\\JarvisAssistant"
 SHUTDOWN_LIMIT_SECONDS = 3.0
 _MISSING_MODELS_NOTICE_MS = 6000
 
-# Módulos de acción registrados. Añadir un módulo es añadir aquí su instancia.
-ACTION_MODULES: list[Any] = []
+# Módulos de acción registrados. Añadir un módulo es añadir aquí su clase: `build_app` crea
+# una instancia por aplicación. El orden es el de desempate entre patrones.
+ACTION_MODULES: list[Callable[[], Any]] = [CommandRunner, AppLauncher, FileSearch, History]
 
 
 @dataclass
@@ -69,6 +75,7 @@ class App:
     speaker: Speaker
     orchestrator: Orchestrator
     adapters: Adapters
+    workdir: Workdir
 
 
 def build_app(
@@ -77,8 +84,14 @@ def build_app(
     *,
     bus: EventBus | None = None,
     on_exit: Callable[[], None] = lambda: None,
+    home: Path | None = None,
+    reload_config: Reload | None = None,
 ) -> App:
-    """Construye el grafo completo sin lanzar hilos ni abrir dispositivos."""
+    """Construye el grafo completo sin lanzar hilos ni abrir dispositivos.
+
+    `home`: carpeta del usuario, donde empieza el directorio de trabajo de cada sesión.
+    `reload_config`: relee la configuración al abrir cada sesión (RF-96).
+    """
     settings = config.settings
     bus = bus or EventBus()
     machine = StateMachine()
@@ -89,7 +102,8 @@ def build_app(
         clock=adapters.clock,
         settings=settings.tts,
     )
-    router = IntentRouter(settings.router, config.aliases)
+    workdir = Workdir(home or Path.home())
+    router = IntentRouter(settings.router, config.aliases, workdir=workdir)
     sessions = SessionManager(adapters.database, adapters.clock, bus)
     orchestrator = Orchestrator(
         machine=machine,
@@ -99,9 +113,14 @@ def build_app(
         router=router,
         speaker=speaker,
         sessions=sessions,
+        database=adapters.database,
+        platform=adapters.platform,
+        workdir=workdir,
+        modules=[create() for create in ACTION_MODULES],
+        reload_config=reload_config,
         on_exit=on_exit,
     )
-    return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters)
+    return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters, workdir)
 
 
 # --- Arranque real ---------------------------------------------------------------------------
@@ -152,11 +171,13 @@ class CoreThread:
         bus: EventBus,
         make_adapters: Callable[[], Adapters],
         on_exit: Callable[[], None],
+        reload_config: Reload | None = None,
     ) -> None:
         self._config = config
         self._bus = bus
         self._make_adapters = make_adapters
         self._on_exit = on_exit
+        self._reload_config = reload_config
         self._thread = threading.Thread(target=self._main, name="nucleo", daemon=True)
         self.bound = threading.Event()  # el bus ya acepta `publish_threadsafe`
         self.app: App | None = None
@@ -187,7 +208,9 @@ class CoreThread:
     async def _run(self) -> None:
         started = time.monotonic()
         adapters = self._make_adapters()
-        app = build_app(self._config, adapters, bus=self._bus)
+        app = build_app(
+            self._config, adapters, bus=self._bus, reload_config=self._reload_config
+        )
         self.app = app
         try:
             app.sessions.recover_interrupted()
@@ -293,6 +316,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         settings=config.settings.ui,
         platform=platform,
         debug=args.ui_debug,
+        output_lines=config.settings.commands.output_lines,
     )
 
     def exit_ui() -> None:
@@ -313,6 +337,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         bus,
         make_adapters=lambda: real_adapters(config, platform, paths, clock),
         on_exit=bridge.exitRequested.emit,
+        reload_config=lambda previous: config_module.load(paths.config_dir, previous=previous),
     )
     core.start()
     tray.show()

@@ -18,8 +18,10 @@ from jarvis_assistant.speaker.phrases import (
     PHRASES,
     PRELOADED_IDS,
     PhraseError,
+    advance,
     parameters,
     render,
+    variants,
 )
 from jarvis_assistant.speaker.piper_synth import PiperSynthesizer
 from jarvis_assistant.speaker.player import Player
@@ -44,13 +46,32 @@ def test_todas_las_frases_se_renderizan_con_parametros_de_ejemplo():
 
 
 def test_frases_del_ciclo_de_vida():
-    assert render(Phrase("ciclo.apertura")) == "Sesión iniciada. Le escucho."
-    assert render(Phrase("ciclo.escucha")) == "Le escucho."
-    assert render(Phrase("ciclo.reposo")) == "A su disposición."
-    assert render(Phrase("ciclo.cierre")) == "Buenas noches. Sesión cerrada."
-    assert render(Phrase("config.error", {"archivo": "settings.toml"})) == (
-        "Hay un error en la configuración de settings.toml. Uso la anterior."
-    )
+    # El texto es del catálogo: aquí solo se comprueba que existen y no llevan parámetros.
+    for phrase_id in LIFECYCLE_IDS:
+        assert render(Phrase(phrase_id)) == PHRASES[phrase_id][0]
+        assert parameters(phrase_id) == ()
+    assert "settings.toml" in render(Phrase("config.error", {"archivo": "settings.toml"}))
+
+
+def test_todas_las_variantes_de_una_frase_usan_los_mismos_parametros():
+    from string import Formatter
+
+    for phrase_id in PHRASES:
+        assert variants(phrase_id), phrase_id
+        names = {
+            frozenset(name for _, name, _, _ in Formatter().parse(template) if name)
+            for template in variants(phrase_id)
+        }
+        assert len(names) == 1, phrase_id
+
+
+def test_las_variantes_se_usan_en_orden_y_vuelven_al_principio(monkeypatch):
+    monkeypatch.setitem(PHRASES, "ciclo.escucha", ["Uno, señor.", "Dos, señor.", "Tres, señor."])
+    dichas = []
+    for _ in range(4):
+        dichas.append(render(Phrase("ciclo.escucha")))
+        advance("ciclo.escucha")
+    assert dichas == ["Uno, señor.", "Dos, señor.", "Tres, señor.", "Uno, señor."]
 
 
 def test_frase_desconocida_o_sin_parametro():
@@ -243,7 +264,7 @@ async def test_frase_del_ciclo_de_vida_avisa_al_empezar(rig):
     )
     await settle()
     assert started == [1] and rig.speaker.speaking
-    assert rig.events == [SpeechStarted("A su disposición.", interruptible=False)]
+    assert rig.events == [SpeechStarted(PHRASES["ciclo.reposo"][0], interruptible=False)]
     await rig.advance(1.0)
     assert not (await task).interrupted
     assert rig.events[-1] == SpeechFinished(interrupted=False)
@@ -262,7 +283,7 @@ async def test_las_frases_se_dicen_de_una_en_una_y_en_orden(rig):
     await rig.advance(1.0)
     assert not (await second).interrupted
     texts = [e.text for e in rig.events if isinstance(e, SpeechStarted)]
-    assert texts == ["Cancelado.", "Ha ocurrido un error."]
+    assert texts == [PHRASES["general.cancelado"][0], PHRASES["general.error"][0]]
     assert rig.speaker.last_phrase == Phrase("general.error")
 
 
@@ -304,7 +325,8 @@ async def test_cache_limitada_y_volumen():
             await asyncio.sleep(0.001)
         rig.clock.advance(1.0)
         await task
-    assert rig.synthesizer.texts == ["No encuentro a.", "No encuentro b.", "No encuentro a."]
+    said = [render(Phrase("entidad.no_encontrado", {"nombre": name})) for name in "aba"]
+    assert rig.synthesizer.texts == said
     assert rig.player.played[0][0] == 500
     rig.speaker.close()
 
@@ -316,3 +338,14 @@ async def test_abre_y_cierra_la_salida_a_la_frecuencia_de_la_voz(rig):
     assert rig.speaker.current_level() == 0.4
     rig.speaker.close_output()
     assert rig.player.closed == 1
+
+
+async def test_cada_vez_que_se_dice_una_frase_se_usa_la_siguiente_variante(rig, monkeypatch):
+    monkeypatch.setitem(PHRASES, "general.error", ["Primera, señor.", "Segunda, señor."])
+    for _ in range(3):
+        task = asyncio.ensure_future(rig.speaker.say(Phrase("general.error")))
+        await settle()
+        await rig.advance(1.0)
+        await task
+    texts = [e.text for e in rig.events if isinstance(e, SpeechStarted)]
+    assert texts == ["Primera, señor.", "Segunda, señor.", "Primera, señor."]

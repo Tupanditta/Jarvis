@@ -20,6 +20,12 @@ from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRepository
 from jarvis_assistant.core.state_machine import AssistantState
 from jarvis_assistant.main import Adapters, build_app
+from jarvis_assistant.speaker.phrases import PHRASES
+
+APERTURA = PHRASES["ciclo.apertura"][0]
+ESCUCHA = PHRASES["ciclo.escucha"][0]
+REPOSO = PHRASES["ciclo.reposo"][0]
+CIERRE = PHRASES["ciclo.cierre"][0]
 
 S = AssistantState
 RECORDED = (
@@ -137,7 +143,7 @@ async def test_cu03_flujo_principal(rig):
     assert session.name == rig.clock.now().astimezone().date().isoformat()
     assert not session.is_important
     assert rig.player.is_open
-    assert rig.spoken() == ["Sesión iniciada. Le escucho."]
+    assert rig.spoken() == [APERTURA]
     assert rig.of(events.CommandReceived) == [events.CommandReceived("Hey Jarvis", True)]
     assert rig.of(events.SessionOpened) == [events.SessionOpened(session.id, session.name)]
     assert rig.of(events.SessionChanged) == [events.SessionChanged(session.id, session.name, False)]
@@ -181,7 +187,7 @@ async def test_cu03_a1_hey_jarvis_en_reposo_vuelve_a_escucha_sin_sesion_nueva(ri
     rig.clear()
     await rig.wake()
     assert rig.state is S.LISTENING_COMMAND
-    assert rig.spoken() == ["Le escucho."]
+    assert rig.spoken() == [ESCUCHA]
     assert rig.of(events.ListeningResumed) == [events.ListeningResumed(silent=False)]
     assert rig.of(events.SessionOpened) == []
     assert len(rig.sessions.find_open()) == 1
@@ -219,10 +225,10 @@ async def test_cu03_a4_lo_escrito_durante_la_frase_de_apertura_se_atiende_al_ter
     await rig.wake()
     await rig.write("gracias jarvis")  # la frase de apertura sigue sonando
     assert rig.state is S.LISTENING_COMMAND
-    assert rig.spoken() == ["Sesión iniciada. Le escucho."]
+    assert rig.spoken() == [APERTURA]
     await rig.advance(1.0)
     assert rig.state is S.IDLE
-    assert rig.spoken() == ["Sesión iniciada. Le escucho.", "A su disposición."]
+    assert rig.spoken() == [APERTURA, REPOSO]
 
 
 async def test_cu03_a5_hey_jarvis_tras_el_cierre_abre_una_sesion_nueva_al_instante(rig):
@@ -235,7 +241,7 @@ async def test_cu03_a5_hey_jarvis_tras_el_cierre_abre_una_sesion_nueva_al_instan
     assert rig.state is S.LISTENING_COMMAND
     (second,) = rig.sessions.find_open()
     assert second.id != first
-    assert rig.spoken()[-2:] == ["Buenas noches. Sesión cerrada.", "Sesión iniciada. Le escucho."]
+    assert rig.spoken()[-2:] == [CIERRE, APERTURA]
     assert rig.player.is_open
 
 
@@ -243,7 +249,7 @@ async def test_cu03_a6_apertura_desde_la_bandeja(rig):
     rig.app.bus.publish(events.OpenSessionRequested())
     await settle()
     assert rig.state is S.LISTENING_COMMAND
-    assert rig.spoken() == ["Sesión iniciada. Le escucho."]
+    assert rig.spoken() == [APERTURA]
     rig.app.bus.publish(events.OpenSessionRequested())  # con sesión: sin efecto
     await rig.advance(1.0)
     assert len(rig.sessions.find_open()) == 1
@@ -259,7 +265,7 @@ async def test_cu04_flujo_principal(rig):
     await rig.write("Gracias, Jarvis.")
     assert rig.state is S.IDLE
     assert rig.of(events.CommandReceived) == [events.CommandReceived("Gracias, Jarvis.", True)]
-    assert rig.spoken() == ["A su disposición."]
+    assert rig.spoken() == [REPOSO]
     assert rig.of(events.RestEntered) == [events.RestEntered()]
     await rig.advance(1.0)
     assert rig.activities()[-1] is Activity.REPOSO
@@ -276,7 +282,7 @@ async def test_cu04_a1_treinta_segundos_sin_escribir(rig):
     assert rig.state is S.LISTENING_COMMAND
     await rig.advance(1.0)
     assert rig.state is S.IDLE
-    assert rig.spoken()[-1] == "A su disposición."
+    assert rig.spoken()[-1] == REPOSO
     assert rig.of(events.RestEntered) == [events.RestEntered()]
 
 
@@ -379,11 +385,11 @@ async def test_cu04_en_reposo_un_texto_no_reconocido_despierta_y_se_muestra(rig)
     await rig.write("gracias jarvis")
     await rig.advance(1.0)
     rig.clear()
-    await rig.write("abre el navegador")
+    await rig.write("qué tiempo hace hoy")
     assert rig.state is S.LISTENING_COMMAND
     assert rig.spoken() == []
     assert rig.of(events.CommandReceived) == [
-        events.CommandReceived("abre el navegador", recognized=False)
+        events.CommandReceived("qué tiempo hace hoy", recognized=False)
     ]
 
 
@@ -401,7 +407,7 @@ async def test_cu05_flujo_principal(rig):
     assert closed.closed_at == rig.clock.now() and closed.close_reason == "voz"
     (activity,) = ActivityRepository(rig.database).of_session(session.id)
     assert activity.id == pending and activity.status == "error"
-    assert rig.spoken() == ["Buenas noches. Sesión cerrada."]
+    assert rig.spoken() == [CIERRE]
     assert rig.of(events.SessionClosed) == [events.SessionClosed()]
     await rig.advance(1.0)
     assert rig.activities()[-1] is Activity.DORMIDO
@@ -420,7 +426,7 @@ async def test_cu05_a1_cierre_desde_reposo(rig):
     await rig.write("buenas noches jarvis")
     assert rig.state is S.DORMIDO
     assert rig.sessions.find_open() == []
-    assert rig.spoken()[-1] == "Buenas noches. Sesión cerrada."
+    assert rig.spoken()[-1] == CIERRE
 
 
 async def test_cu05_a4_buenas_noches_sin_jarvis_se_ignora(rig):
@@ -486,7 +492,7 @@ async def test_una_entrada_desconocida_se_registra_y_se_ignora(rig, caplog):
 async def test_un_texto_muy_largo_o_con_saltos_de_linea_se_trata_como_no_reconocido(rig):
     await rig.open_session()
     rig.clear()
-    await rig.write("abre\nel navegador " * 500)
+    await rig.write("qué tiempo\nhace hoy " * 500)
     assert rig.state is S.LISTENING_COMMAND
     assert len(rig.of(events.CommandReceived)) == 1
     assert not rig.of(events.CommandReceived)[0].recognized

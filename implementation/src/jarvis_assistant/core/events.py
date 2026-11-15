@@ -4,14 +4,18 @@ Todos son `dataclass` inmutables y la suscripción es por clase. El bus no guard
 la interfaz reconstruye su estado solo con los que recibe.
 
 Este módulo contiene los eventos del ciclo de vida, de estado, de órdenes, de voz, de diálogo,
-de tareas, el panel activo y las acciones del usuario; los de contenido de cada panel se añaden
-con los módulos que los publican.
+de tareas, el panel activo, las acciones del usuario y los de contenido de los paneles de los
+módulos ya construidos; los demás se añaden con los módulos que los publican.
 """
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
+
+from jarvis_assistant.core.action_api import HelpGroup
+from jarvis_assistant.core.content import Entry, OpenedItem, SearchResult, TreeNode
+from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 
 
 @dataclass(frozen=True)
@@ -167,7 +171,109 @@ class PanelActivated(Event):
     panel: str
 
 
+# --- Contenido de los paneles ----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WorkdirChanged(Event):
+    """Directorio de trabajo que muestra el panel de comandos."""
+
+    path: str
+
+
+@dataclass(frozen=True)
+class DirectoryListed(Event):
+    """Listado de `ls`: carpetas primero, en orden alfabético. `total`: entradas reales."""
+
+    path: str
+    entries: tuple[Entry, ...]
+    total: int
+
+
+@dataclass(frozen=True)
+class DirectoryTreeBuilt(Event):
+    """Árbol del mapeo de entorno (RN-40), en orden de dibujo."""
+
+    root: str
+    nodes: tuple[TreeNode, ...]
+    dirs: int
+    files: int
+    truncated: bool
+
+
+@dataclass(frozen=True)
+class CommandOutputAppended(Event):
+    """Líneas nuevas de la salida de un binario. `stream`: `out` o `err`."""
+
+    task_id: int
+    command: str
+    lines: tuple[str, ...]
+    stream: Literal["out", "err"]
+
+
+@dataclass(frozen=True)
+class CommandPanelCleared(Event):
+    """`clear`: el panel de comandos se vacía."""
+
+
+@dataclass(frozen=True)
+class OpenedItemsChanged(Event):
+    """Lista completa de elementos abiertos. `can_focus_windows`: el sistema permite traer
+    ventanas al frente; si no, el botón no se muestra."""
+
+    items: tuple[OpenedItem, ...]
+    can_focus_windows: bool = True
+
+
+@dataclass(frozen=True)
+class SearchResultsReady(Event):
+    """Resultados numerados que muestra el panel. `total`: los encontrados."""
+
+    query: str
+    kind: str  # 'archivos', 'carpetas' o 'ambos'
+    results: tuple[SearchResult, ...]
+    total: int
+    limited: bool
+
+
+@dataclass(frozen=True)
+class HistoryShown(Event):
+    """Sesiones visibles del historial (RN-10). `current_id`: la sesión actual."""
+
+    sessions: tuple[SessionRow, ...]
+    current_id: int | None = None
+
+
+@dataclass(frozen=True)
+class SessionActivitiesShown(Event):
+    session: SessionRow
+    activities: tuple[ActivityRow, ...]
+
+
+@dataclass(frozen=True)
+class HelpShown(Event):
+    """Órdenes disponibles, agrupadas por módulo (RF-92)."""
+
+    groups: tuple[HelpGroup, ...]
+
+
+@dataclass(frozen=True)
+class ConfigReloadFailed(Event):
+    """Un archivo de configuración es inválido al recargar: se conserva el anterior (RF-96)."""
+
+    file: str
+    reason: str
+
+
 # --- Acciones del usuario (interfaz → núcleo, con `publish_threadsafe`) ----------------------
+
+
+@dataclass(frozen=True)
+class FocusItemRequested(Event):
+    """Botón «traer al frente» de un elemento abierto."""
+
+    item_id: int
+
 
 
 @dataclass(frozen=True)
@@ -197,6 +303,11 @@ class ShowScreenRequested(Event):
     """«Mostrar pantalla» en el menú de la bandeja."""
 
     visible: bool = True
+
+
+@dataclass(frozen=True)
+class ShowHudRequested(Event):
+    """«Mostrar HUD» en el menú de la bandeja: vuelve a mostrar el HUD si se había ocultado."""
 
 
 @dataclass(frozen=True)

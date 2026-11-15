@@ -1,16 +1,28 @@
 """Módulo Sesión: la parte de datos del ciclo de vida de la sesión (sesion.md).
 
-Lo llama el orquestador, no una intención de voz. Las acciones por voz (nombrar, importancia)
-y el directorio de trabajo llegan con sus fases.
+`SessionManager` lo llama el orquestador, no una intención; sus acciones (nombrar, importancia)
+llegan con el diálogo. `History` es el módulo Historial (historial.md): consulta las sesiones
+y sus actividades; la eliminación llega con el diálogo.
 """
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import tzinfo
 
+from jarvis_assistant.core import events
+from jarvis_assistant.core.action_api import (
+    ActionContext,
+    ActionResult,
+    IntentSpec,
+    Phrase,
+    Slot,
+    SlotType,
+)
 from jarvis_assistant.core.clock import Clock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import SessionChanged
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRepository, SessionRow
+from jarvis_assistant.speaker.phrases import count
 
 logger = logging.getLogger(__name__)
 
@@ -81,3 +93,65 @@ class SessionManager:
             name = f"{base} ({suffix})"
             suffix += 1
         return name
+
+
+HISTORY_PANEL = "historial"
+HISTORY_LIMIT = 10  # RN-10
+
+
+class History:
+    name = "historial"
+    title = "Historial"
+
+    def intents(self) -> Sequence[IntentSpec]:
+        return (
+            IntentSpec(
+                "mostrar", ("muestra el historial", "historial de sesiones",
+                            "enséñame el historial"),
+                (), "Mostrar las sesiones recientes", "Muestra el historial", HISTORY_PANEL,
+            ),
+            IntentSpec(
+                "actividades", ("actividades de la sesión {id}",
+                                "muestra las actividades de la sesión {id}",
+                                "qué hice en la sesión {id}", "actividades de esta sesión",
+                                "qué he hecho"),
+                (Slot("id", SlotType.INTEGER, optional=True),),
+                "Mostrar las actividades de una sesión", "Actividades de la sesión doce",
+                HISTORY_PANEL,
+            ),
+        )  # fmt: skip
+
+    async def execute(
+        self, action: str, params: Mapping[str, object], ctx: ActionContext
+    ) -> ActionResult:
+        match action:
+            case "mostrar":
+                return self._show(ctx)
+            case "actividades":
+                return self._activities(params.get("id"), ctx)  # type: ignore[arg-type]
+        raise ValueError(f"Acción desconocida: {action}")
+
+    def _show(self, ctx: ActionContext) -> ActionResult:
+        sessions = SessionRepository(ctx.db).visible_history(HISTORY_LIMIT)
+        current = None if ctx.session is None else ctx.session.id
+        ctx.publish(events.HistoryShown(tuple(sessions), current))
+        return ActionResult(
+            "completado",
+            Phrase("historial.mostrado", {"sesiones": count(len(sessions), "sesión", "sesiones")}),
+        )
+
+    def _activities(self, session_id: int | None, ctx: ActionContext) -> ActionResult:
+        if session_id is None and ctx.session is not None:
+            session_id = ctx.session.id
+        session = None if session_id is None else SessionRepository(ctx.db).get(session_id)
+        if session is None or session.is_deleted:  # una sesión eliminada no es consultable
+            return ActionResult("error", Phrase("historial.no_existe", {"id": session_id}))
+        activities = ActivityRepository(ctx.db).of_session(session.id)
+        ctx.publish(events.SessionActivitiesShown(session, tuple(activities)))
+        return ActionResult(
+            "completado",
+            Phrase("historial.actividades", {
+                "nombre": session.name,
+                "actividades": count(len(activities), "actividad", "actividades"),
+            }),
+        )  # fmt: skip

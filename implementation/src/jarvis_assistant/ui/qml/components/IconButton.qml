@@ -1,5 +1,5 @@
 // Botón de icono de 28 px con realce al pasar el cursor.
-// Solo para «traer al frente», silencio y expandir (hud.md, sección 3).
+// Solo para «traer al frente», silencio, expandir y ocultar (hud.md, sección 3).
 import QtQuick
 import ".."
 

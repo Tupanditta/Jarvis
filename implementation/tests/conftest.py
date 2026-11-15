@@ -90,3 +90,13 @@ def network_guard(monkeypatch):
     yield guard
     if guard.attempts:
         pytest.fail("La prueba intentó usar la red: " + "; ".join(guard.attempts), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _frases_desde_la_primera_variante():
+    """Cada prueba empieza con todas las frases en su primera variante."""
+    from jarvis_assistant.speaker.phrases import reset_rotation
+
+    reset_rotation()
+    yield
+    reset_rotation()

@@ -13,7 +13,7 @@ from jarvis_assistant.core.action_api import Phrase
 from jarvis_assistant.core.clock import Clock
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import SilenceRequested, SpeechFinished, SpeechStarted
-from jarvis_assistant.speaker.phrases import PRELOADED_IDS, render
+from jarvis_assistant.speaker.phrases import PRELOADED_IDS, advance, render, variants
 from jarvis_assistant.speaker.piper_synth import Synthesizer
 from jarvis_assistant.speaker.player import AudioPlayer
 
@@ -65,8 +65,9 @@ class Speaker:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._synthesizer.load)
         for phrase_id in PRELOADED_IDS:
-            text = render(Phrase(phrase_id))
-            self._preloaded[text] = await self._synthesize(text)
+            for text in variants(phrase_id):  # sin parámetros: la plantilla es el texto
+                if text not in self._preloaded:
+                    self._preloaded[text] = await self._synthesize(text)
 
     def open_output(self) -> None:
         self._player.open(self._synthesizer.sample_rate)
@@ -91,20 +92,32 @@ class Speaker:
             if generation != self._generation:
                 return SpeechOutcome(interrupted=True)
 
+            began = False
+
             def started() -> None:
+                nonlocal began
+                began = True
+                advance(phrase.id)  # la próxima vez se dice la siguiente variante
                 logger.debug("Inicio del audio de %s: %.3f", phrase.id, self._clock.monotonic())
                 self._bus.publish(SpeechStarted(text, interruptible=not lifecycle))
                 if on_start is not None:
                     on_start()
 
             self._speaking, self._interruptible = True, not lifecycle
+            completed = cancelled = False
             try:
                 completed = await self._player.play(pcm, started)
+            except asyncio.CancelledError:
+                cancelled = True
+                self._player.stop()  # el turno se ha cancelado: la frase se corta
+                raise
             finally:
                 self._speaking = False
-            if not lifecycle:
-                self._last_phrase = phrase
-            self._bus.publish(SpeechFinished(interrupted=not completed))
+                if not lifecycle:
+                    self._last_phrase = phrase
+                if began or not cancelled:
+                    # También si se cancela: la interfaz no debe quedarse en «hablando».
+                    self._bus.publish(SpeechFinished(interrupted=not completed))
             return SpeechOutcome(interrupted=not completed)
 
     def stop(self) -> None:
