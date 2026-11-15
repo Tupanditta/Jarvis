@@ -11,13 +11,13 @@ Sesión abierta y asistente en `LISTENING_COMMAND`. El directorio de trabajo es 
 
 ## Disparador
 
-El usuario dice «Ejecuta {comando}», p. ej. «Ejecuta gcc main punto c».
+El usuario escribe «Ejecuta {comando}», p. ej. «Ejecuta gcc main punto c».
 
 ## Flujo principal
 
 1. El sistema identifica `comandos.ejecutar`. La primera palabra, tras aplicar los alias, es un binario de la lista permitida; el resto son sus argumentos.
 2. El sistema crea la tarea en `pendiente`, dice «Ejecutando {comando}.» y lanza el programa, sin intérprete de órdenes, en el directorio de trabajo.
-3. El sistema sigue escuchando órdenes mientras el programa se ejecuta (RNF-07). La salida aparece en el panel de comandos según se produce.
+3. El sistema sigue atendiendo órdenes mientras el programa se ejecuta (RNF-07). La salida aparece en el panel de comandos según se produce.
 4. El programa termina con código 0. La tarea pasa a `completado`.
 5. Cuando no hay un diálogo ni una locución en curso, el sistema avisa: «{comando} ha terminado correctamente.» (RN-39).
 

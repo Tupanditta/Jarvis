@@ -11,7 +11,7 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice «Busca {consulta}», «Busca el archivo {consulta}» o «Busca la carpeta {consulta}».
+El usuario escribe «Busca {consulta}», «Busca el archivo {consulta}» o «Busca la carpeta {consulta}».
 
 ## Flujo principal
 
@@ -19,7 +19,7 @@ El usuario dice «Busca {consulta}», «Busca el archivo {consulta}» o «Busca 
 2. El sistema crea la tarea en `pendiente` y consulta la herramienta indexada.
 3. El sistema ordena los resultados y muestra los 10 primeros, numerados, en el panel de búsqueda.
 4. La tarea pasa a `completado`. El sistema dice «He encontrado {n} resultados. El primero es {nombre}, en {carpeta}.».
-5. El usuario dice «Abre el resultado {n}».
+5. El usuario escribe «Abre el resultado {n}».
 6. El sistema abre ese archivo con su aplicación predeterminada, o esa carpeta en el gestor de archivos, y dice «Abriendo {nombre}.».
 
 ## Flujos alternativos

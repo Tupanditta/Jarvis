@@ -37,7 +37,7 @@ Los tokens viven en `ui/qml/Theme.qml`.
 | `status.done` | `#34D399` | Tarea `completado`. |
 | `status.error` | `#F2555A` | Tarea `error`. |
 
-Los colores de estado solo se usan para los estados de tarea, el diálogo en espera (`status.pending`) y el micrófono no disponible (`status.error`). Contraste mínimo del texto sobre su fondo: 4,5 : 1.
+Los colores de estado solo se usan para los estados de tarea y el diálogo en espera (`status.pending`). Contraste mínimo del texto sobre su fondo: 4,5 : 1.
 
 ### Tipografía
 
@@ -104,8 +104,8 @@ Los datos de los anillos son decorativos y fijos (no muestran información real)
 
 | Actividad | Aspecto |
 |---|---|
-| **Escuchando** | Atención activa. El orbe pulsa con una «respiración» luminosa (resplandor interior que aumenta y disminuye, periodo de 2,4 s). El núcleo reacciona al micrófono: ondas de espectro a lo largo del anillo interior, sincronizadas con el volumen de la voz. Los anillos giran a velocidad media-alta. Brillo 100 %. |
-| **Hablando** | Igual que escuchando, pero el núcleo y el espectro reaccionan a la voz del asistente. Incluye las frases que coinciden con la animación de dormirse («A su disposición.», «Buenas noches. Sesión cerrada.»). |
+| **Escuchando** | Atención activa. El orbe pulsa con una «respiración» luminosa (resplandor interior que aumenta y disminuye, periodo de 2,4 s). El asistente atiende las órdenes escritas. El núcleo queda quieto y el espectro no se ve: no hay audio que seguir. Los anillos giran a velocidad media-alta. Brillo 100 %. |
+| **Hablando** | Igual que escuchando, y además el núcleo y el espectro reaccionan a la voz del asistente: ondas de espectro a lo largo del anillo interior, sincronizadas con su volumen. Incluye las frases que coinciden con la animación de dormirse («A su disposición.», «Buenas noches. Sesión cerrada.»). |
 | **Procesando** | Entre el fin de la orden y la respuesta. El espectro se sustituye por un arco luminoso que recorre el anillo interior (una vuelta cada 1,2 s) y los anillos giran más deprisa. Indica «trabajando» sin texto. |
 | **Esperando** | Como escuchando, con el anillo de datos 2 en `status.pending`: el asistente ha hecho una pregunta. |
 | **Reposo** | El orbe se mantiene estable en el centro, con una flotación muy sutil (±4 px, periodo de 6 s). Sin picos de espectro ni reacción al audio una vez terminada la frase del asistente: el núcleo queda quieto. El giro de los anillos es constante pero mucho más lento. El brillo es más tenue (45 %) pero persistente: el sistema está latente, no apagado. |
@@ -125,10 +125,10 @@ Referencia de escucha: [referencia-escucha-espectro.jpg](referencia-escucha-espe
 
 ### Reacción a la voz (RF-83)
 
-- La interfaz recibe un nivel de 0 a 1, 20 veces por segundo, con su origen (micrófono o asistente), y lo suaviza con `motion.level`.
+- La interfaz recibe un nivel de 0 a 1, 20 veces por segundo, con su origen (asistente o ninguno), y lo suaviza con `motion.level`.
 - **Núcleo:** su escala es `1 + 0,12 × nivel` y su resplandor crece con el nivel.
 - **Espectro:** la longitud de cada barra es `nivel × perfil[i]`, donde `perfil` es un patrón fijo de 64 valores, simétrico y suave, que se desplaza lentamente alrededor del anillo. El resultado se percibe como un ecualizador sincronizado con el volumen, sin necesidad de analizar frecuencias.
-- Con nivel 0 (silencio, reposo), el espectro no se ve.
+- Con nivel 0 (el asistente no habla), el espectro no se ve.
 
 ## 4. Animaciones de transición
 
@@ -191,28 +191,35 @@ Pantalla completa, fondo `bg.base`. Referencia a 1920 × 1080; los márgenes y c
 │                                                                              │
 │                        «ejecuta git status»                                  │
 │                        Ejecutando git status.                                │
+│              ┌──────────────────────────────────────────────┐                │
+│              │ Escriba una orden                            │                │
+│              └──────────────────────────────────────────────┘                │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 | Zona | Contenido |
 |---|---|
-| Barra superior (48 px de margen) | Izquierda: marca «JARVIS» en `font.display`, nombre de la sesión y estrella si es importante. Derecha: punto y etiqueta del estado del asistente, distintivo de micrófono no disponible si procede, y hora. |
+| Barra superior (48 px de margen) | Izquierda: marca «JARVIS» en `font.display`, nombre de la sesión y estrella si es importante. Derecha: punto y etiqueta del estado del asistente, y hora. |
 | Columna izquierda (360 px) | Panel de actividad. |
 | Centro | El orbe, centrado en la pantalla. |
 | Columna derecha (420 px) | Panel activo. Vacía hasta que un módulo activa un panel. El panel de diálogo se superpone a ella mientras hay una pregunta. |
 | Franja inferior | Subtítulos, centrados, ancho máximo 900 px: la última orden entre comillas en `text.secondary` (en `text.muted` y con la marca «no reconocido» si lo es) y, debajo, la última respuesta en `text.primary`, tamaño 18. Se desvanecen a los 6 s. |
+| Caja de texto | Bajo los subtítulos, centrada, ancho máximo 900 px: una línea, fondo `bg.panel`, borde `line.soft` (`line.strong` con el foco), radio 6, texto en `text.primary` y texto de ayuda en `text.muted`. Es la única entrada de órdenes ([entrada-texto.md](../Modulos/Infraestructura/entrada-texto.md)). Tiene el foco siempre que la pantalla es la ventana activa. No se atenúa en reposo. |
 
 En reposo, los paneles y los subtítulos bajan su opacidad al 50 % junto con el orbe.
 
+En modo dormido la pantalla sigue visible: fondo `bg.base`, el orbe apagado (un punto en `primary.deep`), sin paneles ni subtítulos, y la caja de texto con la ayuda «Escriba «Hey Jarvis» para iniciar la sesión».
+
 ## 6. HUD flotante
 
-Ventana de 380 px de ancho, a 16 px de la esquina elegida, fondo `bg.panel`, radio 10, borde `line.soft`. Nunca toma el foco.
+Ventana de 380 px de ancho, a 16 px de la esquina elegida, fondo `bg.panel`, radio 10, borde `line.soft`. No toma el foco por su cuenta: solo lo recibe con un clic en su caja de texto.
 
 ```text
-Contraído (64 px)                          Expandido (hasta el 60 % del alto)
+Contraído (104 px)                         Expandido (hasta el 60 % del alto)
 ┌──────────────────────────────────┐      ┌──────────────────────────────────┐
 │ (orbe) ESCUCHANDO           ⌄    │      │ (orbe) ESCUCHANDO           ⌃    │
 │        «ejecuta git status»      │      │        Ejecutando git status.    │
+│ [ Escriba una orden            ] │      │ [ Escriba una orden            ] │
 └──────────────────────────────────┘      ├──────────────────────────────────┤
                                           │ COMANDOS                         │
                                           │ D:\Proyectos\jarvis              │
@@ -220,7 +227,8 @@ Contraído (64 px)                          Expandido (hasta el 60 % del alto)
                                           └──────────────────────────────────┘
 ```
 
-- **Cabecera:** mini orbe de 44 px (núcleo, un anillo y el espectro simplificado; reacciona al nivel de audio), estado en `font.display`, una línea de subtítulo (la respuesta si la hay; si no, la orden) y el botón de expandir o contraer. Mientras el asistente habla, aparece el botón de silencio.
+- **Cabecera:** mini orbe de 44 px (núcleo, un anillo y el espectro simplificado; reacciona al nivel de la voz del asistente), estado en `font.display`, una línea de subtítulo (la respuesta si la hay; si no, la orden) y el botón de expandir o contraer. Mientras el asistente habla, aparece el botón de silencio.
+- **Caja de texto:** una línea bajo la cabecera, visible también con el HUD contraído. Un clic en ella le da el foco; Enter envía la orden y el foco se queda en la caja.
 - **Cuerpo:** el panel activo, con desplazamiento vertical si no cabe.
 - **Animaciones:** despertar es un pulso del mini orbe y un fundido de entrada del HUD; dormirse, el mini orbe se atenúa y el HUD se contrae; en el cierre, el HUD se desvanece. Duran los mismos 2 s.
 - En reposo el HUD no tiene ninguna animación continua.
@@ -237,7 +245,7 @@ Todos en `ui/qml/components/`, usados por igual en las dos superficies.
 | `Subtitles` | Las dos líneas de orden y respuesta. |
 | `StateLabel` | Punto y texto del estado del asistente. Color: `primary` escuchando y hablando, `text.secondary` reposo, `status.pending` esperando, `primary.bright` con latido procesando. |
 | `DialogCard` | Pregunta en tamaño 18, elemento sobre el que se pregunta, respuestas admitidas como distintivos («Sí», «No», «Cancelar») y una barra fina que se vacía con el tiempo de espera. Borde `status.pending`. |
-| `NumberedRow` | Fila con un número grande en `primary` (`font.mono`), para recordatorios y resultados: el número es lo que el usuario dice. |
+| `NumberedRow` | Fila con un número grande en `primary` (`font.mono`), para recordatorios y resultados: el número es lo que el usuario escribe en la orden. |
 | `IconButton` | Botón de icono de 28 px con realce al pasar el cursor. Solo para «traer al frente», silencio y expandir. |
 | `Badge` | Distintivo pequeño: «actual», «importante», «vencido», «limitada», «no reconocido». |
 | `EmptyState` | Texto atenuado centrado cuando un panel no tiene contenido («Sin recordatorios»). |
@@ -257,7 +265,7 @@ Todos en `ui/qml/components/`, usados por igual en las dos superficies.
 
 ## 9. Icono de la bandeja
 
-Un círculo con un anillo, en cinco variantes: dormido (gris), reposo (cian tenue), activo (cian; para escuchando, procesando y hablando), esperando (ámbar) y micrófono no disponible (con una marca roja). Formato ICO con tamaños de 16 a 48 px.
+Un círculo con un anillo, en cuatro variantes: dormido (gris), reposo (cian tenue), activo (cian; para escuchando, procesando y hablando) y esperando (ámbar). Formato ICO con tamaños de 16 a 48 px.
 
 ## 10. Calidad y rendimiento
 
@@ -275,12 +283,13 @@ Se revisa con `--preview` y en uso real al cerrar las fases 2 y 7.
 - [ ] Despertar: punto de luz, destello, expansión de anillos en sentidos opuestos, estabilización. Dura 2 s.
 - [ ] Dormirse: frenado, colapso, viraje a marino; en el cierre, chispa y partículas; en reposo, orbe tenue y lento.
 - [ ] Interrumpir una animación con la contraria no produce ningún salto.
-- [ ] En escucha, el núcleo y el espectro siguen la voz del usuario; al hablar el asistente, la suya; en reposo, quietos.
+- [ ] Al hablar el asistente, el núcleo y el espectro siguen su voz; en escucha y en reposo, quietos.
 - [ ] Los cinco aspectos (escuchando, hablando, procesando, esperando, reposo) se distinguen sin leer el texto.
 - [ ] Ningún color fuera de la tabla de tokens. Los colores de estado solo indican estado.
 - [ ] Todo el texto se lee a un metro de la pantalla; ningún texto se corta sin elipsis.
 - [ ] Los paneles se ven igual en la pantalla de sesión y en el HUD.
-- [ ] El HUD no tapa más del 60 % del alto, no parpadea al actualizarse y no toma el foco.
+- [ ] El HUD no tapa más del 60 % del alto, no parpadea al actualizarse y no toma el foco salvo con un clic en su caja de texto.
+- [ ] La caja de texto se ve en dormido, en reposo y en escucha, con la ayuda de cada estado, y recibe el teclado al abrir la pantalla.
 - [ ] A 1366 × 768 nada se solapa.
 - [ ] Con `ui.reduce_motion`, no hay giros ni colapsos, solo fundidos.
 

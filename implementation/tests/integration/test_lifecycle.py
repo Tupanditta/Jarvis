@@ -26,6 +26,7 @@ RECORDED = (
     events.SessionOpened, events.ListeningResumed, events.RestEntered, events.SessionClosed,
     events.AssistantActivityChanged, events.AudioLevel, events.CommandReceived,
     events.SpeechStarted, events.SpeechFinished, events.SessionChanged,
+    events.ShowScreenRequested,
 )
 
 
@@ -347,16 +348,43 @@ async def test_cu04_un_envio_vacio_no_se_muestra_ni_reinicia_la_cuenta(rig, text
     assert rig.state is S.IDLE
 
 
-async def test_cu04_en_reposo_solo_se_atienden_la_activacion_y_el_cierre(rig):
+async def test_cu04_en_reposo_gracias_jarvis_y_cancelar_no_tienen_efecto(rig):
+    await rig.open_session()
+    await rig.write("gracias jarvis")
+    await rig.advance(1.0)
+    rig.clear()
+    await rig.write("gracias jarvis")
+    await rig.write("cancelar")
+    await rig.write("   ")
+    assert rig.state is S.IDLE
+    assert rig.spoken() == [] and rig.of(events.CommandReceived) == []
+
+
+async def test_cu04_en_reposo_una_orden_despierta_en_silencio_y_se_ejecuta(rig):
+    await rig.open_session()
+    await rig.write("gracias jarvis")
+    await rig.advance(1.0)
+    rig.clear()
+    await rig.write("muestra la pantalla")
+    assert rig.state is S.LISTENING_COMMAND
+    assert rig.spoken() == []
+    assert rig.of(events.ListeningResumed) == [events.ListeningResumed(silent=True)]
+    assert rig.of(events.ShowScreenRequested) == [events.ShowScreenRequested(visible=True)]
+    await rig.advance(30.5)
+    assert rig.state is S.IDLE
+
+
+async def test_cu04_en_reposo_un_texto_no_reconocido_despierta_y_se_muestra(rig):
     await rig.open_session()
     await rig.write("gracias jarvis")
     await rig.advance(1.0)
     rig.clear()
     await rig.write("abre el navegador")
-    await rig.write("gracias jarvis")
-    await rig.write("cancelar")
-    assert rig.state is S.IDLE
-    assert rig.spoken() == [] and rig.of(events.CommandReceived) == []
+    assert rig.state is S.LISTENING_COMMAND
+    assert rig.spoken() == []
+    assert rig.of(events.CommandReceived) == [
+        events.CommandReceived("abre el navegador", recognized=False)
+    ]
 
 
 # --- CU-05. Cerrar sesión --------------------------------------------------------------------
@@ -402,7 +430,7 @@ async def test_cu05_a4_buenas_noches_sin_jarvis_se_ignora(rig):
     await rig.write("gracias jarvis")
     await rig.advance(1.0)
     await rig.write("buenas noches")
-    assert rig.state is S.IDLE
+    assert rig.state is S.LISTENING_COMMAND  # en reposo despierta como texto no reconocido
     assert len(rig.sessions.find_open()) == 1
 
 
@@ -462,3 +490,22 @@ async def test_un_texto_muy_largo_o_con_saltos_de_linea_se_trata_como_no_reconoc
     assert rig.state is S.LISTENING_COMMAND
     assert len(rig.of(events.CommandReceived)) == 1
     assert not rig.of(events.CommandReceived)[0].recognized
+
+
+# --- Intenciones del núcleo: mostrar y ocultar la pantalla (T-2.7) ---------------------------
+
+
+async def test_muestra_y_oculta_la_pantalla_sin_voz_y_reiniciando_la_cuenta(rig):
+    await rig.open_session()
+    await rig.advance(20.0)
+    rig.clear()
+    await rig.write("oculta la pantalla")
+    assert rig.of(events.ShowScreenRequested) == [events.ShowScreenRequested(False)]
+    assert rig.of(events.CommandReceived) == [events.CommandReceived("oculta la pantalla", True)]
+    await rig.write("muestra la pantalla")
+    assert rig.of(events.ShowScreenRequested)[-1] == events.ShowScreenRequested(True)
+    assert rig.spoken() == []  # sin voz
+    await rig.advance(20.0)
+    assert rig.state is S.LISTENING_COMMAND  # la orden cuenta como actividad
+    await rig.advance(10.5)
+    assert rig.state is S.IDLE

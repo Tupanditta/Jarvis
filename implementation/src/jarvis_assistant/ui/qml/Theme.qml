@@ -1,0 +1,88 @@
+// Tokens del sistema de diseño (software/Interfaz/README.md, sección 2).
+// Ningún componente define colores, tamaños ni duraciones propios: todos salen de aquí.
+pragma Singleton
+import QtQuick
+
+QtObject {
+    // Color
+    readonly property color bgBase: "#05070B"
+    readonly property color bgPanel: Qt.rgba(12 / 255, 18 / 255, 28 / 255, 0.78)
+    readonly property color bgRaised: "#121B28"
+    readonly property color lineSoft: "#1B2A3A"
+    readonly property color lineStrong: "#2A4560"
+    readonly property color primary: "#22D3EE"
+    readonly property color primaryBright: "#7DF3FF"
+    readonly property color primaryDim: "#0E7490"
+    readonly property color primaryDeep: "#0B2A4A"
+    readonly property color textPrimary: "#E6F1F8"
+    readonly property color textSecondary: "#8FA6B8"
+    readonly property color textMuted: "#5B7083"
+    readonly property color statusPending: "#F5B544"
+    readonly property color statusDone: "#34D399"
+    readonly property color statusError: "#F2555A"
+
+    // Tipografía
+    readonly property string fontDisplay: "Rajdhani"
+    readonly property string fontBody: "Inter"
+    readonly property string fontMono: "JetBrains Mono"
+    readonly property real displaySpacing: 0.08  // espaciado de `fontDisplay`, sobre su tamaño
+    readonly property int sizeLabel: 11
+    readonly property int sizeSecondary: 13
+    readonly property int sizeText: 15
+    readonly property int sizeTitle: 18
+    readonly property int sizeState: 24
+    readonly property int sizeClock: 40
+    readonly property real lineHeight: 1.4
+
+    // Espaciado, forma
+    readonly property int space4: 4
+    readonly property int space8: 8
+    readonly property int space12: 12
+    readonly property int space16: 16
+    readonly property int space24: 24
+    readonly property int space32: 32
+    readonly property int space48: 48
+    readonly property int radiusPanel: 10
+    readonly property int radiusCard: 6
+    readonly property int cornerMark: 12
+    readonly property real iconStroke: 1.5
+
+    // Movimiento (ms)
+    readonly property int motionTransition: 2000
+    readonly property int motionPanel: 220
+    readonly property int motionState: 400
+    readonly property int motionLevel: 80
+
+    function statusColor(status) {
+        if (status === "pendiente")
+            return statusPending
+        return status === "error" ? statusError : statusDone
+    }
+
+    function activityColor(activity) {
+        switch (activity) {
+        case "escuchando":
+        case "hablando":
+            return primary
+        case "esperando":
+            return statusPending
+        case "procesando":
+            return primaryBright
+        default:
+            return textSecondary
+        }
+    }
+
+    function mix(a, b, t) {
+        return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t,
+                       a.a + (b.a - a.a) * t)
+    }
+
+    function alpha(c, a) {
+        return Qt.rgba(c.r, c.g, c.b, a)
+    }
+
+    function icon(name) {
+        return Qt.resolvedUrl("../assets/icons/" + name + ".svg")
+    }
+}

@@ -1,4 +1,4 @@
-# Especificación del Asistente de Voz Personal «Jarvis»
+# Especificación del Asistente Personal «Jarvis»
 
 Especificación formal y completa del producto. Es la única fuente de verdad para implementar: no quedan puntos «por definir». Si el código y esta carpeta discrepan, manda esta carpeta.
 
@@ -13,7 +13,7 @@ Especificación formal y completa del producto. Es la única fuente de verdad pa
 | 5 | [Requisitos/no-funcionales.md](Requisitos/no-funcionales.md) | Cualidades medibles (`RNF-XX`). |
 | 6 | [arquitectura.md](arquitectura.md) | Diseño técnico: hilos, flujo de un turno, interfaz común de módulos, estructura de código, dependencias. |
 | 7 | [catalogo-intenciones.md](catalogo-intenciones.md) | Todas las frases que entiende el asistente y todas las que dice. |
-| 8 | [Modulos/](Modulos/) | Un documento por módulo: 8 de acción y 11 de infraestructura. |
+| 8 | [Modulos/](Modulos/) | Un documento por módulo: 8 de acción y 10 de infraestructura. |
 | 9 | [BaseDatos/especificacion-base-datos.md](BaseDatos/especificacion-base-datos.md) | Esquema SQLite y reglas de integridad. |
 | 10 | [Interfaz/README.md](Interfaz/README.md) | Diseño visual: pantalla de sesión, orbe, animaciones, HUD flotante y sistema de diseño. |
 | 11 | [CasosUso/](CasosUso/catalogo-cu.md) | Casos de uso y matriz de trazabilidad. |
@@ -29,6 +29,21 @@ Especificación formal y completa del producto. Es la única fuente de verdad pa
 ## Qué cambió respecto a la especificación anterior
 
 La versión anterior completa está en [_obsoleto/especificacion-anterior/](_obsoleto/especificacion-anterior/). No debe usarse para implementar.
+
+### Entrada por texto en lugar de voz (2026-11-14)
+
+El usuario deja de hablar al asistente: escribe sus órdenes en una caja de texto y el asistente sigue respondiendo con voz. Motivo: el reconocimiento de voz no interpretaba bien las órdenes y era el cuello de botella del proyecto. Se conservan los estados, las frases del ciclo de vida, las frases de control y la voz de salida; todo lo que hacía la voz del usuario se hace escribiendo. Diseño: [../docs/superpowers/specs/2026-11-14-entrada-por-texto-design.md](../docs/superpowers/specs/2026-11-14-entrada-por-texto-design.md).
+
+| Antes | Ahora |
+|---|---|
+| «Hey Jarvis» detectada por audio con `openwakeword`. | «Hey Jarvis» escrita, reconocida por el enrutador; vale «Jarvis» a secas y admite erratas. |
+| Órdenes dichas, capturadas con VAD y transcritas con `faster-whisper`. | Órdenes escritas y enviadas con Enter ([entrada-texto.md](Modulos/Infraestructura/entrada-texto.md)). |
+| 30 s de silencio pasan a reposo. | 30 s sin enviar ni teclear pasan a reposo. |
+| Nada visible en modo dormido salvo la bandeja. | La ventana con la caja de texto está visible desde el arranque. |
+| El HUD nunca toma el foco. | El HUD no toma el foco por su cuenta; lo recibe con un clic en su caja de texto. |
+| El orbe reacciona al micrófono y a la voz del asistente. | El orbe reacciona solo a la voz del asistente. |
+
+Se retiran: RF-62, RF-95, RNF-30, RES-11, las decisiones AD-05, AD-06, AD-07, AD-16, AD-17 y AD-18, y los documentos de captura de audio y de transcriptor. Los identificadores retirados se conservan con su marca y no se reutilizan. Los puntos de este documento que hablan de escucha restringida o de dictado describen la versión anterior a este cambio.
 
 ### Ideas conservadas sin cambios
 
@@ -55,3 +70,5 @@ Cancelar por voz («cancelar»), interrumpir al asistente con «Hey Jarvis» mie
 ### Documentos retirados
 
 `design.md`, `tasks.md`, `alcance-prototipo-1.md`, `guia-entrenamiento-buenas-noches.md` y `especificaci_n_de_arquitectura_y_refactorizaci_n.md` se sustituyen por [arquitectura.md](arquitectura.md) y [plan-implementacion.md](plan-implementacion.md).
+
+`Modulos/Infraestructura/captura-audio.md` y `Modulos/Infraestructura/transcriptor.md` se retiran con la entrada por voz; los sustituye [entrada-texto.md](Modulos/Infraestructura/entrada-texto.md).

@@ -146,3 +146,25 @@ def _until(condition, timeout=3.0):
             return True
         time.sleep(0.005)
     return False
+
+
+def test_argumentos_de_la_interfaz():
+    assert not parse_args([]).preview and not parse_args([]).ui_debug
+    args = parse_args(["--preview", "--ui-debug"])
+    assert args.preview and args.ui_debug
+
+
+def test_la_vista_previa_no_arranca_el_nucleo_ni_toma_la_instancia(tmp_path, monkeypatch):
+    platform = FakePlatform(tmp_path)
+    started = []
+    monkeypatch.setattr(main_module, "create_platform", lambda: platform)
+    monkeypatch.setattr(main_module, "setup_logging", lambda *args: None)
+    monkeypatch.setattr(main_module, "install_excepthooks", lambda: None)
+    monkeypatch.setattr(
+        main_module, "acquire_single_instance", lambda name: pytest.fail("sin instancia única")
+    )
+    monkeypatch.setattr(main_module, "_run", lambda *args: pytest.fail("sin núcleo"))
+    monkeypatch.setattr(main_module, "_run_preview", lambda args, paths: started.append(args) or 0)
+    assert main_module.main(["--preview"]) == 0
+    assert started and started[0].preview
+    assert not (platform.data_dir() / "jarvis.db").exists()

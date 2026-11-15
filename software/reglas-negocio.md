@@ -8,7 +8,7 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 |---|---|---|
 | RN-01 | **Estados de tarea.** Toda tarea mostrada en la interfaz o registrada en el historial tiene exactamente uno de tres estados: `pendiente`, `error` o `completado`. Una tarea nace `pendiente` y termina en `completado` o `error`. | Idea |
 | RN-41 | **Ruta de carpeta inválida.** Cuando en `cd`, en la apertura de una carpeta o en el mapeo de entorno la ruta no existe o no es una carpeta, la tarea queda en `error` y el asistente dice un motivo breve que distingue «no existe» de «no es una carpeta». No hay ningún otro efecto. Si falla la apertura del propio gestor de archivos, se aplica la misma pauta. | Idea |
-| RN-44 | **Un turno a la vez.** Las órdenes se atienden de una en una y en orden. Mientras se atiende una, la escucha sigue activa y como máximo una orden posterior queda en espera; las demás se descartan. Las frases de control (RN-52) se atienden de inmediato, sin esperar. | Refuerzo |
+| RN-44 | **Un turno a la vez.** Las órdenes se atienden de una en una y en orden. Mientras se atiende una, el usuario puede seguir escribiendo y como máximo una orden posterior queda en espera; las demás se descartan. Las frases de control (RN-52) se atienden de inmediato, sin esperar. | Refuerzo |
 | RN-52 | **Frases de control.** «Gracias Jarvis», «Buenas noches Jarvis» y «cancelar» son frases de control: tienen efecto en escucha y en espera, aunque haya una orden en curso. «Cancelar» detiene la orden o el diálogo en curso; la tarea afectada queda en `error` con el motivo «cancelada». | Refuerzo |
 
 ## 2. Sesión
@@ -17,11 +17,11 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 |---|---|---|
 | RN-02 | **Valores por defecto.** Una sesión nueva se llama como la fecha local de apertura (`AAAA-MM-DD`) y no es importante. Si ya existe una sesión no eliminada con ese nombre, se añade un sufijo: `AAAA-MM-DD (2)`, `(3)`… | Idea + Refuerzo |
 | RN-43 | **Ciclo de vida.** El asistente está siempre en una de estas situaciones: | Idea |
-| | • **Dormido:** sin sesión. Situación al arrancar el proceso y tras cerrar una sesión. Solo se atiende «Hey Jarvis», que abre una sesión nueva y pasa a escucha. | |
-| | • **Reposo:** sesión abierta, sin escuchar órdenes. «Hey Jarvis» pasa a escucha; «Buenas noches Jarvis» cierra la sesión y pasa a dormido. Ninguna otra frase tiene efecto. | |
-| | • **Escucha:** sesión abierta, escuchando órdenes. «Gracias Jarvis» pasa a reposo; 30 s ⚙ sin voz pasan a reposo; «Buenas noches Jarvis» cierra la sesión. | |
+| | • **Dormido:** sin sesión. Situación al arrancar el proceso y tras cerrar una sesión. De lo que el usuario escribe, solo se atiende «Hey Jarvis», que abre una sesión nueva y pasa a escucha. | |
+| | • **Reposo:** sesión abierta, sin atender órdenes. «Hey Jarvis» pasa a escucha; «Buenas noches Jarvis» cierra la sesión y pasa a dormido. Ninguna otra frase tiene efecto. | |
+| | • **Escucha:** sesión abierta, atendiendo las órdenes escritas. «Gracias Jarvis» pasa a reposo; 30 s ⚙ sin escribir pasan a reposo; «Buenas noches Jarvis» cierra la sesión. | |
 | | • **Espera:** sesión abierta, esperando la respuesta a una pregunta. Cuenta como escucha para las frases de control: «Gracias Jarvis» cancela la operación en pausa y pasa a reposo; «Buenas noches Jarvis» la cancela y cierra la sesión. | |
-| | Solo «Hey Jarvis» activa la escucha; «Jarvis» suelto no tiene efecto. Cerrar la sesión nunca termina el proceso. | |
+| | Todas las frases se escriben en la caja de texto. Solo la frase de activación activa la escucha: «Hey Jarvis» o, abreviada, «Jarvis»; se admiten erratas leves. Cerrar la sesión nunca termina el proceso. | |
 | RN-03 | **Nombre fijado por el usuario.** Si el usuario fijó el nombre mediante el módulo Sesión, ningún protocolo puede cambiarlo. | Idea |
 | RN-04 | **Renombrado propuesto por un protocolo.** Si el nombre no lo fijó el usuario, un protocolo puede proponer cambiarlo por el nombre del protocolo; solo se aplica si el usuario lo confirma. | Idea |
 | RN-05 | **Prevalencia de la importancia.** Si el usuario marcó la sesión como no importante y después un protocolo la marca como importante, queda importante. | Idea |
@@ -39,7 +39,7 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 | RN-10 | **Sesiones visibles.** El historial muestra como máximo 10 sesiones no eliminadas, primero las importantes y, dentro de cada grupo, de la más reciente a la más antigua. Las que quedan fuera se conservan ocultas. | Idea |
 | RN-11 | **Confirmación para eliminar una sesión.** Solo se elimina por su identificador si el usuario lo confirma tras verla en la interfaz. La sesión actual no se puede eliminar. | Idea + Refuerzo |
 | RN-12 | **Borrado lógico de sesiones.** Eliminar una sesión es marcarla como eliminada; el registro se conserva y deja de mostrarse. Sus actividades dejan de ser consultables. | Idea |
-| RN-53 | **Identificador de sesión.** Es un número entero correlativo, visible en el historial, que el usuario dice por voz. | Refuerzo |
+| RN-53 | **Identificador de sesión.** Es un número entero correlativo, visible en el historial, que el usuario escribe en sus órdenes. | Refuerzo |
 
 ## 4. Comandos
 
@@ -56,8 +56,8 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 
 | ID | Regla | Origen |
 |---|---|---|
-| RN-17 | **Páginas permitidas y navegador.** Solo se abren las URLs del catálogo, y siempre con Microsoft Edge. El catálogo es un archivo de configuración que el usuario edita a mano; no se amplía por voz. | Idea |
-| RN-49 | **Resolución de «abre X».** El nombre dicho se busca, por este orden, en el catálogo de aplicaciones, en el catálogo de páginas y en las aplicaciones descubiertas del sistema. Gana la primera fuente con una coincidencia que supere el umbral. Si ninguna la supera, `error` y «No encuentro X». | Refuerzo |
+| RN-17 | **Páginas permitidas y navegador.** Solo se abren las URLs del catálogo, y siempre con Microsoft Edge. El catálogo es un archivo de configuración que el usuario edita a mano; no se amplía con órdenes. | Idea |
+| RN-49 | **Resolución de «abre X».** El nombre escrito se busca, por este orden, en el catálogo de aplicaciones, en el catálogo de páginas y en las aplicaciones descubiertas del sistema. Gana la primera fuente con una coincidencia que supere el umbral. Si ninguna la supera, `error` y «No encuentro X». | Refuerzo |
 
 ## 6. Creación de Archivos/Carpetas
 
@@ -103,6 +103,6 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 | ID | Regla | Origen |
 |---|---|---|
 | RN-37 | **Respuesta a una operación en pausa.** Mientras hay una operación en pausa, la respuesta del usuario se dirige a ella y no se interpreta como orden nueva, salvo las frases de control (RN-52). Solo puede haber una operación en pausa. Si la respuesta no es del tipo esperado, el asistente repite la pregunta una vez; a la segunda respuesta no válida, cancela la operación. | Idea + Refuerzo |
-| RN-38 | **Tiempo máximo de espera.** Toda operación en pausa espera como máximo 20 s ⚙ de silencio; al vencer se cancela y el asistente dice «Operación cancelada». Nunca se ejecuta una acción por defecto. La espera no requiere repetir «Hey Jarvis». | Idea + Refuerzo |
-| RN-48 | **Interrupción de la locución.** Mientras el asistente habla no se capturan órdenes. Las frases del ciclo de vida no se pueden interrumpir. Cualquier otra locución se interrumpe diciendo «Hey Jarvis» o con el botón de silencio de la interfaz; el asistente calla y escucha. | Idea + Refuerzo |
-| RN-51 | **Órdenes no reconocidas.** Una frase que no alcanza el umbral de ninguna intención se ignora en silencio: sin voz y sin animación. La interfaz la muestra en los subtítulos como no reconocida. Cuenta como voz para la cuenta de 30 s. | Idea + Refuerzo |
+| RN-38 | **Tiempo máximo de espera.** Toda operación en pausa espera como máximo 20 s ⚙ sin respuesta; al vencer se cancela y el asistente dice «Operación cancelada». Nunca se ejecuta una acción por defecto. La espera no requiere repetir «Hey Jarvis». | Idea + Refuerzo |
+| RN-48 | **Interrupción de la locución.** Las frases del ciclo de vida no se pueden interrumpir: lo que el usuario envía mientras suenan se atiende al terminar. Cualquier otra locución se interrumpe escribiendo «Hey Jarvis» o con el botón de silencio de la interfaz; el asistente calla y sigue atendiendo. | Idea + Refuerzo |
+| RN-51 | **Órdenes no reconocidas.** Un texto que no alcanza el umbral de ninguna intención no produce respuesta: sin voz y sin animación. La interfaz lo muestra en los subtítulos como no reconocido. Cuenta como actividad para la cuenta de 30 s. | Idea + Refuerzo |

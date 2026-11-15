@@ -73,7 +73,7 @@ class PlatformAdapter(Protocol):
 | Instancia única | Mutex con nombre en `Local\` | Archivo de bloqueo con `fcntl` |
 | Inicio automático | Acceso directo en la carpeta Inicio del usuario que lanza `pythonw.exe -m jarvis_assistant` (`scripts/install_startup.ps1`) | Archivo `.desktop` en `~/.config/autostart` |
 
-**Traer al frente en Wayland:** cuando `can_focus_windows` es `False`, el botón «traer al frente» no se muestra y la orden de voz responde «No está disponible en este sistema».
+**Traer al frente en Wayland:** cuando `can_focus_windows` es `False`, el botón «traer al frente» no se muestra y la orden responde «No está disponible en este sistema».
 
 ## Criterios de aceptación
 

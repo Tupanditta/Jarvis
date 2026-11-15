@@ -11,7 +11,7 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice «Árbol», «Muestra el árbol» o «Árbol de {ruta}».
+El usuario escribe «Árbol», «Muestra el árbol» o «Árbol de {ruta}».
 
 ## Flujo principal
 

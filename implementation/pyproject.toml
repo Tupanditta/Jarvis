@@ -35,6 +35,11 @@ where = ["src"]
 jarvis_assistant = [
     "core/migrations/*.sql",
     "resources/config_defaults/*.toml",
+    "ui/qml/qmldir",
+    "ui/qml/*.qml",
+    "ui/qml/*/*.qml",
+    "ui/assets/fonts/*",
+    "ui/assets/icons/*",
 ]
 
 [tool.pytest.ini_options]

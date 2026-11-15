@@ -36,12 +36,12 @@ Para una frase del ciclo de vida, el `speaker` publica el evento de la transici�
 
 ### Interrupción (RN-48, RF-70)
 
-| Tipo de locución | Modo de captura mientras suena | Se interrumpe con |
-|---|---|---|
-| Frase del ciclo de vida | `MUTED` | Nada. |
-| Cualquier otra | `WAKE_ONLY` | «Hey Jarvis», el botón de silencio de la interfaz, o un cierre de sesión. |
+| Tipo de locución | Se interrumpe con |
+|---|---|
+| Frase del ciclo de vida | Nada. Lo que el usuario envía mientras suena se atiende al terminar. |
+| Cualquier otra | Escribir «Hey Jarvis», el botón de silencio de la interfaz, o un cierre de sesión. |
 
-Al interrumpir: el audio se corta con un fundido de 30 ms, se vacía la cola de locuciones y se publica `SpeechFinished(interrupted=True)`. Al terminar cualquier locución, la captura se reabre tras 0,3 s ([captura-audio.md](captura-audio.md)).
+Al interrumpir: el audio se corta con un fundido de 30 ms, se vacía la cola de locuciones y se publica `SpeechFinished(interrupted=True)`.
 
 ### Repetir (RF-94)
 
@@ -62,7 +62,7 @@ class Speaker:
 
 ## Criterios de aceptación
 
-- Con un sintetizador y un reproductor falsos: orden de la cola, interrupción, cambio de modo de captura al inicio y al fin, `on_start` llamado al empezar el audio.
+- Con un sintetizador y un reproductor falsos: orden de la cola, interrupción, `on_start` llamado al empezar el audio.
 - Todas las frases del catálogo se renderizan con parámetros de ejemplo sin error.
 - Formateadores de fechas, duraciones y plurales con pruebas unitarias.
 - Con el modelo real (marcador `models`): la síntesis de una frase corta tarda menos de 0,5 s en el equipo de referencia.

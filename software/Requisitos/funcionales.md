@@ -8,8 +8,8 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 
 | ID | El sistema debe… | P | F | Origen |
 |---|---|---|---|---|
-| RF-01 | Abrir una sesión nueva, con nombre e importancia por defecto (RN-02), cuando el usuario dice «Hey Jarvis» en modo dormido. Arrancar el proceso no abre sesión. Cada apertura crea una sesión distinta. Si «Hey Jarvis» se dice mientras aún se muestra la animación de cierre de la sesión anterior, la sesión nueva se abre al instante y la pantalla no se cierra. | A | 1 | Idea |
-| RF-02 | Cerrar la sesión cuando el usuario dice «Buenas noches Jarvis» con la sesión abierta: en escucha y en espera, como orden transcrita; en reposo, mediante la escucha restringida de [captura-audio.md](../Modulos/Infraestructura/captura-audio.md), que solo acepta esa frase. Al cerrar se aplica RN-46. Cerrar no termina el proceso. | A | 1 | Idea, modificada |
+| RF-01 | Abrir una sesión nueva, con nombre e importancia por defecto (RN-02), cuando el usuario escribe «Hey Jarvis» en modo dormido. Arrancar el proceso no abre sesión. Cada apertura crea una sesión distinta. Si «Hey Jarvis» se dice mientras aún se muestra la animación de cierre de la sesión anterior, la sesión nueva se abre al instante y la pantalla no se cierra. | A | 1 | Idea |
+| RF-02 | Cerrar la sesión cuando el usuario escribe «Buenas noches Jarvis» con la sesión abierta: en escucha y en espera, como frase de control; en reposo, como única frase admitida junto a «Hey Jarvis» ([entrada-texto.md](../Modulos/Infraestructura/entrada-texto.md)). Al cerrar se aplica RN-46. Cerrar no termina el proceso. | A | 1 | Idea, modificada |
 | RF-03 | Permitir que el usuario fije el nombre de la sesión actual. | M | 4 | Idea |
 | RF-04 | Permitir que el usuario marque la sesión actual como importante. | M | 4 | Idea |
 | RF-05 | Permitir que el usuario marque la sesión actual como no importante. | M | 4 | Idea |
@@ -52,7 +52,7 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-22 | Lanzar las aplicaciones del catálogo y las aplicaciones instaladas descubiertas en el sistema (RN-49). | A | 3 | Idea |
 | RF-23 | Abrir en Microsoft Edge una URL del catálogo (RN-17). | A | 3 | Idea |
 | RF-24 | Mostrar en el panel de aperturas el estado (RN-01) de cada apertura. | M | 3 | Idea |
-| RF-25 | Traer al frente, con un clic en el botón de su tarjeta o por voz, la ventana de una aplicación, página o carpeta abierta por el asistente. Si la ventana ya no existe, el botón se desactiva. | M | 3 | Idea |
+| RF-25 | Traer al frente, con un clic en el botón de su tarjeta o con una orden, la ventana de una aplicación, página o carpeta abierta por el asistente. Si la ventana ya no existe, el botón se desactiva. | M | 3 | Idea |
 | RF-58 | Abrir una carpeta en el gestor de archivos nativo (RN-42); ruta inválida o fallo del gestor según RN-41. | B | 3 | Idea |
 
 ## 5. Búsqueda de Archivos/Carpetas
@@ -70,7 +70,7 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 |---|---|---|---|---|
 | RF-29 | Crear un archivo vacío con el nombre indicado, en la ubicación indicada o en el directorio de trabajo (RN-18, RN-54). | A | 4 | Idea |
 | RF-30 | Crear una carpeta con el nombre y la ubicación indicados (RN-18, RN-54). | A | 4 | Idea |
-| RF-31 | Crear un árbol de directorios: una ruta anidada dictada con «barra» entre niveles. | M | 4 | Idea |
+| RF-31 | Crear un árbol de directorios: una ruta anidada escrita con «barra» o `/` entre niveles. | M | 4 | Idea |
 | RF-97 | Crear una estructura de carpetas predefinida en la configuración, con el nombre de carpeta raíz que indique el usuario. | B | 4 | Refuerzo |
 | RF-32 | Avisar por voz de una colisión de nombre y pedir otro nombre o la cancelación (RN-19). | A | 4 | Idea |
 | RF-33 | Completar la creación en pausa con el nombre nuevo (RN-19). | A | 4 | Idea |
@@ -80,7 +80,7 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 
 | ID | El sistema debe… | P | F | Origen |
 |---|---|---|---|---|
-| RF-35 | Crear un recordatorio con una orden de voz, guardando el texto según RN-20. | A | 5 | Idea |
+| RF-35 | Crear un recordatorio con una orden, guardando el texto según RN-20. | A | 5 | Idea |
 | RF-36 | Asignar de una a cinco fechas de aviso (RN-21): la primera, dicha en la misma orden o pedida a continuación; las demás, en el diálogo de creación. | A | 5 | Idea |
 | RF-37 | Asignar de forma opcional una fecha límite en el diálogo de creación (RN-21). | A | 5 | Idea |
 | RF-38 | Programar cada fecha de aviso y la fecha límite. | A | 5 | Idea |
@@ -89,7 +89,7 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-41 | Disparar al abrir sesión las notificaciones que llegaron sin sesión abierta (RN-22), después de la frase de apertura. | A | 5 | Idea |
 | RF-42 | Leer por voz el recordatorio cuyo índice elija el usuario (RN-24). | A | 5 | Idea |
 | RF-43 | Confirmar un recordatorio con «Confirmar recordatorios [índice]» (RN-25, RN-26). | A | 5 | Idea |
-| RF-44 | Activar el panel de recordatorios cuando el usuario dice «Confirmar recordatorios» sin que esté activo (RN-25), sin tomar el foco. | M | 5 | Idea |
+| RF-44 | Activar el panel de recordatorios cuando el usuario escribe «Confirmar recordatorios» sin que esté activo (RN-25), sin tomar el foco. | M | 5 | Idea |
 | RF-45 | Posponer el aviso de un recordatorio (RN-27). | A | 5 | Idea |
 | RF-46 | Decir, tras posponer, cuánto falta para el siguiente aviso. | M | 5 | Idea |
 | RF-47 | Callar la lectura en curso al posponer: el usuario la interrumpe con «Hey Jarvis» (RN-48) y dice «posponer». | M | 5 | Idea |
@@ -110,23 +110,23 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-57 | Actualizar en el panel el estado de cada tarea en cuanto cambia, y decir un resumen al terminar. | M | 6 | Idea |
 | RF-99 | Mostrar los protocolos disponibles a petición del usuario. | B | 6 | Refuerzo |
 
-## 9. Interacción por voz y diálogo
+## 9. Interacción y diálogo
 
 | ID | El sistema debe… | P | F | Origen |
 |---|---|---|---|---|
-| RF-60 | Escuchar el micrófono de forma continua y pasar a escucha al detectar «Hey Jarvis», en dormido (abre sesión) y en reposo. En escucha o en espera, «Hey Jarvis» se ignora en silencio y reinicia la cuenta de silencio correspondiente. Durante una frase del ciclo de vida no se detecta (RN-48). | A | 1 | Idea |
-| RF-61 | Capturar cada orden mientras escucha: termina tras 1 s ⚙ sin voz o al llegar a 15 s ⚙. | A | 1 | Idea |
-| RF-62 | Transcribir a texto en español cada orden y cada respuesta (RNF-15). | A | 1 | Idea |
+| RF-60 | Recibir las órdenes del usuario por una caja de texto, visible desde el arranque, y pasar a escucha cuando escribe «Hey Jarvis», en dormido (abre sesión) y en reposo. En escucha o en espera, «Hey Jarvis» no produce frase ni animación y reinicia la cuenta de inactividad correspondiente. Lo enviado durante una frase del ciclo de vida se atiende al terminar (RN-48). | A | 1 | Idea, modificada |
+| RF-61 | Tomar como una orden cada texto que el usuario envía con Enter. Un envío vacío no tiene efecto. | A | 1 | Idea, modificada |
+| RF-62 | Retirado: entrada por texto (transcripción). El idioma de las órdenes sigue en RNF-15. | A | 1 | Idea |
 | RF-63 | Identificar la intención y sus entidades. | A | 1 | Idea |
 | RF-64 | Ejecutar la acción del módulo que corresponde a la intención. | A | 3 | Idea |
-| RF-65 | Ignorar en silencio las frases no reconocidas (RN-51). | M | 1 | Idea |
+| RF-65 | No responder a los textos no reconocidos, y mostrarlos como tales (RN-51). | M | 1 | Idea |
 | RF-66 | Mantener diálogos de varios turnos (RN-37). | A | 4 | Idea |
 | RF-67 | Formular por voz la pregunta del diálogo y mostrarla en la interfaz con las respuestas admitidas. | A | 4 | Idea |
 | RF-68 | Cancelar la operación en pausa al vencer el tiempo de espera (RN-38). | M | 4 | Idea |
 | RF-69 | Informar por voz del resultado de cada acción. | A | 3 | Idea |
 | RF-70 | Detener la locución en curso (RN-48). | M | 3 | Idea |
 | RF-84 | Cancelar la orden o el diálogo en curso con «cancelar» (RN-52). | M | 4 | Refuerzo |
-| RF-85 | Interrumpir al asistente mientras habla con «Hey Jarvis» (RN-48). | M | 3 | Refuerzo |
+| RF-85 | Interrumpir al asistente mientras habla escribiendo «Hey Jarvis» (RN-48). | M | 3 | Refuerzo |
 | RF-92 | Mostrar, cuando el usuario pide ayuda, las órdenes disponibles con un ejemplo de cada una, generadas del registro de intenciones. | B | 3 | Refuerzo |
 | RF-94 | Repetir la última respuesta cuando el usuario lo pide. | B | 3 | Refuerzo |
 
@@ -136,25 +136,25 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 |---|---|---|---|---|
 | RF-71 | Mostrar el estado (RN-01) de todas las tareas, de todos los módulos, en el panel de actividad, y el estado del asistente (dormido, reposo, escucha, espera, procesando, hablando). | A | 2 | Idea |
 | RF-72 | Conservar las sesiones, sus actividades y los recordatorios entre ejecuciones. | A | 3 | Idea |
-| RF-87 | Mostrar el HUD flotante, siempre encima, sin bordes y sin foco, mientras la sesión está abierta y la pantalla de sesión no es la ventana activa. | A | 2 | Idea |
-| RF-88 | Mostrar u ocultar la pantalla de sesión por voz. | B | 2 | Refuerzo |
-| RF-89 | Mostrar subtítulos: el texto de la última orden transcrita y el de la última respuesta. | M | 2 | Refuerzo |
+| RF-87 | Mostrar el HUD flotante, siempre encima, sin bordes y sin tomar el foco por su cuenta, mientras la sesión está abierta y la pantalla de sesión no es la ventana activa. Incluye una caja de texto que recibe el foco con un clic. | A | 2 | Idea |
+| RF-88 | Mostrar u ocultar la pantalla de sesión con una orden. | B | 2 | Refuerzo |
+| RF-89 | Mostrar subtítulos: el texto de la última orden escrita y el de la última respuesta. | M | 2 | Refuerzo |
 
 ## 11. Ciclo de vida del asistente
 
 | ID | El sistema debe… | P | F | Origen |
 |---|---|---|---|---|
-| RF-75 | Arrancar en modo dormido, sin sesión, sin ventanas visibles y atendiendo solo «Hey Jarvis». En Windows el proceso se inicia al entrar el usuario, sin consola, mediante un acceso directo en su carpeta Inicio. | A | 1 | Idea |
-| RF-76 | Pasar a reposo, con la sesión abierta, cuando el usuario dice «Gracias Jarvis» en escucha o en espera (RN-43). Se reconoce como orden transcrita. | A | 1 | Idea |
-| RF-77 | Volver al modo dormido, sin terminar el proceso, al cerrar la sesión. Ninguna frase termina el proceso; termina desde la bandeja del sistema (RF-86) o al cerrar la sesión de Windows, cerrando antes la sesión de forma ordenada (RN-47). | A | 1 | Idea |
-| RF-78 | Seguir escuchando entre órdenes, sin repetir «Hey Jarvis», hasta «Gracias Jarvis», «Buenas noches Jarvis» o 30 s ⚙ sin voz (pasa a reposo). La cuenta solo corre mientras se atiende al micrófono y no hay una orden en curso: empieza al terminar cada locución, se reinicia al acabar cada frase del usuario (reconocida o no) y con «Hey Jarvis». | A | 1 | Idea |
+| RF-75 | Arrancar en modo dormido, sin sesión, con la ventana visible y su caja de texto atendiendo solo «Hey Jarvis». En Windows el proceso se inicia al entrar el usuario, sin consola, mediante un acceso directo en su carpeta Inicio. | A | 1 | Idea, modificada |
+| RF-76 | Pasar a reposo, con la sesión abierta, cuando el usuario escribe «Gracias Jarvis» en escucha o en espera (RN-43). | A | 1 | Idea |
+| RF-77 | Volver al modo dormido, sin terminar el proceso, al cerrar la sesión. Ninguna frase termina el proceso, ni tampoco cerrar la ventana, que solo la oculta; termina desde la bandeja del sistema (RF-86) o al cerrar la sesión de Windows, cerrando antes la sesión de forma ordenada (RN-47). | A | 1 | Idea |
+| RF-78 | Seguir atendiendo órdenes, sin repetir «Hey Jarvis», hasta «Gracias Jarvis», «Buenas noches Jarvis» o 30 s ⚙ sin actividad (pasa a reposo). Cuenta como actividad enviar un texto, reconocido o no, y teclear en la caja. La cuenta solo corre en escucha y sin una orden en curso: empieza al terminar cada locución y se reinicia con cada actividad y con «Hey Jarvis». | A | 1 | Idea, modificada |
 | RF-79 | Decir una frase fija en cada cambio del ciclo de vida: apertura, «Sesión iniciada. Le escucho.»; paso a reposo, «A su disposición.»; cierre, «Buenas noches. Sesión cerrada.»; vuelta a escucha, «Le escucho.». | M | 1 | Idea |
 | RF-80 | Mostrar la animación de despertar al pasar a escucha desde dormido o desde reposo. Empieza a la vez que su frase (RNF-22) y dura 2 s (RNF-21), sin esperar a la frase. Si hay otra transición en curso, se funde con ella desde su estado actual, sin saltos. | M | 2 | Idea |
-| RF-81 | Mostrar la animación de dormirse al pasar a reposo (la interfaz sigue visible) y al cerrar la sesión (la interfaz se oculta al terminar, salvo RF-01). Mismas reglas de inicio, duración y fundido que RF-80. | M | 2 | Idea |
-| RF-82 | Mostrar la pantalla de sesión, a pantalla completa en el monitor principal, mientras la sesión está abierta. Al abrir la sesión pasa al frente y pide el foco. No queda siempre encima: el usuario puede pasar a otra ventana. En modo dormido no hay ninguna ventana visible. El cursor se oculta sobre ella tras 2 s sin moverse. | M | 2 | Idea |
-| RF-83 | Hacer que el núcleo del orbe reaccione al nivel de la voz: al del micrófono mientras escucha y al de la voz del asistente mientras habla, en todas sus frases. En reposo y sin locución, queda quieto. | M | 2 | Idea |
+| RF-81 | Mostrar la animación de dormirse al pasar a reposo (la interfaz sigue visible) y al cerrar la sesión (al terminar, la pantalla queda en su aspecto de dormido y el HUD se oculta). Mismas reglas de inicio, duración y fundido que RF-80. | M | 2 | Idea |
+| RF-82 | Mostrar la pantalla de sesión, a pantalla completa en el monitor principal, desde el arranque. Al arrancar y al abrir la sesión pasa al frente y pide el foco para la caja de texto. No queda siempre encima: el usuario puede pasar a otra ventana o cerrarla, y recuperarla desde la bandeja. En modo dormido muestra solo el fondo oscuro, el orbe apagado y la caja de texto. El cursor se oculta sobre ella tras 2 s sin moverse. | M | 2 | Idea |
+| RF-83 | Hacer que el núcleo del orbe reaccione al nivel de la voz del asistente mientras habla, en todas sus frases. Sin locución, queda quieto. | M | 2 | Idea, modificada |
 | RF-86 | Mostrar un icono en la bandeja del sistema con el estado del asistente y un menú: abrir sesión, mostrar la pantalla de sesión, abrir la carpeta de configuración, abrir el registro de diagnóstico y salir. | M | 1 | Refuerzo |
-| RF-95 | Reintentar cada 5 s ⚙ la apertura del micrófono cuando no está disponible e indicarlo en el icono de la bandeja. | M | 1 | Refuerzo |
+| RF-95 | Retirado: entrada por texto (reintento del micrófono). | M | 1 | Refuerzo |
 | RF-96 | Releer la configuración al abrir cada sesión; si un archivo es inválido, conservar la configuración anterior y avisar por voz. | B | 3 | Refuerzo |
 
 ## Requisitos retirados

@@ -15,7 +15,7 @@ Permitir al usuario consultar las sesiones recientes y sus actividades, y elimin
 | `actividades` | `id: INTEGER` (opcional) | Historial | Publica `SessionActivitiesShown` con las actividades de la sesión indicada, o de la actual si no se indica. Dice el nombre de la sesión y el número de actividades. |
 | `eliminar` | `id: INTEGER` | Historial | Elimina la sesión tras confirmación (RN-11, RN-12). |
 
-Las tres son invocables por voz. `mostrar` y `actividades` también desde protocolos; `eliminar`, no.
+Las tres son invocables con una orden escrita. `mostrar` y `actividades` también desde protocolos; `eliminar`, no.
 
 ## Reglas
 
@@ -26,7 +26,7 @@ SELECT * FROM sessions WHERE is_deleted = 0
 ORDER BY is_important DESC, opened_at DESC LIMIT 10;
 ```
 
-Cada apertura con «Hey Jarvis» crea una entrada propia, aunque comparta fecha con otra. La sesión actual aparece en la lista, marcada como «actual». Cada fila muestra su identificador numérico, que es lo que el usuario dice para referirse a ella (RN-53).
+Cada apertura con «Hey Jarvis» crea una entrada propia, aunque comparta fecha con otra. La sesión actual aparece en la lista, marcada como «actual». Cada fila muestra su identificador numérico, que es lo que el usuario escribe para referirse a ella (RN-53).
 
 ### Registro de actividades (RF-10)
 

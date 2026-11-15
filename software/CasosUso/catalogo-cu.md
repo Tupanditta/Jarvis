@@ -6,7 +6,7 @@ Actores y casos de uso del asistente. La especificación de cada uno está en `E
 
 | ID | Nombre | Descripción |
 |---|---|---|
-| ACT-01 | Usuario | Persona que da órdenes de voz al asistente y ve su interfaz. |
+| ACT-01 | Usuario | Persona que escribe órdenes al asistente y ve su interfaz. |
 | ACT-02 | Gestor de archivos del sistema | Aplicación nativa que muestra el contenido de una carpeta (el Explorador en Windows). |
 | ACT-03 | Planificador | Componente interno que dispara los avisos de los recordatorios a su hora. |
 | ACT-04 | Sistema operativo | Lanza aplicaciones, páginas y binarios, y gestiona las ventanas. |
@@ -38,4 +38,4 @@ Actores y casos de uso del asistente. La especificación de cada uno está en `E
   - **AC-2. «Cancelar»:** detiene la orden o el diálogo en curso (RN-52).
   - **AC-3. «Gracias Jarvis» o «Buenas noches Jarvis»:** se aplican CU-04 o CU-05 (RN-43, RN-46).
   - **AC-4. Entidad no resuelta:** la tarea queda en `error` y el sistema dice el motivo ([enrutador-intenciones.md](../Modulos/Infraestructura/enrutador-intenciones.md), sección 4).
-  - **AC-5. Error inesperado:** la tarea queda en `error`, el sistema dice «Ha ocurrido un error» y sigue escuchando (RNF-23).
+  - **AC-5. Error inesperado:** la tarea queda en `error`, el sistema dice «Ha ocurrido un error» y sigue atendiendo órdenes (RNF-23).

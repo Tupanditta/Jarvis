@@ -19,7 +19,7 @@ from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.repositories import SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
-from jarvis_assistant.intent_router.router import IntentRouter
+from jarvis_assistant.intent_router.router import HIDE_SCREEN, SHOW_SCREEN, IntentRouter
 from jarvis_assistant.speaker.speaker import Speaker
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,8 @@ class Orchestrator:
         entry = self._router.route(text, self._machine.state)
         if entry is None:
             return
-        if isinstance(entry, fsm.Control | fsm.ClosingPhraseInIdle | fsm.WakeWord):
+        recognized = fsm.Control | fsm.ClosingPhraseInIdle | fsm.WakeWord | fsm.IntentMatched
+        if isinstance(entry, recognized):
             logger.info("Frase reconocida: %s", type(entry).__name__)
             self._bus.publish(events.CommandReceived(text, recognized=True))
         await self._handle(entry)
@@ -191,6 +192,10 @@ class Orchestrator:
             case fsm.ExitProcess():
                 self._stopping = True
                 self._on_exit()
+            case fsm.RunTurn(intent=intent) if intent in (SHOW_SCREEN, HIDE_SCREEN):
+                # Sin voz: solo la interfaz cambia (catalogo-intenciones.md, sección 2).
+                self._bus.publish(events.ShowScreenRequested(visible=intent == SHOW_SCREEN))
+                self._restart_silence_timer()
             case fsm.RunTurn():
                 logger.warning("No hay módulos de acción registrados: la orden se ignora")
                 self._restart_silence_timer()

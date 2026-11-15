@@ -120,6 +120,24 @@ def test_reposo_ignora_gracias_jarvis_y_el_silencio():
     assert fsm.state is S.IDLE
 
 
+def test_reposo_con_una_intencion_despierta_en_silencio_y_ejecuta_el_turno():
+    fsm = machine(S.IDLE)
+    effects = fsm.handle(IntentMatched("nucleo.mostrar_pantalla"))
+    assert fsm.state is S.LISTENING_COMMAND
+    assert effects == [PublishListeningResumed(silent=True), RunTurn("nucleo.mostrar_pantalla")]
+
+
+def test_reposo_con_frase_no_reconocida_despierta_en_silencio_y_la_publica():
+    fsm = machine(S.IDLE)
+    effects = fsm.handle(NoMatch("abre el navegador"))
+    assert fsm.state is S.LISTENING_COMMAND
+    assert effects == [
+        PublishListeningResumed(silent=True),
+        PublishUnrecognized("abre el navegador"),
+        RestartSilenceTimer(),
+    ]
+
+
 def test_escucha_con_intencion_ejecuta_el_turno():
     intent = object()
     fsm = machine(S.LISTENING_COMMAND)

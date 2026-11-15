@@ -11,12 +11,12 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice «Abre la carpeta {ruta}» o «Abre esta carpeta».
+El usuario escribe «Abre la carpeta {ruta}» o «Abre esta carpeta».
 
 ## Flujo principal
 
-1. El sistema transcribe la orden e identifica `apertura.abrir_carpeta`.
-2. El sistema resuelve la ruta: lugar con nombre, subcarpeta del directorio de trabajo o ruta dictada; sin ruta, el directorio de trabajo (RN-42).
+1. El sistema identifica `apertura.abrir_carpeta`.
+2. El sistema resuelve la ruta: lugar con nombre, subcarpeta del directorio de trabajo o ruta escrita; sin ruta, el directorio de trabajo (RN-42).
 3. El sistema crea la tarea en `pendiente` y la muestra en el panel de actividad.
 4. El sistema abre la carpeta en el gestor de archivos. La ventana del gestor toma el foco; el asistente no lo recupera (RES-32).
 5. La tarea pasa a `completado`. El sistema dice «Abriendo {nombre}.» y añade la carpeta al panel de aperturas.

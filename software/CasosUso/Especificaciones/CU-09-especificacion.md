@@ -11,7 +11,7 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice, p. ej., «Crea el archivo notas punto txt en documentos».
+El usuario escribe, p. ej., «Crea el archivo notas punto txt en documentos».
 
 ## Flujo principal
 
@@ -23,11 +23,11 @@ El usuario dice, p. ej., «Crea el archivo notas punto txt en documentos».
 ## Flujos alternativos
 
 - **A1. Colisión** (paso 2): el destino ya existe.
-  1. El sistema pausa la tarea y pasa a `AWAITING_PARAMETER`. Dice «Ya existe notas.txt. Diga otro nombre o cancelar.» y muestra la pregunta en la interfaz.
-  2. El usuario dice otro nombre, sin repetir «Hey Jarvis»: «notas dos punto txt».
+  1. El sistema pausa la tarea y pasa a `AWAITING_PARAMETER`. Dice «Ya existe notas.txt. Escriba otro nombre o cancelar.» y muestra la pregunta en la interfaz.
+  2. El usuario escribe otro nombre, sin repetir «Hey Jarvis»: «notas dos punto txt».
   3. El sistema vuelve al paso 2 con el nombre nuevo.
 - **A2. El nombre nuevo también colisiona:** se repite A1. A la tercera colisión seguida, el sistema dice «Operación cancelada.»; la tarea queda en `error`.
-- **A3. El usuario dice «cancelar»** (en A1): «Operación cancelada.»; `error`, motivo «cancelada». No se crea nada.
+- **A3. El usuario escribe «cancelar»** (en A1): «Operación cancelada.»; `error`, motivo «cancelada». No se crea nada.
 - **A4. 20 s sin respuesta** (en A1): igual que A3.
 - **A5. Ubicación inexistente** (paso 1): `error`; «La carpeta {nombre} no existe.».
 - **A6. Carpeta:** «Crea la carpeta {nombre}» sigue el mismo flujo.

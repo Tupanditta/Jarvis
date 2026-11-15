@@ -220,6 +220,10 @@ class StateMachine:
         if isinstance(entry, ClosingPhraseInIdle):
             self.state = _S.DORMIDO
             return [CloseSession(reason="voz")]
+        if isinstance(entry, IntentMatched | NoMatch):
+            # Cualquier texto despierta en silencio y se atiende como en escucha.
+            self.state = _S.LISTENING_COMMAND
+            return [PublishListeningResumed(silent=True), *self._listening(entry)]
         if isinstance(entry, NoticeReady) and entry.reminder:
             self.state = _S.LISTENING_COMMAND
             return [

@@ -143,4 +143,9 @@ def test_las_ventanas_propias_quedan_registradas(tmp_path):
     platform = FakePlatform(tmp_path)
     platform.bring_own_window_to_front(11)
     platform.make_non_activating(22)
-    assert platform.calls == [("bring_own_window_to_front", (11,)), ("make_non_activating", (22,))]
+    platform.make_non_activating(22, enabled=False)
+    assert platform.calls == [
+        ("bring_own_window_to_front", (11,)),
+        ("make_non_activating", (22, True)),
+        ("make_non_activating", (22, False)),
+    ]

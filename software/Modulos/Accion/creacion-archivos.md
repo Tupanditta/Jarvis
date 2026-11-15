@@ -16,7 +16,7 @@ Crear un archivo, una carpeta o un árbol de directorios sin sobrescribir nunca 
 | `crear_arbol` | `arbol: NEW_PATH`, `ruta: DIR_PATH` (opcional) | Crea una ruta anidada, p. ej. «backend barra src barra modelos» (RF-31). |
 | `crear_estructura` | `estructura: CATALOG` (estructuras), `nombre: NEW_NAME`, `ruta: DIR_PATH` (opcional) | Crea una carpeta raíz con las subcarpetas de una estructura predefinida en `structures.toml` (RF-97). |
 
-Todas se pueden invocar por voz y desde protocolos. No tienen panel propio: se ven en el panel de actividad y, si hay colisión, en el de diálogo.
+Todas se pueden invocar con una orden escrita y desde protocolos. No tienen panel propio: se ven en el panel de actividad y, si hay colisión, en el de diálogo.
 
 ## Reglas
 

@@ -89,7 +89,7 @@ CREATE INDEX idx_triggers_pending ON reminder_triggers (is_fired, trigger_at);
 | `id` | Identificador numérico que el usuario ve y dice (RN-53). |
 | `name` | Nombre; por defecto, la fecha local de apertura (RN-02). |
 | `opened_at` | Momento de apertura. |
-| `closed_at`, `close_reason` | Momento y motivo del cierre: `voz`, `salida` (desde la bandeja o fin de sesión de Windows) o `interrumpida` (RN-47). Ambos `NULL` mientras la sesión está abierta. Como máximo hay una sesión abierta. |
+| `closed_at`, `close_reason` | Momento y motivo del cierre: `voz` (el usuario escribió la frase de cierre; el valor conserva su nombre de cuando la frase se decía, para no reconstruir la tabla), `salida` (desde la bandeja o fin de sesión de Windows) o `interrumpida` (RN-47). Ambos `NULL` mientras la sesión está abierta. Como máximo hay una sesión abierta. |
 | `is_important` | Importancia (RN-05 a RN-08). |
 | `name_set_by_module` | 1 si el usuario fijó el nombre mediante el módulo Sesión (RN-03). |
 | `importance_locked_by_module` | 1 si el usuario la marcó importante mediante el módulo Sesión (RN-06). |
@@ -142,7 +142,7 @@ CREATE INDEX idx_triggers_pending ON reminder_triggers (is_fired, trigger_at);
 
 | Cambio | Motivo |
 |---|---|
-| `sessions.id` pasa de `TEXT` a `INTEGER` autoincremental. | Se puede dictar por voz (RN-53). |
+| `sessions.id` pasa de `TEXT` a `INTEGER` autoincremental. | Es breve y fácil de escribir en una orden (RN-53). |
 | `created_at` de `sessions` pasa a llamarse `opened_at`; se añaden `closed_at` y `close_reason`. | Ciclo de vida y recuperación de sesiones interrumpidas (RN-47). |
 | Se añaden `pending_purge_on_close` y `displaced_by`. | La marca de desbordamiento no existía y se perdía ante un cierre inesperado (RN-08, RN-09). |
 | Se añaden `parent_id` y `finished_at` a `session_activities`. | Tareas de protocolo y duración. |

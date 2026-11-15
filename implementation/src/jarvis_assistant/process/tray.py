@@ -2,21 +2,31 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QUrl, Slot
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject, QRectF, Qt, QUrl, Slot
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from jarvis_assistant.core import events
 from jarvis_assistant.core.events import Activity
 
-ICON_COLORS = {
-    Activity.DORMIDO.value: "#5a6270",
-    Activity.REPOSO.value: "#2f6f9f",
-    Activity.ESCUCHANDO.value: "#35c2ff",
-    Activity.PROCESANDO.value: "#f2b632",
-    Activity.HABLANDO.value: "#4fd68a",
-    Activity.ESPERANDO.value: "#f2b632",
+# Cuatro variantes (Interfaz, sección 9), con colores de los tokens del tema.
+ICON_VARIANTS = {
+    "dormido": "#5B7083",  # text.muted: gris
+    "reposo": "#0E7490",  # primary.dim: cian tenue
+    "activo": "#22D3EE",  # primary: cian
+    "esperando": "#F5B544",  # status.pending: ámbar
 }
+
+ICON_VARIANT_OF = {
+    Activity.DORMIDO: "dormido",
+    Activity.REPOSO: "reposo",
+    Activity.ESCUCHANDO: "activo",
+    Activity.PROCESANDO: "activo",
+    Activity.HABLANDO: "activo",
+    Activity.ESPERANDO: "esperando",
+}
+
+ICON_SIZES = (16, 20, 24, 32, 48)
 
 STATE_TEXT = {
     Activity.DORMIDO: "dormido",
@@ -34,15 +44,25 @@ def tooltip(activity: Activity, session_name: str | None) -> str:
 
 
 def make_icon(color: str) -> QIcon:
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(color))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(6, 6, 52, 52)
-    painter.end()
-    return QIcon(pixmap)
+    """Un círculo con un anillo, de 16 a 48 px."""
+    icon = QIcon()
+    for size in ICON_SIZES:
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        stroke = max(1.0, size / 12)
+        painter.setPen(QPen(QColor(color), stroke))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        inset = stroke / 2 + size * 0.04
+        painter.drawEllipse(QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        core = size * 0.42
+        painter.drawEllipse(QRectF((size - core) / 2, (size - core) / 2, core, core))
+        painter.end()
+        icon.addPixmap(pixmap)
+    return icon
 
 
 class TrayController(QObject):
@@ -60,7 +80,7 @@ class TrayController(QObject):
         self._open_folder = open_folder or _open_in_file_manager
         self._activity = Activity.DORMIDO
         self._session_name: str | None = None
-        self._icons = {key: make_icon(color) for key, color in ICON_COLORS.items()}
+        self._icons = {key: make_icon(color) for key, color in ICON_VARIANTS.items()}
 
         self.icon = QSystemTrayIcon()
         self.menu = QMenu()
@@ -105,7 +125,8 @@ class TrayController(QObject):
     def _update(self) -> None:
         asleep = self._session_name is None
         self.open_action.setVisible(asleep)
-        self.icon.setIcon(self._icons[self._activity.value])
+        self.variant = ICON_VARIANT_OF[self._activity]
+        self.icon.setIcon(self._icons[self.variant])
         self.icon.setToolTip(tooltip(self._activity, self._session_name))
 
 

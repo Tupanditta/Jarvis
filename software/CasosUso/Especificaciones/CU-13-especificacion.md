@@ -11,13 +11,13 @@ Sesión abierta y asistente en `LISTENING_COMMAND`. El protocolo está definido 
 
 ## Disparador
 
-El usuario dice «Protocolo modo trabajo».
+El usuario escribe «Protocolo modo trabajo».
 
 ## Flujo principal
 
 1. El sistema identifica `protocolos.ejecutar` y encuentra el protocolo por su nombre.
 2. El sistema abre el panel del protocolo con todas sus tareas en `pendiente` y dice «Iniciando el protocolo modo trabajo.».
-3. El nombre de la sesión no lo ha fijado el usuario: el sistema pasa a `AWAITING_CONFIRMATION` y pregunta «¿Quiere llamar a esta sesión modo trabajo?». El usuario dice «Sí» y la sesión toma ese nombre.
+3. El nombre de la sesión no lo ha fijado el usuario: el sistema pasa a `AWAITING_CONFIRMATION` y pregunta «¿Quiere llamar a esta sesión modo trabajo?». El usuario escribe «Sí» y la sesión toma ese nombre.
 4. El protocolo es importante: la sesión pasa a importante (RN-36).
 5. El sistema ejecuta las tareas en orden, cada una con la interfaz común de su módulo. El estado de cada una cambia en el panel en cuanto se produce, sin frases intermedias.
 6. Al terminar, el sistema dice «Protocolo modo trabajo completado.». Cada tarea queda registrada como actividad de la sesión.
@@ -25,7 +25,7 @@ El usuario dice «Protocolo modo trabajo».
 ## Flujos alternativos
 
 - **A1. Nombre fijado por el usuario** (paso 3): no se pregunta y el nombre no cambia (RN-03).
-- **A2. El usuario dice «No» o no responde** (paso 3): el nombre no cambia; el protocolo continúa.
+- **A2. El usuario escribe «No» o no responde** (paso 3): el nombre no cambia; el protocolo continúa.
 - **A3. Desbordamiento de sesiones importantes** (paso 4): CU-10, A1.
 - **A4. Una tarea falla** (paso 5): queda en `error`, el sistema dice su motivo y continúa con la siguiente. Al final: «Protocolo modo trabajo terminado con {n} errores.».
 - **A5. Una tarea con `stop_on_error` falla:** las restantes quedan en `error`, «protocolo detenido».

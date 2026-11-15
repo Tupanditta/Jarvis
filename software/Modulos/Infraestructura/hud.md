@@ -5,14 +5,14 @@
 
 ## Propósito
 
-Mostrar al usuario el estado del asistente y de sus tareas sin interrumpir su trabajo. Este documento define el comportamiento y la estructura técnica; el aspecto está en [Interfaz/README.md](../../Interfaz/README.md).
+Mostrar al usuario el estado del asistente y de sus tareas sin interrumpir su trabajo, y recibir las órdenes que escribe. Este documento define el comportamiento y la estructura técnica; el aspecto está en [Interfaz/README.md](../../Interfaz/README.md).
 
 ## 1. Superficies
 
 | Superficie | Qué es | Foco |
 |---|---|---|
-| **Pantalla de sesión** | Ventana a pantalla completa en el monitor principal: el orbe en el centro, la actividad de la sesión a la izquierda y el panel activo a la derecha (RF-82). | Pasa al frente y pide el foco solo al abrir la sesión. No queda siempre encima. |
-| **HUD flotante** | Ventana compacta en una esquina ⚙ del monitor principal: mini orbe, estado, subtítulos y el panel activo (RF-87). | Siempre encima, sin bordes, fondo translúcido, **nunca toma el foco** (RNF-13). Sus botones responden al clic sin activar la ventana. |
+| **Pantalla de sesión** | Ventana a pantalla completa en el monitor principal: el orbe en el centro, la actividad de la sesión a la izquierda, el panel activo a la derecha (RF-82) y la caja de texto abajo ([entrada-texto.md](entrada-texto.md)). | Pasa al frente y pide el foco al arrancar, al abrir la sesión y con «Mostrar pantalla». El foco queda en la caja. No queda siempre encima. |
+| **HUD flotante** | Ventana compacta en una esquina ⚙ del monitor principal: mini orbe, estado, subtítulos, el panel activo (RF-87) y una caja de texto. | Siempre encima, sin bordes, fondo translúcido, **nunca toma el foco por su cuenta** (RNF-13): solo lo toma cuando el usuario hace clic en su caja de texto. Sus botones responden al clic sin activar la ventana. |
 | **Icono de la bandeja** | Estado y menú ([proceso.md](proceso.md), RF-86). | — |
 
 Las dos ventanas usan los mismos componentes QML de panel y los mismos modelos de datos: un panel se construye una vez y se muestra en ambas.
@@ -23,17 +23,18 @@ Lógica pura en `ui/window_controller.py`, probada sin Qt. Entradas: los eventos
 
 | Situación | Pantalla de sesión | HUD flotante |
 |---|---|---|
-| Dormido | Oculta | Oculto |
-| `SessionOpened` | Se muestra a pantalla completa, pasa al frente, pide el foco; animación de despertar | Oculto |
+| Arranque y dormido | Visible en su aspecto de dormido: fondo oscuro, orbe apagado y la caja de texto con el foco | Oculto |
+| `SessionOpened` | Pasa al frente y pide el foco para la caja; animación de despertar | Oculto |
 | Sesión abierta y la pantalla es la ventana activa | Visible | Oculto |
 | Sesión abierta y la pantalla no es la ventana activa (el usuario pasó a otra ventana, se abrió una aplicación, o la pantalla está minimizada) | Queda detrás, sin cambios | Visible |
 | `ListeningResumed` con la pantalla activa | Animación de despertar | Oculto |
-| `ListeningResumed` con la pantalla no activa | Sin cambios. Con ⚙ `ui.wake_brings_screen_to_front = true`: pasa al frente y pide el foco | Animación de despertar en el mini orbe |
+| `ListeningResumed` con la pantalla no activa | Sin cambios | Animación de despertar en el mini orbe |
 | `RestEntered` | Animación de dormirse; sigue visible | Animación de dormirse en el mini orbe; después se contrae |
-| «Muestra la pantalla» o menú de la bandeja | Pasa al frente y pide el foco | Se oculta |
+| «Muestra la pantalla» o menú de la bandeja | Pasa al frente y pide el foco para la caja | Se oculta |
 | «Oculta la pantalla» | Se minimiza | Visible |
-| `SessionClosed` | Animación de dormirse; al terminar (2 s) se oculta | Igual |
-| `SessionOpened` durante la animación de cierre | No se oculta: la animación de dormirse se funde con la de despertar (RF-01) | — |
+| El usuario cierra la ventana (✕) | Se oculta; el proceso sigue en la bandeja | Visible si hay sesión |
+| `SessionClosed` | Animación de dormirse; al terminar (2 s) queda en su aspecto de dormido, visible | Animación de dormirse; al terminar se oculta |
+| `SessionOpened` durante la animación de cierre | La animación de dormirse se funde con la de despertar (RF-01) | — |
 
 **Pasar al frente** (`os_adapters`): la ventana se marca como superior, se muestra y, pasado 1 s, se le quita la marca. Así queda delante aunque Windows no conceda el foco; el foco se pide con `requestActivate()` y no se fuerza.
 
@@ -59,40 +60,40 @@ Cada panel es un componente QML en `ui/qml/panels/` alimentado por un modelo. El
 
 **Activar un panel** (p. ej. el de recordatorios, RF-44) es convertirlo en el panel activo y expandir el HUD. No implica foco del sistema.
 
-**Interacción con el ratón.** Solo tres controles: «traer al frente» en cada tarjeta de apertura, el botón de silencio mientras el asistente habla, y el botón de expandir o contraer el HUD. Todo lo demás se maneja por voz.
+**Interacción con el ratón.** Solo tres controles: «traer al frente» en cada tarjeta de apertura, el botón de silencio mientras el asistente habla, y el botón de expandir o contraer el HUD. Todo lo demás se maneja escribiendo en la caja de texto; no hay botones de órdenes.
 
 ## 4. Elementos comunes
 
 - **Estado del asistente:** texto y color según la actividad (dormido, reposo, escuchando, procesando, hablando, esperando).
-- **Subtítulos (RF-89):** última orden transcrita (atenuada y con la marca «no reconocido» cuando lo es) y última respuesta del asistente.
+- **Subtítulos (RF-89):** última orden escrita (atenuada y con la marca «no reconocido» cuando lo es) y última respuesta del asistente.
 - **Sesión:** nombre, y un distintivo si es importante.
-- **Micrófono no disponible:** distintivo visible en la cabecera.
+- **Caja de texto:** una línea, con el texto de ayuda que corresponde al estado ([entrada-texto.md](entrada-texto.md)).
 
 ## 5. Estructura técnica
 
 ```text
 Bus (hilo del núcleo) ──► UiBridge (señales Qt en cola) ──► modelos de vista (hilo UI) ──► QML
-QML (clic) ──► modelo de vista ──► bus.publish_threadsafe(acción del usuario)
+QML (clic, texto enviado) ──► modelo de vista ──► bus.publish_threadsafe(acción del usuario)
 ```
 
 - **`UiBridge`** (`ui/bridge.py`): se suscribe a los eventos del bus y emite una señal por tipo. Es el único punto de contacto con el backend. Para `AudioLevel`, solo conserva el último valor pendiente.
-- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel y origen del audio, subtítulos, micrófono), `tasks`, `dialogue`, y uno por panel.
+- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel de la voz del asistente, subtítulos), `tasks`, `dialogue`, y uno por panel.
 - **QML:** declarativo, sin lógica de negocio. Las animaciones usan los tipos de animación de Qt Quick; no hay código Python por frame.
 - **Tema:** todos los colores, tamaños, tipografías y duraciones salen del singleton `Theme.qml` ([Interfaz/README.md](../../Interfaz/README.md)).
-- **Ventanas:** se crean ocultas al arrancar el proceso, para que la apertura sea inmediata. El HUD usa los indicadores `Tool`, `FramelessWindowHint`, `WindowStaysOnTopHint` y `WindowDoesNotAcceptFocus`.
+- **Ventanas:** se crean al arrancar el proceso; la pantalla de sesión se muestra y el HUD queda oculto. El HUD usa los indicadores `Tool`, `FramelessWindowHint` y `WindowStaysOnTopHint`, y no se activa al mostrarse ni al actualizarse; solo acepta el foco con un clic en su caja de texto.
 - **Consumo:** Qt Quick no dibuja una ventana oculta o tapada. En el HUD, en reposo, no hay ninguna animación continua.
-- **Vista previa:** `python -m jarvis_assistant --preview` abre la interfaz con una secuencia de eventos simulados, sin audio ni modelos, para construir y revisar el aspecto. `--ui-debug` añade un contador de frames.
+- **Vista previa:** `python -m jarvis_assistant --preview` abre la interfaz con una secuencia de eventos simulados, sin voz ni modelos, para construir y revisar el aspecto. `--ui-debug` añade un contador de frames.
 
 ## Criterios de aceptación
 
 - `window_controller`: cada fila de la tabla de la sección 2, con pruebas unitarias.
 - Todo el QML se carga sin errores ni avisos en modo sin pantalla (prueba de integración).
 - Cada modelo de vista refleja sus eventos (pruebas con `pytest-qt`).
-- Manual: el HUD no toma el foco al aparecer, al actualizarse ni al hacer clic (RNF-13); la lista visual de [Interfaz/README.md](../../Interfaz/README.md).
+- Manual: el HUD no toma el foco al aparecer, al actualizarse ni al hacer clic en sus botones; sí al hacer clic en su caja de texto (RNF-13); la lista visual de [Interfaz/README.md](../../Interfaz/README.md).
 
 ## Prohibiciones
 
-- Prohibido robar el foco a la aplicación que el usuario está usando o a las que abre el asistente. Única excepción: la pantalla de sesión al abrir la sesión.
-- Prohibido mostrar ventanas en modo dormido.
+- Prohibido robar el foco a la aplicación que el usuario está usando o a las que abre el asistente. Excepciones: la pantalla de sesión al arrancar, al abrir la sesión y con «Mostrar pantalla»; y el HUD cuando el usuario hace clic en su caja de texto.
+- Prohibido mostrar el HUD flotante en modo dormido.
 - Prohibido usar estados de tarea distintos de `pendiente`, `error` y `completado`.
 - Prohibido que la interfaz llame a módulos de acción, lea la base de datos o contenga reglas de negocio.

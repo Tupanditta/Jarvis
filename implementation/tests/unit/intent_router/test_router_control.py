@@ -7,10 +7,11 @@ from jarvis_assistant.core.state_machine import (
     ClosingPhraseInIdle,
     Control,
     ControlKind,
+    IntentMatched,
     NoMatch,
     WakeWord,
 )
-from jarvis_assistant.intent_router.router import IntentRouter
+from jarvis_assistant.intent_router.router import HIDE_SCREEN, SHOW_SCREEN, IntentRouter
 
 S = AssistantState
 ATTENDING = (S.LISTENING_COMMAND, S.AWAITING_CONFIRMATION, S.AWAITING_PARAMETER)
@@ -67,18 +68,23 @@ def test_en_reposo_solo_vale_la_frase_de_cierre(router, text):
     assert router.route(text, S.IDLE) == ClosingPhraseInIdle()
 
 
-@pytest.mark.parametrize(
-    "text", [*NEGATIVE_CONTROLS, "gracias jarvis", "cancelar", "buenas noches a todos", ""]
-)
-def test_en_reposo_cualquier_otra_frase_se_descarta(router, text):
+@pytest.mark.parametrize("text", ["gracias jarvis", "cancelar", "olvidalo", "", "   ", "¿?"])
+def test_en_reposo_las_frases_sin_sentido_en_reposo_se_descartan(router, text):
     assert router.route(text, S.IDLE) is None
 
 
-def test_en_reposo_el_umbral_es_mas_exigente_que_en_escucha():
+@pytest.mark.parametrize(
+    "text", ["abre el navegador", "qué tiempo hace hoy", "buenas noches", "buenas noches a todos"]
+)
+def test_en_reposo_un_texto_no_reconocido_despierta(router, text):
+    assert router.route(text, S.IDLE) == NoMatch(text)
+
+
+def test_en_reposo_el_umbral_de_cierre_es_mas_exigente_que_en_escucha():
     router = IntentRouter(RouterSettings(control_threshold=80, idle_closing_threshold=99))
     text = "buenas noches yarvis"
     assert router.route(text, S.LISTENING_COMMAND) == Control(ControlKind.CERRAR)
-    assert router.route(text, S.IDLE) is None
+    assert router.route(text, S.IDLE) == NoMatch(text)
 
 
 @pytest.mark.parametrize("text", WAKE_TEXTS)
@@ -114,3 +120,37 @@ def test_los_alias_se_aplican_antes_de_comparar():
 def test_misma_entrada_misma_salida_en_mil_repeticiones(router):
     results = {router.route("grasias jarvis", S.LISTENING_COMMAND) for _ in range(1000)}
     assert results == {Control(ControlKind.REPOSO)}
+
+
+# --- Intenciones del núcleo: mostrar y ocultar la pantalla (T-2.7) -------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "intent"),
+    [
+        ("muestra la pantalla", SHOW_SCREEN),
+        ("Muestra la pantalla.", SHOW_SCREEN),
+        ("pantalla completa", SHOW_SCREEN),
+        ("oculta la pantalla", HIDE_SCREEN),
+        ("minimiza la pantalla", HIDE_SCREEN),
+        ("ocutla la pantalla", HIDE_SCREEN),
+    ],
+)
+def test_mostrar_y_ocultar_la_pantalla_en_escucha(router, text, intent):
+    assert router.route(text, S.LISTENING_COMMAND) == IntentMatched(intent)
+
+
+@pytest.mark.parametrize(
+    ("text", "intent"), [("muestra la pantalla", SHOW_SCREEN), ("oculta la pantalla", HIDE_SCREEN)]
+)
+def test_en_reposo_mostrar_y_ocultar_la_pantalla_se_reconocen(router, text, intent):
+    assert router.route(text, S.IDLE) == IntentMatched(intent)
+
+
+def test_en_dormido_mostrar_la_pantalla_se_descarta(router):
+    assert router.route("muestra la pantalla", S.DORMIDO) is None
+
+
+def test_mostrar_la_pantalla_no_es_una_respuesta_de_dialogo(router):
+    text = "muestra la pantalla"
+    assert router.route(text, S.AWAITING_CONFIRMATION) == NoMatch(text)

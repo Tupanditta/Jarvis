@@ -107,8 +107,8 @@ class FakePlatform:
     def bring_own_window_to_front(self, native_id: int) -> None:
         self.calls.append(("bring_own_window_to_front", (native_id,)))
 
-    def make_non_activating(self, native_id: int) -> None:
-        self.calls.append(("make_non_activating", (native_id,)))
+    def make_non_activating(self, native_id: int, enabled: bool = True) -> None:
+        self.calls.append(("make_non_activating", (native_id, enabled)))
 
     # Búsqueda
     async def indexed_search(

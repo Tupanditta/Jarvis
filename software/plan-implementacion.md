@@ -6,7 +6,7 @@ Orden de construcción del asistente. Sustituye a los antiguos `tasks.md` y `alc
 
 1. **La especificación manda.** Ante una duda, se resuelve en la especificación antes de escribir código.
 2. **Primero la prueba.** Cada tarea se cierra con sus pruebas automáticas en verde. La lógica (FSM, enrutador, analizadores, reglas de módulos) se escribe con la prueba delante.
-3. **Sin hardware en las pruebas por defecto.** `pytest` sin marcadores no necesita micrófono, altavoz, modelos, red ni pantalla, y tarda menos de 60 s (RNF-24).
+3. **Sin hardware en las pruebas por defecto.** `pytest` sin marcadores no necesita altavoz, modelos, red ni pantalla, y tarda menos de 60 s (RNF-24).
 4. **Una fase, una lista manual.** Al cerrar cada fase se recorre su lista de `tests/manual/` en el equipo de referencia.
 5. **Instalación de paquetes** siempre en el entorno virtual: `.\implementation\.venv\Scripts\pip.exe install <paquete>`.
 6. **Reutilización.** El código que ya existe en `implementation/` se conserva donde cumple la especificación y se reescribe donde no. No se mantiene código que la contradiga.
@@ -17,7 +17,7 @@ Orden de construcción del asistente. Sustituye a los antiguos `tasks.md` y `alc
 | Fase | Resultado | Casos de uso | Depende de |
 |---|---|---|---|
 | 0 | Base del proyecto: estructura, configuración, bus, reloj, base de datos, dobles de prueba. | — | — |
-| 1 | Ciclo de vida por voz: «Hey Jarvis», «Gracias Jarvis», «Buenas noches Jarvis», con bandeja y una pantalla mínima. | CU-03, CU-04, CU-05 | 0 |
+| 1 | Ciclo de vida por texto: «Hey Jarvis», «Gracias Jarvis», «Buenas noches Jarvis» escritas en una caja de texto, con respuesta hablada, bandeja y una ventana mínima. | CU-03, CU-04, CU-05 | 0 |
 | 2 | Interfaz completa: orbe, animaciones, pantalla de sesión, HUD flotante, panel de actividad, subtítulos. | — | 1 |
 | 3 | Órdenes sin diálogo: Comandos, Apertura, Búsqueda, consulta del Historial, ayuda. | CU-01, CU-02, CU-06, CU-07, CU-08 | 2 |
 | 4 | Diálogo de varios turnos: Creación, eliminación en Historial, Sesión. | CU-09, CU-10 | 3 |
@@ -26,13 +26,13 @@ Orden de construcción del asistente. Sustituye a los antiguos `tasks.md` y `alc
 | 7 | Endurecimiento: rendimiento, consumo, inicio automático, revisión visual. | todos | 6 |
 | 8 | Adaptador de Linux. | todos | 7 |
 
-Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestra toda la cadena de voz; a partir de la fase 3, cada fase añade módulos sin tocar el núcleo.
+Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestra toda la cadena, del texto escrito a la respuesta hablada; a partir de la fase 3, cada fase añade módulos sin tocar el núcleo.
 
 ---
 
 ## Fase 0. Base del proyecto
 
-**Objetivo:** el esqueleto sobre el que se apoya todo, sin audio ni interfaz.
+**Objetivo:** el esqueleto sobre el que se apoya todo, sin voz ni interfaz.
 
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
@@ -48,23 +48,23 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 
 ---
 
-## Fase 1. Ciclo de vida por voz
+## Fase 1. Ciclo de vida por texto
 
-**Objetivo:** decir «Hey Jarvis», oír «Sesión iniciada. Le escucho.», decir «Gracias Jarvis», «Hey Jarvis» y «Buenas noches Jarvis», con el comportamiento exacto de CU-03, CU-04 y CU-05. La interfaz es todavía mínima: una ventana con el estado en texto.
+**Objetivo:** escribir «Hey Jarvis», oír «Sesión iniciada. Le escucho.», escribir «Gracias Jarvis», «Hey Jarvis» y «Buenas noches Jarvis», con el comportamiento exacto de CU-03, CU-04 y CU-05. La interfaz es todavía mínima: una ventana de fondo oscuro con el estado en texto y la caja de texto.
 
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
 | T-1.1 | `core/state_machine.py`: estados, entradas, efectos y tabla de transiciones del ciclo de vida (sin diálogo). | Una prueba por fila de la tabla de [maquina-estados.md](Modulos/Infraestructura/maquina-estados.md) que no sea de diálogo. |
-| T-1.2 | `intent_router/normalizer.py` y la parte de `router.py` de las frases de control y del cierre en reposo. | Frases de control y controles negativos del juego de pruebas. |
-| T-1.3 | `audio_capture/segmenter.py` (puro) y `processor.py` con los cuatro modos de captura, sobre fábricas inyectables. | Criterios de aceptación de Captura de audio con secuencias sintéticas. |
-| T-1.4 | `audio_capture/microphone.py`, `wakeword.py`, `vad.py`: bibliotecas reales. `device_selection.py` y `telemetry.py`: selección de dispositivo y API, remuestreo polifásico, ganancia, micrófono mudo, reintento, trazas de casi detección. Verificador personal opcional. `scripts/diagnose_mic.py` y `scripts/calibrate_wakeword.py`. | Pruebas `models` y `hardware`; «Hey Jarvis» detectada en directo; RNF-30 medido con la calibración. |
-| T-1.5 | `transcriber/`: carga, descarga, transcripción, vocabulario y filtro de frases espurias. | Criterios de aceptación del Transcriptor. |
-| T-1.6 | `speaker/`: catálogo con las frases del ciclo de vida y generales, Piper, reproductor, cola, modos de captura durante la locución, nivel. | Criterios de aceptación del Sintetizador. |
-| T-1.7 | `core/orchestrator.py`: bucle de turnos, épocas, cuenta de 30 s, ejecución de efectos, publicación del nivel a 20 Hz. | CU-03, CU-04 y CU-05 completos con dobles, incluidas todas sus alternativas. |
+| T-1.2 | `intent_router/normalizer.py` y la parte de `router.py` de la frase de activación, las frases de control y el cierre en reposo. | Frase de activación con erratas, frases de control y controles negativos del juego de pruebas. |
+| T-1.3 | Retirada: entrada por texto (captura de audio). | — |
+| T-1.4 | Retirada: entrada por texto (micrófono, palabra de activación por audio, calibración). | — |
+| T-1.5 | Retirada: entrada por texto (transcriptor). | — |
+| T-1.6 | `speaker/`: catálogo con las frases del ciclo de vida y generales, Piper, reproductor, cola, nivel. | Criterios de aceptación del Sintetizador. |
+| T-1.7 | `core/orchestrator.py`: bucle de turnos, recepción de `TextSubmitted` y `UserTyping`, cuenta de inactividad de 30 s, ejecución de efectos, publicación del nivel de la voz a 20 Hz. | CU-03, CU-04 y CU-05 completos con dobles, incluidas todas sus alternativas. |
 | T-1.8 | Sesión mínima: `open_session`, `close_session`, `recover_interrupted` sobre la base de datos. | Abrir y cerrar deja las filas correctas; recuperación de una sesión huérfana. |
-| T-1.9 | `main.py` (`build_app` y `main`), `process/tray.py`, ventana mínima de estado, `scripts/install_startup.ps1` y `uninstall_startup.ps1`. | Criterios de aceptación de Proceso. |
+| T-1.9 | `main.py` (`build_app` y `main`), `process/tray.py`, ventana mínima con la caja de texto ([entrada-texto.md](Modulos/Infraestructura/entrada-texto.md)), `scripts/install_startup.ps1` y `uninstall_startup.ps1`. | Criterios de aceptación de Proceso y de Entrada por texto. |
 
-**Lista manual de la fase:** el ciclo completo por voz en el equipo real; frases durante la locución ignoradas; 30 s de silencio pasan a reposo; cierre desde reposo; salir desde la bandeja; red desactivada; nada visible en modo dormido salvo la bandeja.
+**Lista manual de la fase:** el ciclo completo escribiendo en el equipo real; lo enviado durante una locución del ciclo de vida se atiende al terminar; 30 s sin escribir pasan a reposo; cierre desde reposo; salir desde la bandeja; red desactivada; la ventana visible en modo dormido y oculta, con el proceso en la bandeja, al cerrarla.
 
 ---
 
@@ -75,8 +75,8 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
 | T-2.1 | `ui/bridge.py`, `ui/view_models.py` (asistente, tareas, diálogo), `Theme.qml` con todos los tokens, fuentes e iconos. | Los modelos reflejan sus eventos (`pytest-qt`). |
-| T-2.2 | `ui/preview.py`: modo `--preview` con una secuencia de eventos simulados que recorre todos los estados; `--ui-debug` con contador de frames. | La vista previa arranca sin audio ni modelos. |
-| T-2.3 | El orbe: capas, propiedades de control, aspecto por actividad y reacción al nivel de audio. | Secciones 3 de Interfaz, revisadas con la vista previa. |
+| T-2.2 | `ui/preview.py`: modo `--preview` con una secuencia de eventos simulados que recorre todos los estados; `--ui-debug` con contador de frames. | La vista previa arranca sin voz ni modelos. |
+| T-2.3 | El orbe: capas, propiedades de control, aspecto por actividad y reacción al nivel de la voz del asistente. | Secciones 3 de Interfaz, revisadas con la vista previa. |
 | T-2.4 | Animaciones de despertar y dormirse (variantes de reposo y de cierre) y fundido entre ellas. | Sección 4 de Interfaz; 2 s ± 0,1 s. |
 | T-2.5 | `SessionScreen.qml`: barra superior, columnas, subtítulos, cursor oculto. Componentes comunes (`PanelFrame`, `TaskCard`, `StatusDot`, `Subtitles`, `StateLabel`, `Badge`, `EmptyState`). Panel de actividad. | Sección 5 de Interfaz. |
 | T-2.6 | `HudOverlay.qml`: mini orbe, cabecera, cuerpo, contraer y expandir, ventana que no se activa. | Sección 6 de Interfaz; el HUD nunca toma el foco. |
@@ -103,10 +103,10 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | T-3.7 | Módulo **Apertura** y su panel, con «traer al frente». | Criterios de aceptación de Apertura; CU-01 y CU-07. |
 | T-3.8 | Módulo **Búsqueda** y su panel. | Criterios de aceptación de Búsqueda; CU-08. |
 | T-3.9 | Módulo **Historial**: `mostrar` y `actividades`, y su panel. | Orden y límite de RN-10. |
-| T-3.10 | Intenciones del núcleo: ayuda (generada del registro) y repetir. Interrupción de la locución con «Hey Jarvis» y con el botón de silencio. Vocabulario del transcriptor alimentado por los catálogos, por el directorio de trabajo y por el diálogo. Recarga de la configuración al abrir sesión. | RF-70, RF-85, RF-92, RF-94, RF-96. |
+| T-3.10 | Intenciones del núcleo: ayuda (generada del registro) y repetir. Interrupción de la locución con «Hey Jarvis» y con el botón de silencio. Recarga de la configuración al abrir sesión. | RF-70, RF-85, RF-92, RF-94, RF-96. |
 | T-3.11 | Juego de frases de prueba de las intenciones de esta fase y pruebas de arquitectura (importaciones prohibidas, registro). | RNF-11, RNF-18, RNF-20. |
 
-**Lista manual de la fase:** cada orden de los módulos de la fase, por voz; rutas dictadas con lugares con nombre y subcarpetas; latencia (RNF-03).
+**Lista manual de la fase:** cada orden de los módulos de la fase, escrita; rutas escritas con lugares con nombre y subcarpetas; latencia (RNF-03).
 
 ---
 
@@ -123,7 +123,7 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | T-4.5 | Módulo **Sesión**: nombrar, importancia, desbordamiento, restauración, eliminación al cerrar; acciones internas para protocolos. | Criterios de aceptación de Sesión; CU-10. |
 | T-4.6 | Cierre de sesión con operaciones en curso (RN-46) y cancelación de un turno en curso (RN-52). | Pruebas de integración. |
 
-**Lista manual de la fase:** colisión resuelta por voz sin repetir «Hey Jarvis»; cancelación; tiempo agotado; eliminación de una sesión.
+**Lista manual de la fase:** colisión resuelta escribiendo la respuesta, sin repetir «Hey Jarvis»; cancelación; tiempo agotado; eliminación de una sesión.
 
 ---
 
@@ -133,7 +133,7 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 |---|---|---|
 | T-5.1 | Analizadores `datetimes` (con `find_suffix`) y `durations`; formateadores de fechas y duraciones para la voz. | Pruebas con reloj falso de toda la gramática de [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md), sección 5. |
 | T-5.2 | `ReminderRepository`. | Pruebas del repositorio. |
-| T-5.3 | Creación por voz con su diálogo (`DATETIME`, `REMINDER_ACTION`). | CU-11. |
+| T-5.3 | Creación con una orden escrita, con su diálogo (`DATETIME`, `REMINDER_ACTION`). | CU-11. |
 | T-5.4 | Programación con `APScheduler`: al abrir y al cerrar sesión; avisos y fechas límite; agrupación. | Avisos con y sin sesión abierta. |
 | T-5.5 | Panel de recordatorios; leer, confirmar, posponer aviso, posponer fecha límite, mostrar, eliminar. | CU-12. |
 | T-5.6 | Autoconfirmación a los 300 s. | Pruebas con reloj falso. |
@@ -163,8 +163,8 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
 | T-7.1 | `scripts/measure.py` y medida de todos los RNF de rendimiento en el equipo de referencia. Ajuste de `beam_size`, hilos y calidad de la interfaz si hace falta. | RNF-03, RNF-04, RNF-05, RNF-21, RNF-22, RNF-25 cumplidos y anotados. |
-| T-7.2 | Uso real durante varios días: ajuste de umbrales, alias y patrones según el registro. Medida de RNF-31; si no se alcanza, valorar la segunda pasada de [transcriptor.md](Modulos/Infraestructura/transcriptor.md). Cada frase no reconocida que debería haberlo sido se añade al juego de pruebas. | RNF-11 sobre el juego ampliado. |
-| T-7.3 | Robustez: micrófono desconectado y reconectado, altavoz ausente, base de datos dañada, configuración inválida, falta de un modelo. | Cada caso con el comportamiento especificado. |
+| T-7.2 | Uso real durante varios días: ajuste de umbrales, alias y patrones según el registro. Medida de RNF-31. Cada frase no reconocida que debería haberlo sido se añade al juego de pruebas. | RNF-11 sobre el juego ampliado. |
+| T-7.3 | Robustez: altavoz ausente, base de datos dañada, configuración inválida, falta de un modelo. | Cada caso con el comportamiento especificado. |
 | T-7.4 | Revisión visual completa y `ui.reduce_motion`, `ui.quality`. | Lista de Interfaz, sección 11. |
 | T-7.5 | Inicio automático, instrucciones de instalación en `implementation/README.md` y comprobación de privacidad con la red desactivada y con un monitor de conexiones. | RNF-01, RNF-02, RF-75. |
 | T-7.6 | Cobertura y limpieza: código muerto fuera, cobertura ≥ 80 % en el núcleo. | RNF-24. |
@@ -202,6 +202,5 @@ Opcional: instalar *Everything* y su `es.exe` para la búsqueda en todo el disco
 |---|---|---|
 | La latencia no cumple RNF-03. | Medida en T-1.7 y T-7.1. | `beam_size = 1`; después, modelo `base`. Ambos son configuración, no código. |
 | El orbe cuesta más de lo previsto. | T-2.3 se alarga. | Calidad `medium` como base; las partículas y el sombreador aditivo se dejan para T-7.4. |
-| La transcripción falla con nombres propios. | Frases no reconocidas en el registro (T-7.2). | Alias y vocabulario: configuración, no código. |
-| «Hey Jarvis» salta sola o no responde. | Detecciones y casi detecciones registradas con su puntuación; RNF-30 en la calibración. | Ganancia y umbral en la configuración; verificador personal (`calibrate_wakeword.py --train-verifier`); «Abrir sesión» en la bandeja como respaldo. |
-| Rutas, nombres y comandos dictados fallan. | RNF-31 bajo en T-7.2. | Vocabulario dinámico y alias (configuración); segunda pasada con un modelo mayor (ampliación prevista, sin rediseño). |
+| Órdenes escritas con erratas en nombres propios. | Frases no reconocidas en el registro (T-7.2). | Alias y umbrales: configuración, no código. |
+| Rutas, nombres y comandos escritos no se resuelven. | RNF-31 bajo en T-7.2. | Alias y umbrales (configuración); revisar la gramática de entidades para texto escrito. |

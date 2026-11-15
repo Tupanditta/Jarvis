@@ -41,7 +41,7 @@ Las órdenes se escriben en la caja de texto de la ventana y se envían con Ente
 ## CU-04. Pasar a reposo
 
 - [ ] «Gracias Jarvis»: se oye «A su disposición.» y el estado queda «En reposo»; la ayuda de
-      la caja pasa a «En reposo. Escriba «Hey Jarvis»».
+      la caja pasa a «En reposo. Escriba una orden».
 - [ ] 30 s sin escribir en escucha pasan a reposo con la misma frase (A1).
 - [ ] Teclear sin enviar reinicia esos 30 s.
 - [ ] «Muchas gracias Jarvis por todo» se muestra como no reconocida y no pasa a reposo (A2).

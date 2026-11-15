@@ -17,16 +17,16 @@ Llega la fecha de aviso de un recordatorio (ACT-03).
 
 1. El planificador dispara el aviso. El sistema lo marca como disparado y lo encola.
 2. Cuando no hay diálogo, orden en curso ni locución, el sistema activa el panel numerado de recordatorios, con el recordatorio destacado, y dice «Tiene un recordatorio.», sin leer fechas (RN-23). Si estaba en reposo, pasa antes a escucha.
-3. El usuario dice «Lee el recordatorio uno». El sistema lee su texto. No lo confirma (RN-24).
+3. El usuario escribe «Lee el recordatorio uno». El sistema lee su texto. No lo confirma (RN-24).
 4. Si era su última fecha de aviso, al terminar la lectura empieza el plazo de 300 s (RN-29).
-5. El usuario dice «Confirmar recordatorios uno». El sistema lo elimina (borrado lógico), actualiza el panel y dice «Recordatorio 1 confirmado.».
+5. El usuario escribe «Confirmar recordatorios uno». El sistema lo elimina (borrado lógico), actualiza el panel y dice «Recordatorio 1 confirmado.».
 
 ## Flujos alternativos
 
-- **A1. Posponer** (tras el paso 2 o el 3): «Posponer» retrasa el aviso 10 minutos; «Posponer media hora», el tiempo dicho. El sistema dice «Pospuesto. Le avisaré dentro de {duración}.». La fecha límite no cambia. El plazo de autoconfirmación se cancela.
-- **A2. Callar la lectura** (paso 3): mientras el asistente lee, el usuario dice «Hey Jarvis»; la lectura se corta y el usuario puede decir «posponer» (RF-47).
+- **A1. Posponer** (tras el paso 2 o el 3): «Posponer» retrasa el aviso 10 minutos; «Posponer media hora», el tiempo indicado. El sistema dice «Pospuesto. Le avisaré dentro de {duración}.». La fecha límite no cambia. El plazo de autoconfirmación se cancela.
+- **A2. Callar la lectura** (paso 3): mientras el asistente lee, el usuario escribe «Hey Jarvis»; la lectura se corta y el usuario puede escribir «posponer» (RF-47).
 - **A3. Autoconfirmación** (paso 4): si pasan 300 s sin confirmar ni posponer, el recordatorio se elimina en silencio, aunque tenga una fecha límite futura.
-- **A4. Confirmar con el panel inactivo** (paso 5): si el panel de recordatorios no es el activo, «Confirmar recordatorios» lo activa y el sistema dice «Diga confirmar recordatorios y el número.»; no confirma nada.
+- **A4. Confirmar con el panel inactivo** (paso 5): si el panel de recordatorios no es el activo, «Confirmar recordatorios» lo activa y el sistema dice «Escriba confirmar recordatorios y el número.»; no confirma nada.
 - **A5. Aviso sin sesión abierta:** no se dispara nada. Al abrir la siguiente sesión, tras «Sesión iniciada. Le escucho.», se ejecuta el paso 2 con todos los avisos pendientes agrupados: «Tiene {n} recordatorios.» (RN-22).
 - **A6. Vence la fecha límite:** el sistema dice «El recordatorio {n} ha vencido. Su fecha límite era {fecha}.»; el recordatorio pasa a `vencido` y empieza el plazo de 300 s. Un recordatorio `vencido` no vuelve a avisar por voz; sigue en el panel hasta que se confirme.
 - **A7. Posponer la fecha límite:** «Pospón la fecha límite del recordatorio uno hasta el viernes a las diez». Solo antes de que venza; después, «La fecha límite ya ha vencido y no se puede posponer.».

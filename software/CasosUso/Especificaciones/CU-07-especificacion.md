@@ -11,7 +11,7 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice «Abre {nombre}», p. ej. «Abre Visual Studio Code» o «Abre GitHub».
+El usuario escribe «Abre {nombre}», p. ej. «Abre Visual Studio Code» o «Abre GitHub».
 
 ## Flujo principal
 
@@ -28,8 +28,8 @@ El usuario dice «Abre {nombre}», p. ej. «Abre Visual Studio Code» o «Abre G
 - **A2. Edge no instalado** (paso 2, página): `error`; «Microsoft Edge no está instalado.».
 - **A3. Fallo al lanzar** (paso 2): `error`; «No he podido abrir {nombre}.».
 - **A4. No se localiza la ventana** (paso 5): la tarjeta queda sin botón activo; la tarea sigue `completado`.
-- **A5. La ventana ya se cerró** (paso 6): el botón se desactiva; por voz, «Esa ventana ya no está abierta.».
-- **A6. Sistema sin soporte para traer al frente** (Wayland): el botón no se muestra; por voz, «No está disponible en este sistema.».
+- **A5. La ventana ya se cerró** (paso 6): el botón se desactiva; con la orden, «Esa ventana ya no está abierta.».
+- **A6. Sistema sin soporte para traer al frente** (Wayland): el botón no se muestra; con la orden, «No está disponible en este sistema.».
 
 ## Postcondiciones
 

@@ -3,11 +3,13 @@
 Todos son `dataclass` inmutables y la suscripción es por clase. El bus no guarda eventos:
 la interfaz reconstruye su estado solo con los que recibe.
 
-Este módulo contiene los eventos del ciclo de vida, de estado, de órdenes, de voz y las
-acciones del usuario; los de diálogo, tareas y paneles se añaden con los componentes que los
-publican.
+Este módulo contiene los eventos del ciclo de vida, de estado, de órdenes, de voz, de diálogo,
+de tareas, el panel activo y las acciones del usuario; los de contenido de cada panel se añaden
+con los módulos que los publican.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
@@ -116,6 +118,53 @@ class SpeechStarted(Event):
 @dataclass(frozen=True)
 class SpeechFinished(Event):
     interrupted: bool
+
+
+# --- Diálogo, tareas y paneles ---------------------------------------------------------------
+
+TaskStatus = Literal["pendiente", "error", "completado"]
+TASK_STATUSES = ("pendiente", "error", "completado")
+DialogueOutcome = Literal["answered", "cancelled"]
+
+
+@dataclass(frozen=True)
+class DialogueOpened(Event):
+    """El asistente ha hecho una pregunta. `hints`: respuestas admitidas que se muestran."""
+
+    question: str
+    expected_type: str
+    hints: tuple[str, ...]
+    timeout_seconds: float
+    subject: Mapping[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class DialogueClosed(Event):
+    outcome: DialogueOutcome
+
+
+@dataclass(frozen=True)
+class TaskUpdated(Event):
+    """Único evento de estado de tarea (RN-01). `parent_id`: la tarea del protocolo, si la hay."""
+
+    task_id: int
+    parent_id: int | None
+    module: str
+    description: str
+    status: TaskStatus
+    detail: str | None
+    at: datetime
+
+    def __post_init__(self) -> None:
+        if self.status not in TASK_STATUSES:
+            raise ValueError(f"Estado de tarea desconocido: {self.status!r}")
+
+
+@dataclass(frozen=True)
+class PanelActivated(Event):
+    """`panel` pasa a ser el panel activo de la interfaz."""
+
+    panel: str
 
 
 # --- Acciones del usuario (interfaz → núcleo, con `publish_threadsafe`) ----------------------

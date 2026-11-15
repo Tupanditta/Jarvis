@@ -5,7 +5,7 @@
 
 ## Propósito
 
-Ofrecer una terminal por voz con directorio de trabajo persistente, generar el árbol de directorios de una carpeta (mapeo de entorno) y ejecutar binarios externos, informando del resultado.
+Ofrecer una terminal manejada con órdenes escritas con directorio de trabajo persistente, generar el árbol de directorios de una carpeta (mapeo de entorno) y ejecutar binarios externos, informando del resultado.
 
 ## Acciones
 
@@ -19,7 +19,7 @@ Ofrecer una terminal por voz con directorio de trabajo persistente, generar el �
 | `ejecutar` | `comando: COMMAND_LINE` | Ejecuta un binario permitido (RF-19, RF-20). |
 | `abrir_consola` | — | Abre la terminal del sistema en el directorio de trabajo (RF-21). |
 
-Todas se pueden invocar por voz y desde protocolos. Todas activan el panel de comandos, salvo `abrir_consola`.
+Todas se pueden invocar con una orden escrita y desde protocolos. Todas activan el panel de comandos, salvo `abrir_consola`.
 
 ## Reglas
 
@@ -27,7 +27,7 @@ Todas se pueden invocar por voz y desde protocolos. Todas activan el panel de co
 
 - Vive en `core/workdir.py` y se comparte por `ctx.workdir`; solo `cd` lo modifica. Otros módulos lo leen para resolver rutas relativas (RN-42).
 - Empieza en la carpeta del usuario en cada sesión nueva; no se guarda en la base de datos (RN-14).
-- La resolución de la ruta dictada (lugares con nombre, subcarpetas por coincidencia difusa, «atrás») es del enrutador ([enrutador-intenciones.md](../Infraestructura/enrutador-intenciones.md), sección 6). El módulo recibe una `Path` ya resuelta y comprueba de nuevo que existe y es carpeta.
+- La resolución de la ruta escrita (lugares con nombre, subcarpetas por coincidencia difusa, «atrás») es del enrutador ([enrutador-intenciones.md](../Infraestructura/enrutador-intenciones.md), sección 6). El módulo recibe una `Path` ya resuelta y comprueba de nuevo que existe y es carpeta.
 - Ruta inválida: RN-41. El directorio de trabajo no cambia.
 
 ### Mapeo de entorno (RN-40)
@@ -47,7 +47,7 @@ Todas se pueden invocar por voz y desde protocolos. Todas activan el panel de co
 - **Salida:** se lee línea a línea, se decodifica sin fallar ante bytes inválidos, y se publica en `CommandOutputAppended` en lotes cada 200 ms. El panel conserva las últimas 200 ⚙ líneas.
 - **Resultado (RN-16):** código 0 → `completado`; otro código → `error`; ejecutable no encontrado → `error` con «No encuentro el programa {nombre}.».
 - **Tiempo máximo:** 120 s ⚙, o el `timeout_seconds` del binario. Al vencer, se termina el árbol de procesos y la tarea queda en `error` con «El comando ha tardado demasiado.».
-- **Por voz:** la tarea se devuelve en segundo plano (`background=True`): el asistente dice «Ejecutando {comando}.» y sigue escuchando. Al terminar, la tarea se actualiza y se encola un aviso con el resultado (RN-39). Solo puede haber un binario en ejecución lanzado por voz; pedir otro produce `error` con «Ya hay un comando en ejecución.».
+- **Con una orden del usuario:** la tarea se devuelve en segundo plano (`background=True`): el asistente dice «Ejecutando {comando}.» y sigue atendiendo órdenes. Al terminar, la tarea se actualiza y se encola un aviso con el resultado (RN-39). Solo puede haber un binario en ejecución lanzado con una orden; pedir otro produce `error` con «Ya hay un comando en ejecución.».
 - **En un protocolo:** se espera en línea y devuelve su resultado directamente.
 - **Cancelación y cierre de sesión:** se termina el árbol de procesos (con `psutil`) y la tarea queda en `error` (RN-46, RN-52).
 

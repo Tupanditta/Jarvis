@@ -13,7 +13,7 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 - **Formato:** TOML, leído con `tomllib`. El asistente nunca escribe estos archivos (RES-36).
 - **Ubicación:** `%APPDATA%\Jarvis\config\` en Windows. En el primer arranque se copian ahí los archivos predeterminados de `resources/config_defaults/`, con comentarios que explican cada clave.
 - **Valores predeterminados:** toda clave ausente toma el valor predeterminado del código. Un archivo vacío es válido.
-- **Validación:** al cargar, cada archivo se convierte en `dataclass` inmutables con comprobación de tipos y rangos. Un error indica archivo, clave y motivo.
+- **Validación:** al cargar, cada archivo se convierte en `dataclass` inmutables con comprobación de tipos y rangos. Un error indica archivo, clave y motivo. Una clave o sección desconocida solo produce un aviso: un `settings.toml` anterior, con las secciones `[audio]` y `[stt]` de la entrada por voz retirada, se sigue cargando.
 - **Carga:** al arrancar el proceso y al abrir cada sesión (RF-96). Si al recargar un archivo es inválido, se conserva la configuración anterior de ese archivo, se publica `ConfigReloadFailed` y el asistente dice, tras la frase de apertura, «Hay un error en la configuración de {archivo}. Uso la anterior.». Si es inválido en el arranque, se usan los valores predeterminados de ese archivo y se registra.
 - **Protocolos:** al cargar, cada tarea se valida contra el registro de intenciones: el módulo y la acción deben existir y admitir protocolos, y los parámetros obligatorios deben estar presentes.
 
@@ -23,33 +23,16 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 
 | Clave | Predeterminado | Significado |
 |---|---|---|
-| `audio.input_device` | `""` | Parte del nombre del micrófono; vacío = predeterminado del sistema. |
-| `audio.wakeword_threshold` | `0.5` | Umbral de «Hey Jarvis». |
-| `audio.input_hostapi` | `""` | API de audio del micrófono (`MME`, `Windows WASAPI`…); vacío = por preferencia. |
-| `audio.input_gain` | `1.0` | Ganancia de entrada (0,5–8). La recomienda `calibrate_wakeword.py`. |
-| `audio.wakeword_verifier` | `true` | Usar el verificador personal si existe. |
-| `audio.wakeword_verifier_gate` | `0.2` | Puntuación mínima del modelo preentrenado para consultar al verificador. |
-| `audio.vad_threshold` | `0.5` | Umbral de voz. |
-| `audio.end_of_speech_seconds` | `1.0` | Pausa que termina una orden. |
-| `audio.max_utterance_seconds` | `15` | Duración máxima de una orden. |
-| `audio.silence_to_idle_seconds` | `30` | Silencio que pasa a reposo. |
-| `audio.reopen_delay_seconds` | `0.3` | Margen tras cada locución. |
-| `audio.mic_retry_seconds` | `5` | Reintento del micrófono. |
-| `audio.closing_phrase_in_idle` | `true` | Escucha restringida en reposo. |
-| `stt.model` | `"small"` | Modelo de `faster-whisper` (`small` o `base`). |
-| `stt.beam_size` | `3` | Tamaño del haz. |
-| `stt.cpu_threads` | `0` | 0 = automático. |
-| `stt.no_speech_threshold` | `0.6` | Filtro de «sin voz». |
-| `stt.vocabulary_workdir_entries` | `30` | Carpetas y archivos del directorio de trabajo que entran en el vocabulario. |
-| `stt.vocabulary_max_chars` | `600` | Límite de la indicación de vocabulario. |
+| `input.inactivity_to_idle_seconds` | `30` | Segundos sin escribir que pasan a reposo (5–600). |
 | `tts.voice` | `"es_ES-davefx-medium"` | Voz de Piper. |
 | `tts.volume` | `1.0` | Volumen (0–1). |
 | `tts.cache_size` | `64` | Frases en caché. |
 | `router.intent_threshold` | `80` | Umbral de intención. |
+| `router.wake_threshold` | `80` | Umbral de la frase de activación «Hey Jarvis». |
 | `router.control_threshold` | `80` | Umbral de las frases de control. |
 | `router.idle_closing_threshold` | `85` | Umbral del cierre en reposo. |
 | `router.catalog_threshold` | `75` | Umbral de entidades de lista. |
-| `router.path_threshold` | `80` | Umbral de carpetas dictadas. |
+| `router.path_threshold` | `80` | Umbral de carpetas escritas. |
 | `router.default_hour` | `9` | Hora de una fecha sin hora. |
 | `dialogue.timeout_seconds` | `20` | Tiempo de espera de una respuesta. |
 | `dialogue.max_collisions` | `3` | Colisiones seguidas antes de cancelar. |
@@ -62,7 +45,6 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 | `reminders.autoconfirm_seconds` | `300` | Plazo de autoconfirmación. |
 | `ui.hud_corner` | `"top-right"` | Esquina del HUD. |
 | `ui.hud_collapse_seconds` | `8` | Inactividad antes de contraer el HUD. |
-| `ui.wake_brings_screen_to_front` | `false` | La pantalla vuelve al frente al despertar desde reposo. |
 | `ui.quality` | `"high"` | `high`, `medium` o `low`: cantidad de partículas y efectos. |
 | `ui.reduce_motion` | `false` | Sustituye las animaciones por fundidos. |
 | `startup.open_session_on_start` | `false` | Solo desarrollo: abrir sesión al arrancar. |
@@ -87,7 +69,7 @@ url = "https://github.com"
 
 ### `places.toml`
 
-Lugares con nombre para dictar rutas. Escritorio, Documentos, Descargas, Imágenes, Música y Vídeos se añaden solos con las carpetas reales del sistema.
+Lugares con nombre para escribir rutas. Escritorio, Documentos, Descargas, Imágenes, Música y Vídeos se añaden solos con las carpetas reales del sistema.
 
 ```toml
 [places]
@@ -116,7 +98,7 @@ Predeterminados: `git`, `gcc`, `g++`, `make`, `python`, `pip`, `node`, `npm`.
 
 ### `aliases.toml`
 
-Correcciones de transcripción aplicadas al normalizar ([enrutador-intenciones.md](enrutador-intenciones.md)).
+Sustituciones aplicadas al normalizar el texto escrito ([enrutador-intenciones.md](enrutador-intenciones.md)): abreviaturas y formas alternativas de escribir una palabra.
 
 ```toml
 [aliases]

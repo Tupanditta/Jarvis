@@ -110,6 +110,11 @@ def build_app(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis_assistant", description="Asistente personal")
     parser.add_argument("--log-level", choices=LEVELS, help="nivel del registro de diagnóstico")
+    parser.add_argument(
+        "--preview", action="store_true",
+        help="interfaz con eventos simulados, sin voz ni modelos",
+    )
+    parser.add_argument("--ui-debug", action="store_true", help="contador de frames")
     return parser.parse_args(argv)
 
 
@@ -205,6 +210,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_excepthooks()
     logger.info("Jarvis %s arranca", __version__)
 
+    if args.preview:
+        return _run_preview(args, paths)
+
     instance = acquire_single_instance(MUTEX_NAME)
     if instance is None:
         return 0
@@ -215,20 +223,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("Jarvis termina")
 
 
-def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
-    from PySide6.QtCore import Qt, QTimer
-    from PySide6.QtWidgets import QApplication
-
-    from jarvis_assistant.process.tray import TrayController
-    from jarvis_assistant.ui.bridge import UiBridge
-    from jarvis_assistant.ui.status_window import StatusWindow
-
+def _load_config(args: argparse.Namespace, paths: AppPaths) -> Config:
     config_module.install_defaults(paths.config_dir)
     config, errors = config_module.load(paths.config_dir)
     for error in errors:
         logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
     if args.log_level is None:
         logging.getLogger().setLevel(config.settings.logging.level)
+    return config
+
+
+def _run_preview(args: argparse.Namespace, paths: AppPaths) -> int:
+    """Vista previa de la interfaz: sin núcleo, voz, modelos ni instancia única."""
+    from PySide6.QtGui import QGuiApplication
+
+    from jarvis_assistant.ui.preview import run_preview
+
+    config = _load_config(args, paths)
+    QGuiApplication(sys.argv[:1])
+    return run_preview(config.settings.ui, debug=args.ui_debug)
+
+
+def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
+    from PySide6.QtCore import Qt, QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from jarvis_assistant.process.tray import TrayController
+    from jarvis_assistant.ui.app import UiApp
+    from jarvis_assistant.ui.bridge import UiBridge
+
+    config = _load_config(args, paths)
 
     qt_app = QApplication(sys.argv[:1])
     qt_app.setQuitOnLastWindowClosed(False)
@@ -264,10 +288,22 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         qt_app.exec()
         return 1
 
-    window = StatusWindow(publish=bus.publish_threadsafe)
-    bridge.eventReceived.connect(window.on_event, Qt.ConnectionType.QueuedConnection)
-    bridge.eventReceived.connect(tray.on_event, Qt.ConnectionType.QueuedConnection)
-    bridge.exitRequested.connect(qt_app.quit, Qt.ConnectionType.QueuedConnection)
+    ui = UiApp(
+        publish=bus.publish_threadsafe,
+        settings=config.settings.ui,
+        platform=platform,
+        debug=args.ui_debug,
+    )
+
+    def exit_ui() -> None:
+        ui.shutdown()
+        qt_app.quit()
+
+    queued = Qt.ConnectionType.QueuedConnection
+    bridge.eventReceived.connect(ui.on_event, queued)
+    bridge.eventReceived.connect(tray.on_event, queued)
+    bridge.levelReady.connect(lambda: ui.apply_level(bridge.take_level()), queued)
+    bridge.exitRequested.connect(exit_ui, queued)
     bridge.attach(bus)
     qt_app.commitDataRequest.connect(lambda _manager: request_quit())
 
@@ -280,7 +316,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
     )
     core.start()
     tray.show()
-    window.show_and_focus()
+    ui.start()
     qt_app.exec()
 
     tray.hide()

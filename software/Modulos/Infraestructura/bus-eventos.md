@@ -33,14 +33,13 @@ class EventBus:
 | `RestEntered` | — | Orquestador | Animación de dormirse; la interfaz sigue visible. |
 | `SessionClosed` | — | Orquestador | Animación de dormirse; al terminar, oculta todo. |
 | `AssistantActivityChanged` | `state`, `activity` | Orquestador | Etiqueta de estado, aspecto del orbe, icono de la bandeja. |
-| `MicStatusChanged` | `available: bool` | Captura de audio | Icono de la bandeja. |
-| `AudioLevel` | `level: float` (0–1), `source` (`mic` \| `assistant` \| `none`) | Orquestador, a 20 Hz | Reacción del núcleo del orbe (RF-83). |
+| `AudioLevel` | `level: float` (0–1), `source` (`assistant` \| `none`) | Orquestador, a 20 Hz mientras el asistente habla | Reacción del núcleo del orbe (RF-83). |
 
-### Voz y diálogo
+### Órdenes, voz y diálogo
 
 | Evento | Campos | Publica |
 |---|---|---|
-| `TranscriptReady` | `text`, `recognized: bool` | Orquestador |
+| `CommandReceived` | `text`, `recognized: bool` | Orquestador. Texto de una orden escrita; `recognized=False` si no se reconoce (RN-51). |
 | `SpeechStarted` | `text`, `interruptible: bool` | Speaker |
 | `SpeechFinished` | `interrupted: bool` | Speaker |
 | `DialogueOpened` | `question: str`, `expected_type`, `hints: tuple[str, ...]`, `timeout_seconds`, `subject: Mapping \| None` | Orquestador |
@@ -85,6 +84,8 @@ Se publican con `publish_threadsafe`.
 
 | Evento | Origen | Lo atiende |
 |---|---|---|
+| `TextSubmitted(text)` | Caja de texto, al pulsar Enter ([entrada-texto.md](entrada-texto.md)) | Orquestador |
+| `UserTyping` | Caja de texto, al teclear; como mucho una vez por segundo | Orquestador |
 | `FocusItemRequested(item_id)` | Botón «traer al frente» | Apertura |
 | `SilenceRequested` | Botón de silencio | Speaker |
 | `OpenSessionRequested` | Bandeja | Orquestador |
@@ -101,4 +102,5 @@ Se publican con `publish_threadsafe`.
 
 - Los módulos de acción no manipulan ventanas ni importan Qt.
 - La interfaz no llama a módulos ni lee la base de datos: solo recibe eventos y publica acciones del usuario.
+- La interfaz no interpreta el texto: lo publica tal cual en `TextSubmitted`. Reconocerlo es tarea del enrutador.
 - No se publican estados de tarea distintos de `pendiente`, `error` y `completado`.

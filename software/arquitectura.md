@@ -14,10 +14,8 @@ Diseño técnico del asistente. Sustituye a los antiguos `design.md` y `especifi
 
 ```mermaid
 flowchart LR
-    MIC[Micrófono] --> AC[audio_capture]
-    AC -- "WakeWord / Utterance / nivel" --> ORQ[Orquestador]
-    ORQ --> STT[transcriber]
-    STT --> ORQ
+    TXT[Caja de texto de la interfaz] -- "TextSubmitted / UserTyping" --> BUS
+    BUS -- texto escrito --> ORQ[Orquestador]
     ORQ --> RTR[intent_router]
     RTR --> ORQ
     ORQ <--> FSM[Máquina de estados + DialogueContext]
@@ -33,21 +31,20 @@ flowchart LR
     MOD -- eventos --> BUS
     BUS --> UI[ui: pantalla de sesión + HUD + bandeja]
     UI -- acciones del usuario --> BUS
-    CFG[config] -.-> ORQ & MOD & AC & SPK & UI
+    CFG[config] -.-> ORQ & MOD & SPK & UI
 ```
 
 | Componente | Responsabilidad | Documento |
 |---|---|---|
-| `audio_capture` | Micrófono, «Hey Jarvis», detección de voz, segmentación de órdenes, nivel de audio. | [captura-audio.md](Modulos/Infraestructura/captura-audio.md) |
-| `transcriber` | Audio → texto. | [transcriptor.md](Modulos/Infraestructura/transcriptor.md) |
-| `intent_router` | Texto → intención y entidades. | [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md) |
+| Entrada por texto (`ui`, `core/events`) | La caja donde el usuario escribe; entrega el texto al orquestador por el bus. | [entrada-texto.md](Modulos/Infraestructura/entrada-texto.md) |
+| `intent_router` | Texto → frase de activación, frase de control, intención y entidades. | [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md) |
 | `core/state_machine` | Estado del asistente y diálogo. | [maquina-estados.md](Modulos/Infraestructura/maquina-estados.md) |
 | `core/orchestrator` | Bucle de turnos: une todo lo anterior y ejecuta los efectos. | [maquina-estados.md](Modulos/Infraestructura/maquina-estados.md) |
 | `action_modules` | Lógica de negocio. | [Modulos/Accion/](Modulos/Accion/) |
 | `speaker` | Frases parametrizadas → voz. | [sintetizador.md](Modulos/Infraestructura/sintetizador.md) |
 | `core/event_bus` | Publicación/suscripción. | [bus-eventos.md](Modulos/Infraestructura/bus-eventos.md) |
 | `core/database` | SQLite y migraciones. | [persistencia.md](Modulos/Infraestructura/persistencia.md) |
-| `ui` | Pantalla de sesión, HUD flotante. | [hud.md](Modulos/Infraestructura/hud.md), [Interfaz/README.md](Interfaz/README.md) |
+| `ui` | Pantalla de sesión, HUD flotante y caja de texto. | [hud.md](Modulos/Infraestructura/hud.md), [Interfaz/README.md](Interfaz/README.md) |
 | `config` | Archivos TOML. | [configuracion.md](Modulos/Infraestructura/configuracion.md) |
 | `os_adapters` | Todo lo dependiente del sistema operativo. | [plataforma.md](Modulos/Infraestructura/plataforma.md) |
 | `process` | Instancia única, bandeja, registro, arranque y salida. | [proceso.md](Modulos/Infraestructura/proceso.md) |
@@ -58,43 +55,36 @@ flowchart LR
 |---|---|---|
 | **UI** (principal) | Bucle de Qt: ventanas QML, bandeja, `UiBridge`. | Nunca hace trabajo de más de unos milisegundos. No lee la base de datos ni llama a módulos. |
 | **Núcleo** | Bucle `asyncio`: orquestador, FSM, enrutador, módulos de acción, base de datos, `APScheduler`, control del `speaker`. | Dueño de todo el estado. Nada bloquea más de 50 ms: lo lento va a un ejecutor. |
-| **Audio** | `AudioProcessor`: lee bloques de 80 ms de una cola, ejecuta `openwakeword` y el VAD, segmenta. | No toca estado del núcleo. Envía entradas con `loop.call_soon_threadsafe`. |
-| Callbacks de PortAudio | Entrada: copia el bloque a la cola. Salida: copia el siguiente bloque de voz. | Sin Python pesado, sin registro, sin bloqueos. |
-| Ejecutor **STT** (1 hilo) | `faster-whisper`. | Prioridad de hilo por debajo de lo normal. |
+| Callback de PortAudio | Salida: copia el siguiente bloque de voz. No hay flujo de entrada. | Sin Python pesado, sin registro, sin bloqueos. |
 | Ejecutor **TTS** (1 hilo) | Síntesis de Piper. | — |
 | `asyncio.to_thread` | Trabajo de disco potencialmente lento de los módulos (árbol, búsqueda limitada, descubrimiento de aplicaciones). | — |
 
 Comunicación entre hilos:
 
-- **Audio → Núcleo:** entradas inmutables (`WakeWordDetected`, `Utterance`, `MicStatusChanged`) con `loop.call_soon_threadsafe`.
-- **Núcleo → Audio:** el modo de captura (`CaptureMode`) se cambia con una asignación atómica que el hilo de audio lee en cada bloque.
 - **Núcleo → UI:** los manejadores del bus se ejecutan siempre en el hilo del núcleo. `UiBridge` es un manejador que solo emite señales de Qt, que Qt entrega en el hilo de la UI (conexión en cola).
-- **UI → Núcleo:** las acciones del usuario (clic en «traer al frente», «silenciar», menú de la bandeja) se publican con `bus.publish_threadsafe(evento)`, que las pasa al hilo del núcleo.
-- **Nivel de audio:** el hilo de audio y el callback de salida escriben el último nivel (0–1) en una variable; un temporizador del núcleo lo publica a 20 Hz como `AudioLevel` solo mientras se escucha o se habla. La interfaz lo suaviza.
+- **UI → Núcleo:** el texto que el usuario envía (`TextSubmitted`), el aviso de que está tecleando (`UserTyping`) y las demás acciones del usuario (clic en «traer al frente», «silenciar», menú de la bandeja) se publican con `bus.publish_threadsafe(evento)`, que las pasa al hilo del núcleo.
+- **Nivel de audio:** el callback de salida escribe el último nivel (0–1) de la voz del asistente en una variable; un temporizador del núcleo lo publica a 20 Hz como `AudioLevel` solo mientras el asistente habla. La interfaz lo suaviza.
 
-**Épocas.** El núcleo mantiene un contador que aumenta al abrir sesión, al cerrarla y al pasar a reposo. Cada `Utterance` y cada resultado de transcripción llevan la época en la que se capturaron; los de una época anterior se descartan. Elimina las carreras entre una transcripción en curso y un cambio de estado.
+**Orden de las entradas.** El núcleo atiende las entradas de una en una, en el orden en que llegan. Enrutar un texto es inmediato, así que no hay resultados atrasados que descartar: lo enviado durante una frase del ciclo de vida espera a que termine y se atiende con el estado de ese momento.
 
 ## 4. Flujo de un turno
 
 ```mermaid
 sequenceDiagram
-    participant A as audio_capture
+    participant A as Caja de texto (UI)
     participant O as Orquestador
-    participant T as transcriber
     participant R as intent_router
     participant F as FSM
     participant M as Módulo
     participant S as speaker
     participant B as Bus/UI
-    A->>O: Utterance(pcm, época)
-    O->>B: AssistantActivityChanged(procesando)
-    O->>T: transcribe(pcm)
-    T-->>O: texto
-    O->>B: TranscriptReady(texto)
+    A->>O: TextSubmitted(texto), por el bus
     O->>R: route(texto, estado)
-    R-->>O: Control | Intent | DialogueAnswer | NoMatch
+    R-->>O: WakeWord | Control | Intent | DialogueAnswer | NoMatch
+    O->>B: CommandReceived(texto, reconocido)
     O->>F: handle(entrada)
     F-->>O: efectos
+    O->>B: AssistantActivityChanged(procesando)
     O->>B: TaskUpdated(pendiente)
     O->>M: execute(action, params, ctx)
     M-->>O: ActionResult
@@ -109,7 +99,7 @@ Reglas:
 1. **`route` según el estado** (detalle en [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md)): primero se prueban las frases de control; después, en `AWAITING_*`, el texto es una respuesta de diálogo; en `LISTENING_COMMAND`, se clasifica contra los patrones; en `IDLE`, solo vale la frase de cierre.
 2. **`run_task`** es la única función que ejecuta acciones. Crea la tarea en `pendiente`, la registra como actividad, llama a `execute`, captura cualquier excepción (RNF-23), fija el estado final, actualiza la actividad y dice `result.speech`. Los módulos no registran actividades ni publican `TaskUpdated` de su tarea principal.
 3. **Un turno a la vez (RN-44).** El orquestador ejecuta cada turno como una tarea `asyncio`. Mientras hay un turno en curso, una orden nueva espera en una cola de tamaño 1. Las frases de control no esperan: «cancelar» cancela la tarea del turno (`Task.cancel()`); «Gracias Jarvis» y «Buenas noches Jarvis» la cancelan y aplican su transición.
-4. **Trabajo largo en segundo plano.** Un binario externo lanzado por voz no ocupa el turno: `comandos.ejecutar` deja la tarea en `pendiente`, devuelve el control y, al terminar el proceso, actualiza la tarea y encola un aviso con el resultado. Dentro de un protocolo, en cambio, el binario se espera en línea.
+4. **Trabajo largo en segundo plano.** Un binario externo lanzado con una orden no ocupa el turno: `comandos.ejecutar` deja la tarea en `pendiente`, devuelve el control y, al terminar el proceso, actualiza la tarea y encola un aviso con el resultado. Dentro de un protocolo, en cambio, el binario se espera en línea.
 
 ## 5. Interfaz común de los módulos de acción
 
@@ -121,7 +111,7 @@ class SlotType(Enum):
     DIR_PATH        # carpeta existente (resolución de rutas)
     NEW_NAME        # nombre de archivo o carpeta que se va a crear
     NEW_PATH        # ruta anidada que se va a crear ("a barra b")
-    INTEGER         # número dicho ("tres", "3", "tercero")
+    INTEGER         # número, en cifras o en letras ("tres", "3", "tercero")
     DURATION        # "diez minutos", "media hora"
     DATETIME        # "mañana a las nueve"
     CATALOG         # un elemento de una lista conocida (difuso)
@@ -186,7 +176,7 @@ Reglas del contrato:
 - Los parámetros llegan ya resueltos y con tipo (una `Path`, un `int`, un `datetime`), tanto si vienen de la voz como de un protocolo. La resolución es del enrutador; el módulo valida las reglas de negocio.
 - Un módulo no importa otro módulo, ni `ui/`, ni Qt, ni APIs del sistema operativo.
 - Un módulo no lanza excepciones para errores previstos: devuelve `ActionResult(status="error", speech=…)`.
-- Registrar un módulo es añadir su instancia a la lista `ACTION_MODULES` de `main.py`. El enrutador, la ayuda, la indicación de vocabulario del transcriptor y la validación de protocolos se alimentan de `intents()`.
+- Registrar un módulo es añadir su instancia a la lista `ACTION_MODULES` de `main.py`. El enrutador, la ayuda y la validación de protocolos se alimentan de `intents()`.
 
 ## 6. Diálogo
 
@@ -213,11 +203,9 @@ implementation/
 ├── pyproject.toml
 ├── models/                          # modelos descargados en la instalación (no versionados)
 ├── scripts/
-│   ├── fetch_models.py              # descarga y verifica los modelos (única operación con red)
+│   ├── fetch_models.py              # descarga y verifica la voz de Piper (única operación con red)
 │   ├── install_startup.ps1          # crea el acceso directo de inicio automático
 │   ├── uninstall_startup.ps1
-│   ├── diagnose_mic.py              # lista dispositivos y prueba la captura
-│   ├── calibrate_wakeword.py        # mide «Hey Jarvis», recomienda ajustes, entrena el verificador
 │   └── measure.py                   # mide CPU, RAM y latencias (RNF)
 ├── src/jarvis_assistant/
 │   ├── __main__.py
@@ -235,33 +223,23 @@ implementation/
 │   │   ├── clock.py                 # Clock, SystemClock
 │   │   ├── database.py
 │   │   └── migrations/0001_initial.sql
-│   ├── audio_capture/
-│   │   ├── microphone.py            # flujo de entrada, remuestreo, ganancia, reintento
-│   │   ├── device_selection.py      # elección de dispositivo y API (puro)
-│   │   ├── telemetry.py             # nivel, micrófono mudo, trazas de calibración
-│   │   ├── wakeword.py              # openwakeword
-│   │   ├── vad.py                   # Silero VAD
-│   │   ├── segmenter.py             # inicio y fin de orden (puro)
-│   │   └── processor.py             # hilo de audio y modos de captura
-│   ├── transcriber/
-│   │   ├── whisper_transcriber.py
-│   │   └── vocabulary.py            # indicación inicial de vocabulario
 │   ├── intent_router/
 │   │   ├── normalizer.py            # minúsculas, tildes, signos, alias
 │   │   ├── patterns.py              # compilación y coincidencia de patrones
-│   │   ├── router.py                # registro, clasificación, despacho por estado
+│   │   ├── router.py                # frase de activación, registro, clasificación, despacho por estado
 │   │   └── slots/
-│   │       ├── numbers.py           # números dichos
+│   │       ├── numbers.py           # números en cifras o en letras
 │   │       ├── durations.py
 │   │       ├── datetimes.py
-│   │       ├── paths.py             # lugares con nombre y rutas dictadas
+│   │       ├── paths.py             # lugares con nombre y rutas escritas
 │   │       ├── names.py             # nombres de archivo ("punto txt")
 │   │       └── catalogs.py          # búsqueda difusa en listas
 │   ├── speaker/
 │   │   ├── phrases.py               # catálogo de frases y formateadores (fechas, números)
 │   │   ├── piper_synth.py
-│   │   ├── player.py                # flujo de salida y nivel
-│   │   └── speaker.py               # cola de locuciones, interrupción, modos de captura
+│   │   ├── player.py                # flujo de salida
+│   │   ├── level.py                 # nivel de la voz para la interfaz
+│   │   └── speaker.py               # cola de locuciones e interrupción
 │   ├── action_modules/
 │   │   ├── session_manager.py
 │   │   ├── command_runner.py
@@ -282,7 +260,7 @@ implementation/
 │   │   ├── bridge.py                # UiBridge: bus → señales Qt
 │   │   ├── view_models.py           # modelos expuestos a QML
 │   │   ├── window_controller.py     # qué superficie se muestra y cuándo (puro)
-│   │   ├── preview.py               # modo de vista previa sin audio ni modelos
+│   │   ├── preview.py               # modo de vista previa sin voz ni modelos
 │   │   ├── qml/
 │   │   │   ├── SessionScreen.qml
 │   │   │   ├── HudOverlay.qml
@@ -293,15 +271,15 @@ implementation/
 │   │   └── assets/                  # fuentes e iconos
 │   └── resources/config_defaults/   # TOML predeterminados
 └── tests/
-    ├── fakes/                       # dobles: reloj, micrófono, voz, plataforma, STT
+    ├── fakes/                       # dobles: reloj, voz, plataforma
     ├── unit/                        # refleja la estructura de src/
     ├── integration/                 # flujos completos con dobles; QML sin pantalla
     ├── models/                      # con modelos reales (marcador `models`)
-    ├── hardware/                    # con micrófono y altavoz reales (marcador `hardware`)
+    ├── hardware/                    # con altavoz real (marcador `hardware`)
     └── manual/                      # listas de comprobación por fase
 ```
 
-El código existente en `implementation/` se reutiliza donde ya cumple esta especificación (captura de audio, síntesis, transcripción, normalizador, instancia única, registro); lo que la contradiga se reescribe. La especificación manda sobre el código.
+El código existente en `implementation/` se reutiliza donde ya cumple esta especificación (síntesis, normalizador, instancia única, registro); lo que la contradiga se reescribe. La especificación manda sobre el código.
 
 ## 9. Dependencias
 
@@ -310,14 +288,9 @@ Todas gratuitas (RES-44). Se instalan siempre en el entorno virtual `implementat
 | Paquete | Versión | Uso | Licencia |
 |---|---|---|---|
 | `PySide6` | ≥ 6.7 | Interfaz Qt Quick | LGPL-3.0 |
-| `openwakeword` | ≥ 0.6.0 | «Hey Jarvis» y Silero VAD | Apache-2.0 (modelos: CC BY-NC-SA 4.0) |
-| `onnxruntime` | ≥ 1.17 | Inferencia de `openwakeword` | MIT |
-| `faster-whisper` | ≥ 1.1.0 | Transcripción | MIT |
-| `piper-tts` | ≥ 1.3.0 | Síntesis | GPL-3.0 |
-| `sounddevice` | ≥ 0.4.6 | Micrófono y altavoz | MIT |
-| `numpy` | ≥ 1.26 | Audio | BSD |
-| `scipy` | ≥ 1.11 | Remuestreo polifásico | BSD |
-| `scikit-learn` | ≥ 1.3 | Verificador personal de «Hey Jarvis» (lo exige `openwakeword`) | BSD |
+| `piper-tts` | ≥ 1.3.0 | Síntesis (trae `onnxruntime` como dependencia propia) | GPL-3.0 |
+| `sounddevice` | ≥ 0.4.6 | Altavoz | MIT |
+| `numpy` | ≥ 1.26 | Audio de la voz | BSD |
 | `rapidfuzz` | ≥ 3.6 | Coincidencia difusa | MIT |
 | `APScheduler` | ≥ 3.10, < 4 | Planificador | MIT |
 | `psutil` | ≥ 5.9 | Núcleos físicos, árbol de procesos, medidas | BSD |
@@ -330,9 +303,9 @@ Herramientas externas opcionales, gratuitas: *Everything* con `es.exe` (búsqued
 | Nivel | Qué cubre | Cómo |
 |---|---|---|
 | Unitarias | FSM, enrutador, analizadores de entidades, reglas de cada módulo, repositorios sobre SQLite en memoria, `window_controller`. | `pytest`, sin hardware ni modelos, con reloj falso. Se ejecutan por defecto. |
-| Integración | Flujos completos de los casos de uso con dobles de micrófono, transcriptor, voz y plataforma; carga de todo el QML sin pantalla (`QT_QPA_PLATFORM=offscreen`) comprobando que no hay errores. | `pytest`. Se ejecutan por defecto. |
-| Modelos | Detección de «Hey Jarvis», transcripción y síntesis con los modelos reales sobre archivos WAV de prueba. | Marcador `models`; a demanda. |
-| Hardware | Apertura real del micrófono y del altavoz. | Marcador `hardware`; a demanda. |
+| Integración | Flujos completos de los casos de uso con dobles de voz y plataforma, escribiendo cada orden como `TextSubmitted`; carga de todo el QML sin pantalla (`QT_QPA_PLATFORM=offscreen`) comprobando que no hay errores. | `pytest`. Se ejecutan por defecto. |
+| Modelos | Síntesis con el modelo real de la voz. | Marcador `models`; a demanda. |
+| Hardware | Apertura real del altavoz. | Marcador `hardware`; a demanda. |
 | Manual | Aspecto visual, foco, latencias y consumo. | Listas de `tests/manual/`, una por fase. |
 
 Reglas: cada tarea del plan se cierra con sus pruebas; un socket abierto durante las pruebas las hace fallar (RNF-01); ninguna prueba automática depende de tiempos reales ni de la frecuencia de frames.
@@ -344,32 +317,28 @@ Reglas: cada tarea del plan se cierra con sus pruebas; un socket abierto durante
 | AD-01 | FSM pura que devuelve efectos; el orquestador los ejecuta. | Pruebas sin dobles de hardware; cumple RES-21. |
 | AD-02 | Todo el estado en el hilo del núcleo; comunicación por mensajes. | Elimina bloqueos y carreras. |
 | AD-03 | Diálogo por suspensión de corrutina (`await ctx.ask`). | Mismo comportamiento que el `pending_callback`, con la mitad de código y sin estados intermedios en los módulos. |
-| AD-04 | «Gracias Jarvis» y «Buenas noches Jarvis» por transcripción; un único modelo de palabra de activación. | Evita entrenar y mantener un modelo propio. |
-| AD-05 | Escucha restringida en reposo: solo segmentos de 0,5 a 3,5 s se transcriben, con búsqueda voraz, y solo se acepta la frase de cierre. | Permite cerrar la sesión desde reposo sin un segundo modelo y con consumo acotado: las conversaciones largas se descartan sin transcribir. |
-| AD-06 | `faster-whisper` se carga al abrir la sesión (durante la animación de despertar) y se libera al cerrarla. | Consumo residual en dormido (RNF-04). |
-| AD-07 | Silencio del micrófono por modo de captura, desde el inicio de cada locución hasta 0,3 s después de su fin, reiniciando los detectores al reabrir. | El asistente no se oye a sí mismo; sin cancelación de eco. |
+| AD-04 | La frase de activación, «Gracias Jarvis» y «Buenas noches Jarvis» se reconocen en el enrutador, sobre el texto escrito, por similitud con la frase completa. | Un solo mecanismo para todo lo que escribe el usuario; tolera erratas. |
+| AD-05 | Retirada: entrada por texto. En reposo, el enrutador acepta solo la frase de activación y la de cierre. | — |
+| AD-06 | Retirada: entrada por texto. No hay transcriptor que cargar ni liberar. | — |
+| AD-07 | Retirada: entrada por texto. No hay micrófono que silenciar: lo enviado durante una frase del ciclo de vida espera en la cola del orquestador. | — |
 | AD-08 | Un solo conjunto de paneles QML usado en la pantalla de sesión y en el HUD. | La mitad de interfaz que construir y mantener. |
 | AD-09 | El orbe se construye con elementos de Qt Quick (`Shape`, `MultiEffect`, partículas); los sombreadores propios son opcionales. | Evita la cadena de compilación de sombreadores como requisito. |
 | AD-10 | Pantalla de sesión al frente con ventana superior temporal (`SetWindowPos`), sin `AttachThreadInput`. | Robusto y sencillo; el foco se pide, no se fuerza. |
 | AD-11 | Configuración en TOML, validada al cargar, con valores predeterminados en el paquete. | `tomllib` está en la biblioteca estándar; el usuario edita sin tocar código. |
 | AD-12 | Fechas en UTC en la base de datos. | Orden y comparación correctos con cambios de hora. |
 | AD-13 | Registro de actividades y eventos de tarea centralizado en `run_task`. | Ningún módulo puede olvidarlo; RF-10. |
-| AD-14 | Nivel de audio como un único número a 20 Hz; el espectro de los anillos se genera en la interfaz a partir de él. | El diseño pide sincronía con el volumen; no hace falta un análisis de frecuencias. |
+| AD-14 | Nivel de la voz del asistente como un único número a 20 Hz; el espectro de los anillos se genera en la interfaz a partir de él. | El diseño pide sincronía con el volumen; no hace falta un análisis de frecuencias. |
 | AD-15 | PySide6 en lugar de PyQt6. | Binding oficial, LGPL, herramientas incluidas. |
-| AD-16 | Verificador personal opcional sobre el modelo `hey_jarvis` preentrenado, entrenado en el equipo por `calibrate_wakeword.py`. | El modelo está entrenado con voces en inglés; así se adapta a la voz del usuario sin entrenar un modelo nuevo ni usar red. |
-| AD-17 | Vocabulario del transcriptor dinámico: sigue al directorio de trabajo y al diálogo. | Los nombres de carpetas y archivos reales son lo que más se dicta y lo que peor transcribe Whisper. |
-| AD-18 | Segunda pasada con un modelo mayor para órdenes con entidades: prevista, no incluida en la versión 1. | Coste de latencia y RAM no justificado sin medir; el protocolo `Transcriber` permite añadirla sin rediseño. |
+| AD-16 | Retirada: entrada por texto. | — |
+| AD-17 | Retirada: entrada por texto. | — |
+| AD-18 | Retirada: entrada por texto. | — |
+| AD-19 | El usuario escribe sus órdenes en una caja de texto; el asistente no captura audio. La interfaz publica el texto sin interpretarlo y el orquestador lo enruta. | El reconocimiento de voz no interpretaba bien las órdenes y era el cuello de botella del proyecto. Se conservan los estados, las frases y la voz de salida. Si en el futuro se quiere voz, un reconocedor se conecta en el punto por el que entra el texto. |
+| AD-20 | Cuenta de inactividad en lugar de cuenta de silencio: enviar o teclear cuenta como actividad. | Conserva el paso automático a reposo sin depender del micrófono. |
 
 ## 12. Riesgos
 
 | Riesgo | Efecto | Mitigación |
 |---|---|---|
-| Latencia de `small` en CPU. | Respuestas lentas. | `int8`, tamaño de haz 3 ⚙, hilos limitados, órdenes cortas. Si no se cumple RNF-03 en el equipo de referencia: haz 1; último recurso, modelo `base` ⚙. |
-| La transcripción resta CPU a la animación. | Tirones. | Hilos de STT limitados y con prioridad baja; animaciones declarativas de Qt, sin Python por frame. |
-| Falsos positivos de «Hey Jarvis». | La pantalla se abre sin querer. | Umbral ⚙; antirrebote de 1 s; cada detección se registra con su puntuación; el verificador personal rechaza lo que no suena como el usuario. |
-| «Hey Jarvis» no responde (modelo en inglés, ganancia baja, dispositivo con silencio digital). | El asistente no despierta. | Selección de dispositivo y API, detección de micrófono mudo, ganancia ⚙, trazas de casi detección, `calibrate_wakeword.py` con verificador personal, «Abrir sesión» en la bandeja. |
-| Falso cierre en reposo (alguien dice «buenas noches»). | Sesión cerrada sin querer. | Se exige la frase completa con «Jarvis» y similitud ≥ 85 ⚙; desactivable con ⚙ `audio.closing_phrase_in_idle`. |
-| Errores de transcripción en nombres propios y comandos. | Órdenes no reconocidas. | Indicación de vocabulario, alias configurables, coincidencia difusa contra listas reales (carpetas, catálogo). |
-| Micrófono no disponible o mudo. | El asistente no oye. | Reintento, aviso en la bandeja, «Abrir sesión» desde la bandeja, `diagnose_mic.py`. |
-| Windows deniega el foco a la pantalla de sesión. | La pantalla queda delante pero sin foco de teclado. | Aceptado: la pantalla no necesita teclado. |
-| Eco: el micrófono capta la voz del asistente. | Capturas espurias. | AD-07. La interrupción con «Hey Jarvis» puede fallar con el volumen muy alto; queda el botón de silencio. |
+| Erratas al escribir nombres propios y comandos. | Órdenes no reconocidas. | Coincidencia difusa contra listas reales (carpetas, catálogo), alias configurables, y el texto no reconocido se muestra para corregirlo. |
+| Windows deniega el foco a la pantalla de sesión. | La pantalla queda delante pero la caja de texto no recibe el teclado. | La ventana se marca como superior y pide el foco; si Windows no lo concede, un clic en la caja lo da. |
+| Para escribir una orden hay que volver a la ventana del asistente. | Más pasos que hablar mientras se trabaja en otra aplicación. | Aceptado en esta versión: Alt+Tab, barra de tareas, «Mostrar pantalla» en la bandeja o un clic en la caja del HUD. Un atajo de teclado global queda fuera de alcance. |

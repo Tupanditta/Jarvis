@@ -9,17 +9,17 @@ Gestionar la sesión de uso actual: su apertura y cierre, su nombre y su importa
 
 ## Ciclo de vida de la sesión
 
-El ciclo completo está en RN-43 y en [maquina-estados.md](../Infraestructura/maquina-estados.md). Este módulo ejecuta la parte de datos; lo llama el orquestador, no una intención de voz.
+El ciclo completo está en RN-43 y en [maquina-estados.md](../Infraestructura/maquina-estados.md). Este módulo ejecuta la parte de datos; lo llama el orquestador, no una intención del usuario.
 
 | Operación | Cuándo | Qué hace |
 |---|---|---|
 | `open_session()` | `DORMIDO` → `LISTENING_COMMAND` | Crea la fila con el nombre por defecto (RN-02), `is_important = 0` y `opened_at` = ahora. Restablece el directorio de trabajo a la carpeta del usuario (RN-14). Publica `SessionChanged`. |
-| `close_session(reason)` | Cierre por voz o salida del proceso | Marca `error` las actividades `pendiente` (RN-46). Elimina las sesiones marcadas por desbordamiento por esta sesión (RN-09). Fija `closed_at` y `close_reason` (`voz` o `salida`). |
+| `close_session(reason)` | Cierre con la frase de cierre o salida del proceso | Marca `error` las actividades `pendiente` (RN-46). Elimina las sesiones marcadas por desbordamiento por esta sesión (RN-09). Fija `closed_at` y `close_reason` (`voz`, el cierre con la frase de cierre, o `salida`). |
 | `recover_interrupted()` | Arranque del proceso | Para cada sesión sin `closed_at`: aplica `close_session` con `close_reason = 'interrumpida'` y `closed_at` = momento de su última actividad, o `opened_at` si no tiene (RN-47). |
 
 ## Acciones
 
-| Acción | Parámetros | Por voz | En protocolos | Efecto |
+| Acción | Parámetros | Con una orden | En protocolos | Efecto |
 |---|---|---|---|---|
 | `nombrar` | `nombre: TEXT` | Sí | No | Fija el nombre y `name_set_by_module = 1`. |
 | `marcar_importante` | — | Sí | No | `is_important = 1`, `importance_locked_by_module = 1`. Comprueba el desbordamiento. |
@@ -27,7 +27,7 @@ El ciclo completo está en RN-43 y en [maquina-estados.md](../Infraestructura/ma
 | `proponer_nombre` | `nombre: TEXT` | No | Solo desde Protocolos | Si `name_set_by_module = 1`, no hace nada. Si no, pregunta (`BOOLEAN`) y, con un sí, cambia el nombre sin tocar `name_set_by_module`. |
 | `importante_por_protocolo` | — | No | Solo desde Protocolos | Si ya es importante, no hace nada. Si no, `is_important = 1` sin tocar `importance_locked_by_module`. Comprueba el desbordamiento. |
 
-Las dos últimas no tienen patrones de voz: solo las invoca el módulo Protocolos con `ctx.invoke`.
+Las dos últimas no tienen patrones: solo las invoca el módulo Protocolos con `ctx.invoke`.
 
 ## Reglas
 

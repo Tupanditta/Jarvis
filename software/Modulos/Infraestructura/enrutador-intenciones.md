@@ -5,19 +5,20 @@
 
 ## Propósito
 
-Identificar en el texto transcrito la intención del usuario y sus entidades, de forma determinista (RNF-10), y decir al orquestador qué hacer con él según el estado. Es código puro: no ejecuta acciones ni habla.
+Identificar en el texto escrito por el usuario su intención y sus entidades, de forma determinista (RNF-10), y decir al orquestador qué hacer con él según el estado. Es código puro: no ejecuta acciones ni habla.
 
 ## 1. Decisión según el estado
 
 `route(text, state, dialogue) -> RouteResult`, en este orden:
 
-1. **Texto vacío** → `NoMatch`.
-2. **Frases de control** (RN-52), en `LISTENING_COMMAND` y `AWAITING_*`: se compara la frase completa normalizada con cada frase de control usando `fuzz.ratio`; se acepta con ≥ 80 ⚙. → `Control(reposo | cerrar | cancelar)`.
-3. **`IDLE`** (segmento restringido): solo la frase de cierre, con `fuzz.ratio` ≥ 85 ⚙ → `ClosingPhraseInIdle`; cualquier otra cosa → se descarta sin efecto.
-4. **`AWAITING_*`**: el texto se valida contra el `expected_type` del diálogo → `Answer(value)` o `Answer(invalid)`. Nunca se clasifica como intención nueva.
-5. **`LISTENING_COMMAND`**: clasificación contra los patrones → `IntentMatched` o `NoMatch`.
+1. **Texto vacío** → se descarta (la interfaz no lo envía; el orquestador lo ignora).
+2. **Frase de activación**, en todos los estados: se compara la frase completa normalizada con «hey jarvis» y «jarvis» usando `fuzz.ratio`; se acepta con ≥ 80 ⚙ (`router.wake_threshold`). → `WakeWord`. En `DORMIDO` es lo único que se reconoce: cualquier otra cosa se descarta sin efecto.
+3. **Frases de control** (RN-52), en `LISTENING_COMMAND` y `AWAITING_*`: se compara la frase completa normalizada con cada frase de control usando `fuzz.ratio`; se acepta con ≥ 80 ⚙. → `Control(reposo | cerrar | cancelar)`. Si una frase alcanza a la vez el umbral de activación y el de control, gana la de mayor similitud y, a igualdad, la de control.
+4. **`IDLE`**: además de la frase de activación, solo la frase de cierre, con `fuzz.ratio` ≥ 85 ⚙ → `ClosingPhraseInIdle`; cualquier otra cosa → se descarta sin efecto.
+5. **`AWAITING_*`**: el texto se valida contra el `expected_type` del diálogo → `Answer(value)` o `Answer(invalid)`. Nunca se clasifica como intención nueva.
+6. **`LISTENING_COMMAND`**: clasificación contra los patrones → `IntentMatched` o `NoMatch`.
 
-Comparar la frase completa con `fuzz.ratio` (no con coincidencia parcial) evita falsos positivos: «muchas gracias Jarvis por todo» no pasa a reposo.
+Comparar la frase completa con `fuzz.ratio` (no con coincidencia parcial) evita falsos positivos: «muchas gracias Jarvis por todo» no pasa a reposo, y «jarvis abre el navegador» no cuenta como frase de activación.
 
 ## 2. Normalización
 
@@ -27,7 +28,7 @@ Comparar la frase completa con `fuzz.ratio` (no con coincidencia parcial) evita 
 2. Quitar tildes y diéresis; la `ñ` se conserva.
 3. Quitar signos de puntuación, salvo `.`, `/`, `\`, `:`, `_` y `-` dentro de una palabra (nombres de archivo y rutas).
 4. Colapsar espacios.
-5. Aplicar los **alias** de la configuración, palabra a palabra o por secuencias de palabras: corrigen transcripciones fonéticas («guit» → `git`, «ce de» → `cd`, «ele ese» → `ls`).
+5. Aplicar los **alias** de la configuración, palabra a palabra o por secuencias de palabras: aceptan formas alternativas de escribir una palabra («guit» → `git`, «ce de» → `cd`, «ele ese» → `ls`).
 
 El texto original, sin normalizar, se conserva para las entidades de texto libre.
 
@@ -75,7 +76,7 @@ Tras elegir el patrón, cada hueco se resuelve según su `SlotType`. Si un hueco
 | Tipo | Resolución | Error |
 |---|---|---|
 | `TEXT` | El texto original del hueco, recortado. | — |
-| `INTEGER` | `numbers.py`: cifras («12»), números dichos de 0 a 999 («doce»), ordinales del 1 al 10 («primero», «la segunda»). | «No he entendido el número.» |
+| `INTEGER` | `numbers.py`: cifras («12»), números en letras de 0 a 999 («doce»), ordinales del 1 al 10 («primero», «la segunda»). | «No he entendido el número.» |
 | `DURATION` | `durations.py`: `{número} {unidad}` con unidad segundos, minutos, horas, días; «media hora», «un cuarto de hora», «una hora y media». | «No he entendido la duración.» |
 | `DATETIME` | `datetimes.py`: gramática cerrada de la sección 5. Debe ser futura. | «No he entendido la fecha.» / «Esa fecha ya ha pasado.» |
 | `DIR_PATH` | `paths.py`: sección 6. Debe existir y ser carpeta; si no, RN-41. | «La carpeta X no existe.» / «X no es una carpeta.» |
@@ -102,7 +103,7 @@ Reglas: hora de 0 a 23; «de la mañana», «de la tarde», «de la noche» fija
 
 `datetimes.find_suffix(words)` localiza la expresión de fecha más larga al final de un texto; lo usa Recordatorio para separar el texto del recordatorio de su fecha («recuérdame llamar a Ana mañana a las 9»).
 
-## 6. Resolución de rutas dictadas
+## 6. Resolución de rutas escritas
 
 `paths.resolve(spoken, workdir, places) -> Path`, en este orden:
 
@@ -112,7 +113,7 @@ Reglas: hora de 0 a 23; «de la mañana», «de la tarde», «de la noche» fija
    - Primer nivel: un **lugar con nombre** de la configuración (escritorio, documentos, descargas, y los que defina el usuario), con similitud ≥ 85; o una unidad («disco ce» → `C:\`); o, si no, un hijo del directorio de trabajo.
    - Niveles siguientes: un hijo de la carpeta resuelta hasta ese punto.
    - Un hijo se busca entre las subcarpetas reales con `fuzz.WRatio` ≥ 80 ⚙ sobre nombres normalizados; gana la mayor similitud y, a igualdad, el orden alfabético.
-4. Si un nivel no se resuelve → error «no existe» con el nombre dicho.
+4. Si un nivel no se resuelve → error «no existe» con el nombre escrito.
 
 La respuesta de voz siempre dice el nombre real de la carpeta resuelta, para que el usuario detecte una resolución equivocada.
 
@@ -138,7 +139,8 @@ Las intenciones del núcleo (control, ayuda, repetir, mostrar u ocultar la panta
 ## Criterios de aceptación
 
 - El juego de frases de [catalogo-intenciones.md](../../catalogo-intenciones.md) se ejecuta como prueba parametrizada y cumple RNF-11.
-- Las frases de control negativo no producen ninguna intención.
+- Las frases de control negativo no producen ninguna intención ni cuentan como frase de activación.
+- La frase de activación se reconoce en todos los estados, con erratas, y su umbral es configurable.
 - Cada analizador de entidades tiene pruebas con reloj falso.
 - Registrar dos intenciones con el mismo patrón falla al arrancar.
 - Misma entrada, misma salida, en 1000 repeticiones (RNF-10).

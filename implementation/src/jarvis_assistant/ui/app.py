@@ -1,0 +1,221 @@
+"""Creación de las ventanas QML y ejecución de lo que decide `window_controller` (hud.md).
+
+Las dos ventanas se crean al arrancar: la pantalla de sesión se muestra y el HUD queda oculto.
+Los modelos de vista se registran como propiedades de contexto de QML.
+"""
+import logging
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from PySide6.QtCore import QMetaObject, QObject, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QFontDatabase, QWindow
+from PySide6.QtQml import QQmlApplicationEngine, QQmlError
+from PySide6.QtQuick import QQuickWindow
+
+from jarvis_assistant.config import UiSettings
+from jarvis_assistant.core import events
+from jarvis_assistant.ui import window_controller as wc
+from jarvis_assistant.ui.view_models import (
+    AssistantModel,
+    DialogueModel,
+    HudModel,
+    TaskListModel,
+    UiOptions,
+)
+
+logger = logging.getLogger(__name__)
+
+UI_DIR = Path(__file__).resolve().parent
+QML_DIR = UI_DIR / "qml"
+FONTS_DIR = UI_DIR / "assets" / "fonts"
+TRANSITION_MS = 2000  # motion.transition
+
+Publish = Callable[[events.Event], None]
+
+
+def load_fonts() -> list[str]:
+    """Registra las fuentes incluidas y devuelve sus familias."""
+    families: list[str] = []
+    for path in sorted(FONTS_DIR.glob("*.ttf")):
+        font_id = QFontDatabase.addApplicationFont(str(path))
+        if font_id < 0:
+            logger.warning("No se ha podido cargar la fuente %s", path.name)
+            continue
+        families += QFontDatabase.applicationFontFamilies(font_id)
+    return families
+
+
+class UiApp(QObject):
+    """Interfaz completa: modelos, ventanas y controlador de ventanas."""
+
+    screenAnimation = Signal(str)
+    hudAnimation = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        publish: Publish,
+        settings: UiSettings,
+        platform: Any = None,
+        debug: bool = False,
+        monotonic: Callable[[], float] = time.monotonic,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._platform = platform
+        self._monotonic = monotonic
+        self._quitting = False
+        self.warnings: list[str] = []
+        self.assistant = AssistantModel(publish, monotonic, self)
+        self.tasks = TaskListModel(self)
+        self.dialogue = DialogueModel(self)
+        self.hud = HudModel(
+            settings.hud_collapse_seconds,
+            is_busy=lambda: self.dialogue.active or self.tasks.pendingCount > 0,
+            parent=self,
+        )
+        self.options = UiOptions(settings, debug, self)
+        self.controller = wc.WindowController()
+        self._collapse_timer = self._single_shot(self.hud.collapse)
+        self._close_timer = self._single_shot(
+            lambda: self._execute(self.controller.close_animation_finished())
+        )
+
+        load_fonts()
+        self.engine = QQmlApplicationEngine(self)
+        self.engine.warnings.connect(self._on_warnings)
+        context = self.engine.rootContext()
+        for name, model in (
+            ("assistant", self.assistant),
+            ("tasks", self.tasks),
+            ("dialogue", self.dialogue),
+            ("hud", self.hud),
+            ("ui", self.options),
+            ("windows", self),
+        ):
+            context.setContextProperty(name, model)
+        self.screen = self._load("SessionScreen.qml")
+        self.hud_window = self._load("HudOverlay.qml")
+        self.screen.activeChanged.connect(self._screen_active_changed)
+        self.hud_window.activeChanged.connect(self._hud_active_changed)
+
+    def _single_shot(self, callback: Callable[[], None]) -> QTimer:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.setInterval(TRANSITION_MS)
+        timer.timeout.connect(callback)
+        return timer
+
+    def _load(self, name: str) -> QQuickWindow:
+        before = len(self.engine.rootObjects())
+        self.engine.load(QUrl.fromLocalFile(str(QML_DIR / name)))
+        roots = self.engine.rootObjects()
+        if len(roots) == before:
+            raise RuntimeError(f"No se ha podido cargar {name}: {'; '.join(self.warnings)}")
+        window = roots[-1]
+        assert isinstance(window, QQuickWindow)
+        return window
+
+    def _on_warnings(self, warnings: list[QQmlError]) -> None:
+        for warning in warnings:
+            text = warning.toString()
+            self.warnings.append(text)
+            logger.warning("QML: %s", text)
+
+    # --- Entradas ----------------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Muestra la pantalla de sesión en su aspecto de dormido, con el foco en la caja."""
+        self._execute(self.controller.start())
+
+    @Slot(object)
+    def on_event(self, event: object) -> None:
+        for model in (self.assistant, self.tasks, self.dialogue, self.hud):
+            model.apply(event)
+        self._execute(self.controller.on_event(event))
+
+    def apply_level(self, event: events.AudioLevel | None) -> None:
+        if event is not None:
+            self.assistant.apply(event)
+
+    def shutdown(self) -> None:
+        """Permite cerrar las ventanas. Debe llamarse antes de salir del bucle de Qt: en Qt 6,
+        una ventana que rechaza el cierre anula `quit()`."""
+        self._quitting = True
+        self._collapse_timer.stop()
+        self._close_timer.stop()
+
+    @Slot(result=bool)
+    def acceptClose(self) -> bool:
+        """El usuario cierra la pantalla (✕): se oculta y el proceso sigue en la bandeja."""
+        if self._quitting:
+            return True
+        self._execute(self.controller.screen_closed())
+        return False
+
+    @Slot()
+    def hudInputPressed(self) -> None:
+        """Clic en la caja de texto del HUD: la única vez que el HUD acepta el foco."""
+        self.hud_window.setFlag(Qt.WindowType.WindowDoesNotAcceptFocus, False)
+        self._non_activating(self.hud_window, False)
+        self.hud_window.requestActivate()
+
+    def _screen_active_changed(self) -> None:
+        self._execute(self.controller.screen_active_changed(self.screen.isActive()))
+
+    def _hud_active_changed(self) -> None:
+        if not self.hud_window.isActive():
+            self.hud_window.setFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+            self._non_activating(self.hud_window, True)
+
+    # --- Acciones ----------------------------------------------------------------------------
+
+    def _execute(self, actions: list[wc.Action]) -> None:
+        for action in actions:
+            self._run(action)
+
+    def _run(self, action: wc.Action) -> None:
+        match action:
+            case wc.BringScreenToFront():
+                self._bring_screen_to_front()
+            case wc.MinimizeScreen():
+                self.screen.showMinimized()
+            case wc.HideScreen():
+                self.screen.hide()
+            case wc.ShowHud():
+                # El estilo se aplica antes de mostrarlo: así no se activa ni al aparecer.
+                self.hud_window.setFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+                self._non_activating(self.hud_window, True)
+                self.hud_window.show()
+            case wc.HideHud():
+                self.hud_window.hide()
+            case wc.AnimateScreen(animation=animation):
+                self._log_animation("pantalla", animation)
+                self.screenAnimation.emit(animation.value)
+            case wc.AnimateHud(animation=animation):
+                self._log_animation("HUD", animation)
+                self.hudAnimation.emit(animation.value)
+            case wc.CollapseHudAfterAnimation():
+                self._collapse_timer.start()
+            case wc.HideHudAfterAnimation():
+                self._close_timer.start()
+
+    def _log_animation(self, surface: str, animation: wc.Animation) -> None:
+        # Para medir la sincronía con el inicio de la frase (RNF-22).
+        logger.debug("Inicio de la animación %s (%s): %.3f", animation.value, surface,
+                     self._monotonic())
+
+    def _bring_screen_to_front(self) -> None:
+        """La pantalla pasa al frente y pide el foco para la caja; el foco no se fuerza."""
+        self.screen.showFullScreen()
+        self.screen.raise_()
+        if self._platform is not None:
+            self._platform.bring_own_window_to_front(int(self.screen.winId()))
+        self.screen.requestActivate()
+        QMetaObject.invokeMethod(self.screen, "focusInput")
+
+    def _non_activating(self, window: QWindow, enabled: bool) -> None:
+        if self._platform is not None:
+            self._platform.make_non_activating(int(window.winId()), enabled)

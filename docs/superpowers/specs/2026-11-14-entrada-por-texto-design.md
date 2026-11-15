@@ -1,8 +1,10 @@
 # Diseño: entrada por texto en lugar de voz
 
 - **Fecha:** 2026-11-14
-- **Estado:** pendiente de aprobación del propietario
+- **Estado:** aprobado por el propietario e implementado el 2026-11-15, con una desviación (sección 6.7)
 - **Alcance:** código de `implementation/` y especificación de `software/`
+- **Cambio posterior:** en reposo, cualquier texto despierta y se atiende como orden
+  (`2026-11-15-despertar-con-texto-en-reposo-design.md`)
 
 ## 1. Intención
 
@@ -58,7 +60,7 @@ propietario pasa a hacerse escribiendo.
   `.\implementation\.venv\Scripts\pip.exe`.
 - **Datos.** Ningún dato personal ni credencial en archivos del repositorio.
 - **Sin subagentes** salvo que el propietario los pida.
-- La carpeta de datos del usuario no se toca, salvo la migración de la base de datos (sección 6.7).
+- La carpeta de datos del usuario no se toca.
   El archivo `wakeword_verifier.pkl` que pueda existir allí queda huérfano; el propietario puede
   borrarlo a mano.
 
@@ -92,7 +94,7 @@ traducción propuesta, que el propietario vio sin objeciones.
 | Órdenes | Escritas; mismo enrutador y mismo catálogo de intenciones |
 | Frase no reconocida | Se muestra el texto con la marca «no reconocido»; el asistente no dice nada |
 | Silencio de N segundos en escucha lleva a reposo | N segundos sin enviar texto ni teclear llevan a reposo |
-| En reposo solo se atienden «Hey Jarvis» y el cierre | Igual: cualquier otro texto se descarta sin efecto |
+| En reposo solo se atienden «Hey Jarvis» y el cierre | Cualquier texto despierta en silencio y se atiende como orden; «Hey Jarvis» y el cierre, como antes (cambio del 2026-11-15) |
 | En dormido solo se atiende «Hey Jarvis» | Igual |
 
 El texto se envía con Enter. Un envío vacío o solo con espacios no hace nada. La comparación
@@ -128,7 +130,7 @@ sigue siendo aproximada (normalizador y `rapidfuzz`), así que «hey jarvis», �
 | Estado | Texto de ayuda |
 |---|---|
 | `DORMIDO` | Escriba «Hey Jarvis» para iniciar la sesión |
-| `IDLE` | En reposo. Escriba «Hey Jarvis» |
+| `IDLE` | En reposo. Escriba una orden |
 | `LISTENING_COMMAND` y `AWAITING_*` | Escriba una orden |
 
 - Cerrar la ventana con ✕ la oculta; el proceso sigue en la bandeja. «Mostrar pantalla» en el menú
@@ -167,7 +169,9 @@ caja de texto (hilo de Qt)
 
 - Frases de activación, ya normalizadas: `hey jarvis` y `jarvis`.
 - En `DORMIDO` y en `IDLE`: si el texto alcanza el umbral, devuelve `fsm.WakeWord()`. En `IDLE`
-  sigue reconociendo además la frase de cierre.
+  sigue reconociendo además la frase de cierre y, desde el 2026-11-15, enruta cualquier otro
+  texto como en escucha: intención del núcleo o `NoMatch`; «gracias jarvis» y «cancelar» se
+  descartan.
 - En los estados de atención: la frase de activación compite con las frases de control por la
   mejor puntuación y, si gana y alcanza el umbral, devuelve `fsm.WakeWord()`.
 - Umbral nuevo `router.wake_threshold`, predeterminado 80, entre 0 y 100.
@@ -178,7 +182,7 @@ Sin cambios de estados ni de transiciones. Cambios menores:
 
 - Desaparece el efecto `LoadTranscriber`.
 - `WakeWord` conserva su nombre; su descripción pasa a ser «frase de activación escrita».
-- El motivo de cierre `"voz"` pasa a `"orden"` (sección 6.7).
+- El motivo de cierre conserva el valor `"voz"` (sección 6.7).
 
 ### 6.4 Orquestador
 
@@ -216,9 +220,14 @@ asistente habla.
 
 ### 6.7 Base de datos
 
-La tabla `sessions` restringe `close_reason` a `'voz'`, `'salida'` o `'interrumpida'`. Migración
-nueva `0002` que reconstruye la restricción con `'orden'` en lugar de `'voz'` y convierte las
-filas existentes.
+Sin cambios. El diseño aprobado preveía una migración `0002` que renombrara el motivo de cierre
+`'voz'` a `'orden'`. **No se hizo.** Cambiar la restricción `CHECK` de `close_reason` obliga a
+reconstruir la tabla `sessions`, y SQLite rechaza eliminar la tabla antigua con las claves
+foráneas activas (`FOREIGN KEY constraint failed`: `session_activities` y la propia `sessions`
+la referencian con `ON DELETE RESTRICT`). Hacerlo bien exigiría desactivar las claves foráneas
+fuera de la transacción de la migración, un riesgo sobre la base real del propietario que un
+cambio cosmético no justifica. El valor guardado sigue siendo `'voz'` y significa «el usuario
+cerró la sesión con la frase de cierre».
 
 ### 6.8 Qué se borra
 
@@ -237,11 +246,10 @@ filas existentes.
 
 - Enrutador: frase de activación en cada estado, con erratas y con el umbral.
 - Orquestador: `TextSubmitted` recorre el ciclo completo; `UserTyping` reinicia la cuenta; el
-  texto en reposo y en dormido se descarta.
+  texto en dormido se descarta; en reposo despierta y se atiende (cambio del 2026-11-15).
 - Integración: `tests/integration/test_lifecycle.py` reescrito con texto en lugar de audio.
 - Ventana (pytest-qt): visible al arrancar y en dormido, Enter publica `TextSubmitted` y vacía la
   caja, envío vacío sin efecto, texto de ayuda por estado, ✕ oculta sin terminar el proceso.
-- Migración `0002`: una base con filas `'voz'` queda con `'orden'`.
 - La batería completa y `ruff` pasan al terminar.
 
 ## 7. Especificación (`software/`)
@@ -258,7 +266,7 @@ conserva con su identificador y la marca «Retirado: entrada por texto».
 | `arquitectura.md`, `contexto.md`, `README.md`, `restricciones.md`, `reglas-negocio.md`, `Requisitos/*.md`, `catalogo-intenciones.md` | Se sustituye la entrada por voz por la escrita; hilos, dependencias y modelos actualizados. |
 | `plan-implementacion.md` | La fase 1 pasa a ser «Ciclo de vida por texto»; se retiran las tareas y riesgos de captura y transcripción. |
 | `CasosUso/` y `Modulos/Accion/` | Donde digan «el usuario dice», pasa a «el usuario escribe». |
-| `BaseDatos/especificacion-base-datos.md` | Motivo de cierre `'orden'`. |
+| `BaseDatos/especificacion-base-datos.md` | Se aclara el significado del motivo de cierre `'voz'`. |
 
 **Conflicto que resuelve este diseño.** `hud.md` dice que el HUD flotante «nunca toma el foco».
 Con órdenes escritas, el HUD necesita una caja. Regla nueva: el HUD nunca roba el foco por su
@@ -273,7 +281,7 @@ El propietario no las ha decidido expresamente; puede cambiarlas al revisar.
    Windows.
 3. Cerrar con ✕ oculta la ventana y deja el proceso en la bandeja.
 4. Se acepta «jarvis» a secas como frase de activación, además de «hey jarvis».
-5. El motivo de cierre `'voz'` se renombra a `'orden'` con una migración.
+5. El motivo de cierre `'voz'` se renombraba a `'orden'` con una migración. Descartado al implementar (sección 6.7).
 6. La clave de inactividad se traslada a `[input] inactivity_to_idle_seconds`.
 7. Para escribir una orden mientras se trabaja en otra aplicación hay que volver a la ventana de
    Jarvis (Alt+Tab, barra de tareas o bandeja). El atajo global queda fuera.
@@ -287,5 +295,4 @@ El propietario no las ha decidido expresamente; puede cambiarlas al revisar.
 - Comprobar si `onnxruntime` y `numpy` siguen haciendo falta como dependencias directas.
 - Qué partes de `tests/fakes/voice.py`, `tests/hardware/` y `tests/models/` sobreviven por
   pertenecer a la voz de salida.
-- El detalle de la migración `0002` en SQLite.
 - La redacción exacta de cada documento de `software/`.

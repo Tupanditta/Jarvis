@@ -1,21 +1,19 @@
-"""Bandeja, ventana mínima con la caja de texto y puente del bus a Qt (proceso.md)."""
+"""Bandeja (proceso.md, Interfaz sección 9) y puente del bus a Qt (hud.md, sección 5)."""
+from datetime import datetime
 from pathlib import Path
-
-import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractButton
 
 from jarvis_assistant.core import events
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import Activity
-from jarvis_assistant.process.tray import ICON_COLORS, TrayController, tooltip
-from jarvis_assistant.ui.bridge import UiBridge
-from jarvis_assistant.ui.status_window import (
-    PLACEHOLDER_ASLEEP,
-    PLACEHOLDER_ATTENDING,
-    PLACEHOLDER_RESTING,
-    StatusWindow,
+from jarvis_assistant.process.tray import (
+    ICON_SIZES,
+    ICON_VARIANT_OF,
+    ICON_VARIANTS,
+    TrayController,
+    make_icon,
+    tooltip,
 )
+from jarvis_assistant.ui.bridge import UiBridge
 
 
 def activity(value: Activity, state: str = "LISTENING_COMMAND"):
@@ -35,9 +33,29 @@ def make_tray():
 
 
 def test_icono_y_texto_emergente():
-    assert {a.value for a in Activity} == set(ICON_COLORS)
+    assert set(ICON_VARIANT_OF) == set(Activity)
     assert tooltip(Activity.DORMIDO, None) == "Jarvis: dormido"
     assert tooltip(Activity.REPOSO, "2026-11-14") == "Jarvis: en reposo\n2026-11-14"
+
+
+def test_cuatro_variantes_del_icono_segun_la_actividad(qapp):
+    assert set(ICON_VARIANTS) == {"dormido", "reposo", "activo", "esperando"}
+    assert {ICON_VARIANT_OF[a] for a in (Activity.ESCUCHANDO, Activity.PROCESANDO,
+                                         Activity.HABLANDO)} == {"activo"}
+    tray, _ = make_tray()
+    assert tray.variant == "dormido"
+    for value, variant in [
+        (Activity.REPOSO, "reposo"), (Activity.HABLANDO, "activo"),
+        (Activity.ESPERANDO, "esperando"), (Activity.DORMIDO, "dormido"),
+    ]:  # fmt: skip
+        tray.on_event(activity(value))
+        assert tray.variant == variant
+
+
+def test_el_icono_tiene_tamanos_de_16_a_48(qapp):
+    sizes = {(size.width(), size.height()) for size in make_icon("#22D3EE").availableSizes()}
+    assert sizes == {(size, size) for size in ICON_SIZES}
+    assert min(ICON_SIZES) == 16 and max(ICON_SIZES) == 48
 
 
 def test_el_menu_cambia_con_la_sesion(qapp):
@@ -70,118 +88,37 @@ def test_las_opciones_del_menu_publican_sus_acciones(qapp):
     ]
 
 
-def make_window(qtbot, now=None):
-    published = []
-    kwargs = {} if now is None else {"monotonic": lambda: now[0]}
-    window = StatusWindow(publish=published.append, **kwargs)
-    qtbot.addWidget(window)
-    return window, published
-
-
-def test_la_ventana_se_ve_tambien_en_dormido_y_muestra_el_estado_en_texto(qtbot):
-    window, _ = make_window(qtbot)
-    window.show_and_focus()
-    assert window.isVisible()
-    assert window.state_label.text() == "Dormido"
-    window.on_event(activity(Activity.DORMIDO, "DORMIDO"))
-    assert window.isVisible()
-    # La frase empieza a sonar justo antes de anunciarse la sesión: su texto no se borra.
-    window.on_event(events.SpeechStarted("Sesión iniciada. Le escucho.", False))
-    window.on_event(events.SessionOpened(7, "2026-11-14"))
-    assert window.session_label.text() == "Sesión 7: 2026-11-14"
-    assert window.text_label.text() == "Sesión iniciada. Le escucho."
-    window.on_event(activity(Activity.ESCUCHANDO))
-    assert window.state_label.text() == "Escuchando"
-    window.on_event(events.CommandReceived("qué tiempo hace", False))
-    assert window.text_label.text() == "«qué tiempo hace» (no reconocido)"
-    window.on_event(events.CommandReceived("gracias jarvis", True))
-    assert window.text_label.text() == "«gracias jarvis»"
-    window.on_event(activity(Activity.REPOSO, "IDLE"))
-    assert window.isVisible() and window.state_label.text() == "En reposo"
-    window.on_event(events.SessionClosed())
-    window.on_event(activity(Activity.DORMIDO, "DORMIDO"))
-    assert window.isVisible()  # cerrar la sesión no oculta la ventana
-    assert window.session_label.text() == ""
-
-
-def test_el_texto_de_ayuda_de_la_caja_depende_del_estado(qtbot):
-    window, _ = make_window(qtbot)
-    assert window.input.placeholderText() == PLACEHOLDER_ASLEEP
-    window.on_event(activity(Activity.HABLANDO, "LISTENING_COMMAND"))
-    assert window.input.placeholderText() == PLACEHOLDER_ATTENDING
-    window.on_event(activity(Activity.ESPERANDO, "AWAITING_CONFIRMATION"))
-    assert window.input.placeholderText() == PLACEHOLDER_ATTENDING
-    window.on_event(activity(Activity.REPOSO, "IDLE"))
-    assert window.input.placeholderText() == PLACEHOLDER_RESTING
-    window.on_event(activity(Activity.DORMIDO, "DORMIDO"))
-    assert window.input.placeholderText() == PLACEHOLDER_ASLEEP
-
-
-def test_enter_envia_el_texto_y_vacia_la_caja(qtbot):
-    window, published = make_window(qtbot)
-    window.show_and_focus()
-    qtbot.keyClicks(window.input, "Hey Jarvis")
-    qtbot.keyClick(window.input, Qt.Key.Key_Return)
-    assert events.TextSubmitted("Hey Jarvis") in published
-    assert window.input.text() == ""
-
-
-@pytest.mark.parametrize("text", ["", "   "])
-def test_un_envio_vacio_no_publica_nada(qtbot, text):
-    window, published = make_window(qtbot)
-    window.input.setText(text)
-    qtbot.keyClick(window.input, Qt.Key.Key_Return)
-    assert published == []
-    assert window.input.text() == ""
-
-
-def test_teclear_avisa_como_mucho_una_vez_por_segundo(qtbot):
-    now = [100.0]
-    window, published = make_window(qtbot, now)
-    qtbot.keyClicks(window.input, "abre")
-    assert published == [events.UserTyping()]
-    now[0] += 0.9
-    qtbot.keyClicks(window.input, " el")
-    assert published == [events.UserTyping()]
-    now[0] += 0.2
-    qtbot.keyClicks(window.input, " navegador")
-    assert published == [events.UserTyping(), events.UserTyping()]
-    qtbot.keyClick(window.input, Qt.Key.Key_Return)  # tras enviar, la siguiente tecla avisa
-    qtbot.keyClicks(window.input, "x")
-    assert published[-2:] == [events.TextSubmitted("abre el navegador"), events.UserTyping()]
-
-
-def test_cambiar_el_texto_por_codigo_no_cuenta_como_teclear(qtbot):
-    window, published = make_window(qtbot)
-    window.input.setText("hola")
-    assert published == []
-
-
-def test_cerrar_la_ventana_la_oculta_y_mostrar_pantalla_la_devuelve(qtbot):
-    window, _ = make_window(qtbot)
-    window.show_and_focus()
-    assert not window.close()  # el cierre se rechaza: el proceso sigue en la bandeja
-    assert not window.isVisible()
-    window.on_event(events.ShowScreenRequested(True))
-    assert window.isVisible()
-    window.hide()
-    window.on_event(events.SessionOpened(8, "2026-11-14"))  # «Abrir sesión» en la bandeja
-    assert window.isVisible()
-
-
-def test_la_ventana_no_tiene_botones(qtbot):
-    window, _ = make_window(qtbot)
-    assert window.findChildren(QAbstractButton) == []
-
-
 def test_el_puente_convierte_los_eventos_del_bus_en_senales(qtbot):
     bus = EventBus()
     bridge = UiBridge()
     received = []
     bridge.eventReceived.connect(received.append)
     bridge.attach(bus)
+    task = events.TaskUpdated(1, None, "comandos", "ls", "pendiente", None, datetime(2026, 11, 14))
     bus.publish(events.RestEntered())
-    bus.publish(events.AudioLevel(0.5, "assistant"))  # el nivel no lo usa la ventana mínima
-    bus.publish(events.TextSubmitted("hola"))  # ni las acciones del usuario
+    bus.publish(events.TextSubmitted("hola"))  # las acciones del usuario no vuelven a la interfaz
     bus.publish(events.CommandReceived("hola", False))
-    assert received == [events.RestEntered(), events.CommandReceived("hola", False)]
+    bus.publish(task)
+    bus.publish(events.PanelActivated("comandos"))
+    assert received == [
+        events.RestEntered(), events.CommandReceived("hola", False), task,
+        events.PanelActivated("comandos"),
+    ]  # fmt: skip
+
+
+def test_el_puente_solo_conserva_el_ultimo_nivel_pendiente(qtbot):
+    bus = EventBus()
+    bridge = UiBridge()
+    ready = []
+    received = []
+    bridge.levelReady.connect(lambda: ready.append(True))
+    bridge.eventReceived.connect(received.append)
+    bridge.attach(bus)
+    for level in (0.2, 0.5, 0.8):
+        bus.publish(events.AudioLevel(level, "assistant"))
+    assert ready == [True]  # una sola señal hasta que se recoge
+    assert received == []  # el nivel no va por la señal de eventos
+    assert bridge.take_level() == events.AudioLevel(0.8, "assistant")
+    assert bridge.take_level() is None
+    bus.publish(events.AudioLevel(0.0, "none"))
+    assert ready == [True, True]

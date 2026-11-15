@@ -11,19 +11,19 @@ Sesión abierta y asistente en `LISTENING_COMMAND`.
 
 ## Disparador
 
-El usuario dice «Recuérdame que tengo que llamar a Ana mañana a las nueve».
+El usuario escribe «Recuérdame que tengo que llamar a Ana mañana a las nueve».
 
 ## Flujo principal
 
 1. El sistema identifica `recordatorio.crear`; el patrón separa el prefijo «recuérdame que».
 2. El sistema encuentra al final del texto la fecha «mañana a las nueve»: es la primera fecha de aviso. El texto restante, «tengo que llamar a Ana», se convierte en «Tienes que llamar a Ana» (RN-20).
 3. El sistema pasa a `AWAITING_PARAMETER` y pregunta «¿Quiere añadir otro aviso o una fecha límite?».
-4. El usuario dice «No».
+4. El usuario escribe «No».
 5. El sistema guarda el recordatorio y su aviso, lo programa y dice «Recordatorio creado para mañana a las nueve.». El panel de recordatorios lo muestra.
 
 ## Flujos alternativos
 
-- **A1. Sin fecha en la orden** (paso 2): «Recuérdame comprar pan». El sistema pregunta «¿Cuándo quiere que se lo recuerde?» y el usuario dice una fecha («en dos horas»). Sigue en el paso 3. Si cancela o no responde, no se crea nada.
+- **A1. Sin fecha en la orden** (paso 2): «Recuérdame comprar pan». El sistema pregunta «¿Cuándo quiere que se lo recuerde?» y el usuario escribe una fecha («en dos horas»). Sigue en el paso 3. Si cancela o no responde, no se crea nada.
 - **A2. Otro aviso** (paso 4): «Otro aviso el viernes a las diez». El sistema lo añade y repite la pregunta, hasta 5 avisos.
 - **A3. Fecha límite** (paso 4): «Fecha límite el sábado a las doce». El sistema la fija y pasa al paso 5.
 - **A4. Sin respuesta o «cancelar»** (paso 4): el recordatorio se guarda con lo que ya tiene; es la única excepción a la cancelación, porque la fecha obligatoria ya se dio.

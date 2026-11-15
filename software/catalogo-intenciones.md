@@ -1,6 +1,6 @@
 # Catálogo de intenciones y frases
 
-Todo lo que el asistente entiende y todo lo que dice. Es la referencia para escribir los `intents()` de cada módulo y el catálogo de `speaker/phrases.py`. La mecánica de coincidencia está en [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md).
+Todo lo que el asistente entiende, escrito por el usuario, y todo lo que dice. Es la referencia para escribir los `intents()` de cada módulo y el catálogo de `speaker/phrases.py`. La mecánica de coincidencia está en [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md).
 
 Convenciones: los patrones se escriben con tildes y se normalizan al registrarlos; `{hueco}` es una entidad; cada línea de la columna «Patrones» es un patrón distinto. Añadir sinónimos es añadir patrones: no cambia nada más.
 
@@ -8,7 +8,7 @@ Convenciones: los patrones se escriben con tildes y se normalizan al registrarlo
 
 | Frase | Mecanismo | Válida en | Efecto |
 |---|---|---|---|
-| «Hey Jarvis» | Palabra de activación (`openwakeword`) | Todos los estados | Dormido: abre sesión. Reposo: pasa a escucha. Escucha o espera: reinicia la cuenta de silencio; si el asistente habla, lo interrumpe. |
+| «Hey Jarvis» · «Jarvis» | Frase de activación escrita: frase completa, similitud ≥ 80 ⚙ | Todos los estados | Dormido: abre sesión. Reposo: pasa a escucha. Escucha o espera: reinicia la cuenta de inactividad; si el asistente habla, lo interrumpe. |
 | «Gracias Jarvis» | Frase completa, similitud ≥ 80 | Escucha, espera | Pasa a reposo. |
 | «Buenas noches Jarvis» | Frase completa, similitud ≥ 80 (≥ 85 en reposo) | Escucha, espera, reposo | Cierra la sesión. |
 | «Cancelar» · «Cancela» · «Olvídalo» · «Déjalo» | Frase completa, similitud ≥ 80 | Escucha, espera | Cancela la orden o el diálogo en curso. |
@@ -199,7 +199,7 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | Identificador | Texto |
 |---|---|
 | `creacion.creado` | {tipo} {nombre} creado en {carpeta}. |
-| `creacion.colision` | Ya existe {nombre}. Diga otro nombre o cancelar. |
+| `creacion.colision` | Ya existe {nombre}. Escriba otro nombre o cancelar. |
 | `creacion.fallo` | No he podido crear {nombre}. |
 
 ### Recordatorio
@@ -219,7 +219,7 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `recordatorio.ninguno` | No tiene recordatorios. |
 | `recordatorio.lectura` | {texto} |
 | `recordatorio.lectura_vencido` | {texto} Venció {fecha}. |
-| `recordatorio.activar` | Diga confirmar recordatorios y el número. |
+| `recordatorio.activar` | Escriba confirmar recordatorios y el número. |
 | `recordatorio.confirmado` | Recordatorio {n} confirmado. |
 | `recordatorio.pospuesto` | Pospuesto. Le avisaré dentro de {duracion}. |
 | `recordatorio.sin_aviso` | Ese recordatorio aún no ha avisado. |
@@ -240,12 +240,13 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 
 ## 6. Juego de frases de prueba
 
-Se implementa como prueba parametrizada del enrutador (RNF-11): texto ya transcrito → intención y entidades esperadas. Debe incluir, como mínimo:
+Se implementa como prueba parametrizada del enrutador (RNF-11): texto escrito → intención y entidades esperadas. Debe incluir, como mínimo:
 
 - **Un caso por cada patrón** de las secciones 2 y 3.
-- **Variaciones de transcripción** por intención: mayúsculas, signos («¿Dónde estoy?»), tildes ausentes, una errata en el texto fijo («avre la carpeta descargas», «recuerdame»), y alias («ce de proyectos»).
+- **Variaciones de escritura** por intención: mayúsculas, signos («¿Dónde estoy?»), tildes ausentes, una errata en el texto fijo («avre la carpeta descargas», «recuerdame»), y alias («ce de proyectos»).
 - **Entidades en otro idioma:** «abre Visual Studio Code», «ejecuta git status», «ve a Downloads».
 - **Desambiguación por especificidad:** «abre la carpeta descargas» → `apertura.abrir_carpeta`; «abre una terminal» → `comandos.abrir_consola`; «abre la carpeta del resultado dos» → `busqueda.abrir_ubicacion`; «recuérdame que llame» → texto sin «que».
+- **Frase de activación**, en todos los estados: «hey jarvis», «Hey, Jarvis.», «hey jarbis», «jarvis».
 - **Frases de control:** «gracias jarvis», «gracias, Jarvis.», «grasias jarvis», «buenas noches jarvis».
-- **Control negativo** (ninguna intención ni frase de control): «muchas gracias jarvis por todo», «jarvis», «buenas noches», «qué tiempo hace hoy», «hey jarvis», texto vacío, «abre» (hueco vacío).
+- **Control negativo** (ninguna intención ni frase de control): «muchas gracias jarvis por todo», «buenas noches», «qué tiempo hace hoy», «jarvis abre el navegador», texto vacío, «abre» (hueco vacío).
 - **Diálogo:** en `AWAITING_CONFIRMATION`, «abre GitHub» no se clasifica como intención: es una respuesta no válida.

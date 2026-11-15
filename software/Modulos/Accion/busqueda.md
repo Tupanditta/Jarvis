@@ -15,14 +15,14 @@ Localizar archivos, carpetas o ambos en disco de forma rápida mediante herramie
 | `abrir_resultado` | `n: INTEGER` | Abre el resultado *n* con su aplicación predeterminada; si es una carpeta, en el gestor de archivos (RF-90). |
 | `abrir_ubicacion` | `n: INTEGER` | Abre en el gestor de archivos la carpeta que contiene el resultado *n*. |
 
-Todas se pueden invocar por voz; `buscar`, también desde protocolos. Todas activan el panel de búsqueda.
+Todas se pueden invocar con una orden escrita; `buscar`, también desde protocolos. Todas activan el panel de búsqueda.
 
 ## Reglas
 
 ### Búsqueda indexada
 
 - `ctx.platform.indexed_search(query, kind, limit)`: en Windows, `es.exe` de *Everything*, con el filtro de archivos, carpetas o ambos y un límite de 50 resultados. Los parámetros exactos de `es.exe` se comprueban con su ayuda al implementar el adaptador.
-- La consulta es el texto dicho; *Everything* busca por nombre.
+- La consulta es el texto escrito; *Everything* busca por nombre.
 
 ### Búsqueda limitada (sin herramienta indexada)
 

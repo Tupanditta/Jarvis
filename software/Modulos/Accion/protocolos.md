@@ -14,16 +14,16 @@ Ejecutar secuencias predefinidas de tareas de varios módulos de acción con una
 | `ejecutar` | `protocolo: CATALOG` (protocolos) | Ejecuta el protocolo (RF-52 a RF-57). |
 | `listar` | — | Publica `ProtocolsListed` y dice cuántos hay (RF-99). |
 
-Solo por voz: un protocolo no puede invocar a otro protocolo.
+Solo con una orden del usuario: un protocolo no puede invocar a otro protocolo.
 
 ## Definición (RN-33, RES-36)
 
-Los protocolos se definen en `protocols.toml`, un archivo estático que el asistente solo lee. El usuario lo edita a mano; no se crean ni se editan por voz.
+Los protocolos se definen en `protocols.toml`, un archivo estático que el asistente solo lee. El usuario lo edita a mano; no se crean ni se editan con órdenes.
 
 ```toml
 [[protocols]]
 id = "modo-trabajo"
-name = "modo trabajo"                 # nombre que se dice y que se propone para la sesión
+name = "modo trabajo"                 # nombre que se escribe y que se propone para la sesión
 aliases = ["a trabajar"]
 important = true
 
@@ -49,9 +49,9 @@ important = true
   params = { objetivo = "GitHub" }
 ```
 
-- `id` único. `name` y `aliases` son el catálogo con el que se reconoce el protocolo dicho.
+- `id` único. `name` y `aliases` son el catálogo con el que se reconoce el protocolo escrito.
 - Cada tarea: `module` (nombre de módulo), `action`, `params` y, opcionalmente, `stop_on_error` y `description` (texto que se muestra; si falta, se genera).
-- Los parámetros se escriben como se dirían por voz y se resuelven con la misma lógica que las entidades (`IntentRouter.resolve_params`), **en el momento de ejecutar cada tarea**, no al cargar: así una ruta relativa usa el directorio de trabajo que dejó la tarea anterior.
+- Los parámetros se escriben como se escribirían en una orden y se resuelven con la misma lógica que las entidades (`IntentRouter.resolve_params`), **en el momento de ejecutar cada tarea**, no al cargar: así una ruta relativa usa el directorio de trabajo que dejó la tarea anterior.
 - **Validación al cargar** ([configuracion.md](../Infraestructura/configuracion.md)): módulo y acción existentes y admitidos en protocolos, parámetros obligatorios presentes, `id` y nombres sin repetir. Un protocolo no válido se descarta con un error de configuración; los demás se cargan.
 
 El archivo predeterminado incluye un protocolo de ejemplo, comentado, para que el usuario lo adapte.
@@ -61,7 +61,7 @@ El archivo predeterminado incluye un protocolo de ejemplo, comentado, para que e
 1. **Panel:** se publica `ProtocolStarted` con todas las tareas, y cada una se crea como subtarea en `pendiente` (RF-53). El asistente dice «Iniciando el protocolo {nombre}.».
 2. **Nombre de la sesión:** `ctx.invoke("sesion", "proponer_nombre", {nombre})`. Si el usuario no había fijado el nombre, se le pregunta; con un sí, la sesión toma el nombre del protocolo (RN-04, RF-54). Un no, una cancelación o el vencimiento del tiempo no detienen el protocolo.
 3. **Importancia:** si el protocolo es importante, `ctx.invoke("sesion", "importante_por_protocolo")` (RN-36, RF-55). Nunca se degrada una sesión importante.
-4. **Tareas:** en orden (RN-34). Para cada una: se resuelven sus parámetros y se ejecuta con `ctx.invoke(module, action, params)`, es decir, con la misma interfaz y el mismo `run_task` que una orden de voz. Su estado se actualiza en el panel en cuanto cambia (RF-57).
+4. **Tareas:** en orden (RN-34). Para cada una: se resuelven sus parámetros y se ejecuta con `ctx.invoke(module, action, params)`, es decir, con la misma interfaz y el mismo `run_task` que una orden del usuario. Su estado se actualiza en el panel en cuanto cambia (RF-57).
    - Las respuestas de voz de cada tarea **no se dicen**, salvo los errores y las preguntas de diálogo: un protocolo no debe ser una sucesión de frases.
    - Si una tarea necesita un diálogo (p. ej. una colisión de nombre), lo formula cuando le llega el turno y el protocolo espera (RN-35).
    - Una tarea en `error` no detiene el protocolo, salvo que tenga `stop_on_error = true`; entonces las restantes quedan en `error` con el motivo «protocolo detenido».

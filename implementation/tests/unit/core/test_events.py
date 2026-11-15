@@ -94,3 +94,21 @@ def test_el_origen_del_nivel_de_audio_es_assistant_o_none():
 def test_no_quedan_eventos_de_la_entrada_por_voz():
     assert not hasattr(events, "MicStatusChanged")
     assert not hasattr(events, "TranscriptReady")
+
+
+def test_eventos_de_dialogo_tareas_y_panel():
+    from datetime import datetime
+
+    def names(cls):
+        return [f.name for f in dataclasses.fields(cls)]
+
+    assert names(events.DialogueOpened) == [
+        "question", "expected_type", "hints", "timeout_seconds", "subject",
+    ]
+    assert names(events.DialogueClosed) == ["outcome"]
+    assert names(events.TaskUpdated) == [
+        "task_id", "parent_id", "module", "description", "status", "detail", "at",
+    ]
+    assert names(events.PanelActivated) == ["panel"]
+    with pytest.raises(ValueError):  # solo pendiente, error y completado
+        events.TaskUpdated(1, None, "comandos", "ls", "en curso", None, datetime(2026, 11, 14))

@@ -15,19 +15,19 @@ Lanzar aplicaciones instaladas, abrir URLs de un catálogo predefinido en Micros
 | `abrir_carpeta` | `ruta: DIR_PATH` (opcional; sin ella, el directorio de trabajo) | Abre la carpeta en el gestor de archivos (RF-58). |
 | `traer_al_frente` | `objetivo: CATALOG` (elementos abiertos) | Trae al frente la ventana de un elemento abierto (RF-25). |
 
-Todas se pueden invocar por voz y desde protocolos. Todas activan el panel de aperturas.
+Todas se pueden invocar con una orden escrita y desde protocolos. Todas activan el panel de aperturas.
 
 ## Reglas
 
 ### Qué se puede abrir (RN-17, RN-49)
 
-El nombre dicho se busca, en este orden, y gana la primera fuente con una coincidencia ≥ 75 ⚙:
+El nombre escrito se busca, en este orden, y gana la primera fuente con una coincidencia ≥ 75 ⚙:
 
 1. **Catálogo de aplicaciones** (`catalog.toml`, sección `apps`): por `name` y `aliases`.
 2. **Catálogo de páginas** (sección `pages`): por `name` y `aliases`. Solo se abren URLs del catálogo.
 3. **Aplicaciones descubiertas** del sistema (accesos directos del menú Inicio), si `discover_installed_apps = true`. Se descubren al arrancar y al abrir cada sesión, en segundo plano.
 
-Sin coincidencia: tarea en `error`, «No encuentro {nombre}.». El catálogo lo edita el usuario a mano; no se amplía por voz.
+Sin coincidencia: tarea en `error`, «No encuentro {nombre}.». El catálogo lo edita el usuario a mano; no se amplía con órdenes.
 
 ### Lanzamiento
 
@@ -45,7 +45,7 @@ El asistente no trae nada al frente por su cuenta ni recupera el foco tras abrir
 - El módulo mantiene en memoria la lista de elementos abiertos en la sesión (máximo 12; se descarta el más antiguo). Cada uno: nombre, tipo (aplicación, página, carpeta), estado y referencia a su ventana.
 - Tras lanzar, busca en segundo plano la ventana nueva (`ctx.platform.wait_for_window`, hasta 10 s). Si la encuentra, el elemento pasa a `can_focus = True`. Para una página, la ventana es la de Edge.
 - Cada cambio publica `OpenedItemsChanged` con la lista completa.
-- **Traer al frente:** por clic (`FocusItemRequested`) o por voz. Llama a `ctx.platform.focus_window`. Si la ventana ya no existe, el elemento pasa a `can_focus = False` y se dice «Esa ventana ya no está abierta.».
+- **Traer al frente:** por clic (`FocusItemRequested`) o con una orden. Llama a `ctx.platform.focus_window`. Si la ventana ya no existe, el elemento pasa a `can_focus = False` y se dice «Esa ventana ya no está abierta.».
 - La lista se vacía al cerrar la sesión. Las aplicaciones abiertas no se cierran.
 - Si el sistema no permite traer ventanas al frente (Wayland), el botón no se muestra.
 
