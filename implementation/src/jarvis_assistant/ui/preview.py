@@ -14,7 +14,13 @@ from PySide6.QtCore import QObject, QTimer
 
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import HelpEntry, HelpGroup
-from jarvis_assistant.core.content import Entry, OpenedItem, SearchResult, TreeNode
+from jarvis_assistant.core.content import (
+    Entry,
+    LaunchTarget,
+    OpenedItem,
+    SearchResult,
+    TreeNode,
+)
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 
@@ -78,6 +84,9 @@ def panel_tour() -> list[Step]:
         Step(0.4, _task(4, "completado", "git status")),
         Step(1.0, events.CommandPanelCleared()),
         Step(0.6, events.PanelActivated("aperturas")),
+        Step(0.0, events.LaunchTargetsChanged((
+            LaunchTarget("Visual Studio Code", "aplicacion"), LaunchTarget("GitHub", "pagina"),
+        ))),
         Step(0.0, events.OpenedItemsChanged((
             OpenedItem(1, "Visual Studio Code", "aplicacion", "completado", True),
             OpenedItem(2, "GitHub", "pagina", "completado", False),
@@ -131,6 +140,11 @@ def script() -> list[Step]:
         Step(0.0, _task(2, "error", "abrir bloc de notas", module="apertura",
                         detail="No se encuentra la aplicación")),
         Step(0.5, _task(3, "pendiente", "buscar informe", module="busqueda")),
+        # Varias órdenes en un mensaje: las que esperan su turno se ven en la cola.
+        Step(0.5, events.CommandReceived("busca informe -- lista -- árbol", True)),
+        Step(0.0, events.OrderQueueChanged(("lista", "árbol"))),
+        Step(1.2, events.OrderQueueChanged(("árbol",))),
+        Step(0.8, events.OrderQueueChanged(())),
         Step(1.5, events.CommandReceived("qué tiempo hace", False)),
         *panel_tour(),
         # Una pregunta: esperando.

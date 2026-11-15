@@ -1,5 +1,4 @@
-// Botón de icono de 28 px con realce al pasar el cursor.
-// Solo para «traer al frente», silencio, expandir y ocultar (hud.md, sección 3).
+// Botón de icono de 28 px con realce al pasar el cursor. Desactivado se ve atenuado.
 import QtQuick
 import ".."
 
@@ -7,12 +6,14 @@ Rectangle {
     id: button
 
     property string icon: "expandir"
+    readonly property alias hovered: hover.hovered
     signal clicked()
 
     width: 28
     height: 28
     radius: Theme.radiusCard
-    color: hover.hovered ? Theme.bgRaised : "transparent"
+    color: hover.hovered && enabled ? Theme.bgRaised : "transparent"
+    opacity: enabled ? 1 : 0.35
 
     Image {
         anchors.centerIn: parent

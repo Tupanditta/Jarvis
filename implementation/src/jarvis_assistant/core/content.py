@@ -38,6 +38,14 @@ class OpenedItem:
 
 
 @dataclass(frozen=True)
+class LaunchTarget:
+    """Elemento del catálogo que el asistente puede abrir: aplicación o página."""
+
+    name: str
+    kind: OpenedKind
+
+
+@dataclass(frozen=True)
 class SearchResult:
     """Resultado numerado de una búsqueda. `index`: lo que el usuario escribe (RN-50)."""
 

@@ -14,6 +14,7 @@ from typing import Any
 from jarvis_assistant.config import AppEntry, Catalog, PageEntry
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import (
+    WORKDIR,
     ActionContext,
     ActionResult,
     IntentSpec,
@@ -21,7 +22,7 @@ from jarvis_assistant.core.action_api import (
     Slot,
     SlotType,
 )
-from jarvis_assistant.core.content import OpenedItem, OpenedKind
+from jarvis_assistant.core.content import LaunchTarget, OpenedItem, OpenedKind
 from jarvis_assistant.core.workdir import folder_name, invalid_folder
 from jarvis_assistant.os_adapters.base import AppTarget, DiscoveredApp, EdgeNotFound, WindowRef
 
@@ -55,18 +56,20 @@ class AppLauncher:
         self._discovery: asyncio.Task | None = None
 
     def intents(self) -> Sequence[IntentSpec]:
+        opened = frozenset({OPENED})  # la acción cambia la lista de elementos abiertos
         return (
             IntentSpec(
                 "abrir", ("abre {objetivo}", "abrir {objetivo}", "lanza {objetivo}",
                           "inicia {objetivo}"),
                 (Slot("objetivo", SlotType.CATALOG, catalog=TARGETS),),
-                "Abrir una aplicación o una página", "Abre GitHub", PANEL,
+                "Abrir una aplicación o una página", "Abre GitHub", PANEL, writes=opened,
             ),
             IntentSpec(
                 "abrir_carpeta", ("abre la carpeta {ruta}", "muestra la carpeta {ruta}",
                                   "abre esta carpeta", "abre la carpeta actual"),
                 (Slot("ruta", SlotType.DIR_PATH, optional=True),),
                 "Abrir una carpeta en el gestor de archivos", "Abre la carpeta descargas", PANEL,
+                reads=frozenset({WORKDIR}), writes=opened,
             ),
             IntentSpec(
                 "traer_al_frente", ("trae al frente {objetivo}", "pon delante {objetivo}",
@@ -98,6 +101,17 @@ class AppLauncher:
         self._catalog = ctx.config.catalog
         self._items.clear()
         self._publish(ctx)
+        ctx.publish(
+            events.LaunchTargetsChanged(
+                tuple(
+                    LaunchTarget(entry.name, kind)
+                    for kind, entries in (
+                        ("aplicacion", self._catalog.apps), ("pagina", self._catalog.pages)
+                    )
+                    for entry in entries
+                )
+            )
+        )  # fmt: skip
         if self._catalog.discover_installed_apps:
             self._discovery = asyncio.ensure_future(self.discover(ctx.platform))
 

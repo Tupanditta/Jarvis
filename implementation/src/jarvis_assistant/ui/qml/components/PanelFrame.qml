@@ -1,4 +1,6 @@
 // Marco de un panel: título, borde y, en el panel activo, cuatro esquinas marcadas.
+// Dentro de una ventana flotante (`embedded`) no dibuja marco ni título: los pone la ventana.
+// Dentro del HUD (`flat`) el panel es compacto: solo muestra el contenido, sin controles.
 import QtQuick
 import ".."
 
@@ -8,12 +10,17 @@ Rectangle {
     property string title: ""
     property bool active: false
     property bool flat: false            // dentro del HUD: sin fondo ni borde propios
+    property bool embedded: false        // dentro de una ventana flotante
+    property string summary: ""          // una línea de estado para la cabecera de la ventana
     default property alias content: body.data
-    readonly property real headerHeight: header.y + header.height + Theme.space8
+    readonly property bool bare: flat || embedded
+    readonly property bool rich: !flat   // con barra de herramientas, filtros y campos
+    readonly property real headerHeight: embedded ? 0
+                                                  : header.y + header.height + Theme.space8
 
-    color: flat ? "transparent" : Theme.bgPanel
+    color: bare ? "transparent" : Theme.bgPanel
     radius: Theme.radiusPanel
-    border.width: flat ? 0 : 1
+    border.width: bare ? 0 : 1
     border.color: active ? Theme.lineStrong : Theme.lineSoft
 
     DisplayText {
@@ -22,6 +29,7 @@ Rectangle {
         x: Theme.space16
         y: frame.flat ? 0 : Theme.space12
         width: parent.width - 2 * Theme.space16
+        visible: !frame.embedded
         text: frame.title
         size: Theme.sizeSecondary
     }
@@ -31,15 +39,15 @@ Rectangle {
 
         anchors.fill: parent
         anchors.topMargin: frame.headerHeight
-        anchors.leftMargin: Theme.space16
-        anchors.rightMargin: Theme.space16
-        anchors.bottomMargin: frame.flat ? 0 : Theme.space12
+        anchors.leftMargin: frame.embedded ? 0 : Theme.space16
+        anchors.rightMargin: frame.embedded ? 0 : Theme.space16
+        anchors.bottomMargin: frame.bare ? 0 : Theme.space12
         clip: true
     }
 
     // Esquinas en `primary`, trazos de 12 px: el único guiño «HUD» de los paneles.
     Repeater {
-        model: frame.active && !frame.flat ? 4 : 0
+        model: frame.active && !frame.bare ? 4 : 0
 
         Item {
             id: corner

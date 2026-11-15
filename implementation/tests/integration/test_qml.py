@@ -6,7 +6,7 @@ acelerada: no debe aparecer ningún error ni aviso de QML.
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QObject, Qt, QUrl
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QUrl
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
@@ -15,12 +15,13 @@ from jarvis_assistant.config import UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.ui.app import FONTS_DIR, QML_DIR, UiApp, load_fonts
-from jarvis_assistant.ui.preview import PreviewDriver, script
+from jarvis_assistant.ui.preview import PreviewDriver, panel_tour, script
 from jarvis_assistant.ui.view_models import (
     PLACEHOLDER_ASLEEP,
     PLACEHOLDER_ATTENDING,
     PLACEHOLDER_RESTING,
 )
+from jarvis_assistant.ui.workspace import WINDOWS
 
 QML_FILES = sorted(QML_DIR.rglob("*.qml"))
 
@@ -65,6 +66,8 @@ def test_hay_qml_de_todas_las_partes_de_la_interfaz():
         "components/PanelFrame.qml", "components/TaskCard.qml", "components/StatusDot.qml",
         "components/Subtitles.qml", "components/StateLabel.qml", "components/Badge.qml",
         "components/EmptyState.qml", "components/IconButton.qml", "panels/ActivityPanel.qml",
+        "Workspace.qml", "components/FloatingWindow.qml", "components/Dock.qml",
+        "components/ToolBar.qml", "components/TextField.qml", "components/Chip.qml",
         "orb/NeuralNet.qml", "orb/GyroArcs.qml", "orb/Satellites.qml", "orb/Glyphs.qml",
         "orb/LifeField.qml", "orb/Constellation.qml", "orb/SatelliteOrbs.qml", "orb/Dust.qml",
         "orb/Lattice.qml", "orb/Accretion.qml",
@@ -189,6 +192,204 @@ def test_el_cierre_de_sesion_oculta_el_hud_al_terminar_la_animacion(make_ui, qtb
     assert ui.hud_window.isVisible()
     qtbot.waitUntil(lambda: not ui.hud_window.isVisible(), timeout=3000)
     assert ui.screen.isVisible()  # la pantalla queda en su aspecto de dormido
+
+
+# --- Ventanas flotantes -----------------------------------------------------------------------
+
+LEFT = Qt.MouseButton.LeftButton
+NO_KEYS = Qt.KeyboardModifier.NoModifier
+HEADER = 39  # cabecera de la ventana y su línea
+PADDING = 12  # margen del contenido
+
+
+def visual(ui, name: str) -> QQuickItem:
+    """Elemento por su `objectName`, por el árbol visual: los delegados de un `Repeater` no
+    cuelgan de la ventana como `QObject`."""
+    pending = [ui.screen.contentItem()]
+    while pending:
+        item = pending.pop()
+        if item.objectName() == name:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"No hay ningún elemento «{name}»")
+
+
+def floating(ui, window_id: str) -> QQuickItem:
+    return visual(ui, f"window-{window_id}")
+
+
+def shown(ui, qtbot, window_id: str) -> QQuickItem:
+    """Abre la ventana y espera a que su contenido esté colocado: las filas y columnas de
+    QML se colocan en el siguiente fotograma."""
+    ui.workspace.show(window_id)
+    window = floating(ui, window_id)
+    qtbot.waitUntil(window.isVisible, timeout=2000)
+    qtbot.wait(150)
+    return window
+
+
+def scene(item: QQuickItem, x: float, y: float) -> QPoint:
+    return item.mapToScene(QPointF(x, y)).toPoint()
+
+
+def click(ui, item: QQuickItem, x: float, y: float) -> None:
+    QTest.mouseClick(ui.screen, LEFT, NO_KEYS, scene(item, x, y))
+
+
+def drag(ui, start: QPoint, dx: int, dy: int) -> None:
+    QTest.mousePress(ui.screen, LEFT, NO_KEYS, start)
+    QTest.mouseMove(ui.screen, start + QPoint(dx // 2, dy // 2))
+    QTest.mouseMove(ui.screen, start + QPoint(dx, dy))
+    QTest.mouseRelease(ui.screen, LEFT, NO_KEYS, start + QPoint(dx, dy))
+
+
+@pytest.fixture
+def desk(make_ui, qtbot):
+    """Interfaz con la sesión abierta y la ventana de actividad a la vista."""
+    ui, published = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-15"))
+    qtbot.waitUntil(lambda: floating(ui, "actividad").isVisible(), timeout=3000)
+    qtbot.wait(450)  # las ventanas terminan de aparecer
+    return ui, published
+
+
+def test_en_dormido_no_hay_ventanas_flotantes_y_con_la_sesion_se_ve_la_de_actividad(
+    make_ui, qtbot
+):
+    ui, _ = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    assert not floating(ui, "actividad").isVisible()
+    ui.on_event(events.SessionOpened(1, "2026-11-15"))
+    qtbot.waitUntil(lambda: floating(ui, "actividad").isVisible(), timeout=3000)
+    assert not floating(ui, "comandos").isVisible()
+    assert ui.warnings == []
+
+
+def test_un_modulo_que_muestra_algo_abre_su_ventana_encima_de_las_demas(desk, qtbot):
+    ui, _ = desk
+    ui.on_event(events.PanelActivated("comandos"))
+    commands = floating(ui, "comandos")
+    qtbot.waitUntil(commands.isVisible, timeout=2000)
+    assert commands.z() > floating(ui, "actividad").z()
+    assert commands.property("focused") and not floating(ui, "actividad").property("focused")
+    assert commands.width() >= 300 and commands.height() >= 220
+    assert ui.warnings == []
+
+
+def test_una_ventana_se_mueve_arrastrando_su_cabecera(desk, qtbot):
+    ui, _ = desk
+    window = floating(ui, "actividad")
+    before = (window.x(), window.y())
+    drag(ui, scene(window, 120, 18), 150, 90)
+    assert (window.x(), window.y()) == (before[0] + 150, before[1] + 90)
+    placement = ui.workspace.placement("actividad")
+    area = window.parentItem()
+    assert round(placement.x * area.width()) == window.x()
+    drag(ui, scene(window, 120, 18), -5000, -5000)  # no sale del área de trabajo
+    assert (window.x(), window.y()) == (0, 0)
+    assert ui.warnings == []
+
+
+def test_una_ventana_cambia_de_tamano_desde_un_borde_o_una_esquina(desk, qtbot):
+    ui, _ = desk
+    window = floating(ui, "actividad")
+    width, height = window.width(), window.height()
+    drag(ui, scene(window, width - 3, height - 3), 60, -40)  # esquina inferior derecha
+    assert (window.width(), window.height()) == (width + 60, height - 40)
+    left = window.x()
+    drag(ui, scene(window, width + 60 - 2, 120), -5000, 0)  # borde derecho: hasta el mínimo
+    assert window.width() == 300 and window.x() == left
+    assert ui.warnings == []
+
+
+def test_una_ventana_se_cierra_con_su_boton_y_vuelve_desde_el_selector(desk, qtbot):
+    ui, _ = desk
+    window = floating(ui, "actividad")
+    click(ui, window, window.width() - 18, 20)
+    qtbot.waitUntil(lambda: not window.isVisible(), timeout=2000)
+    assert not ui.workspace.placement("actividad").open
+    button = visual(ui, "dock-actividad")
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(window.isVisible, timeout=2000)
+    search = visual(ui, "dock-busqueda")
+    click(ui, search, 20, 18)  # el selector también añade una ventana que no estaba
+    qtbot.waitUntil(floating(ui, "busqueda").isVisible, timeout=2000)
+    assert floating(ui, "busqueda").property("focused")
+    assert ui.warnings == []
+
+
+def test_pulsar_una_ventana_la_trae_al_frente(desk, qtbot):
+    ui, _ = desk
+    ui.workspace.show("historial")
+    activity = floating(ui, "actividad")
+    assert not activity.property("focused")
+    click(ui, activity, 60, activity.height() - 30)
+    assert activity.property("focused")
+    assert activity.z() > floating(ui, "historial").z()
+
+
+def test_la_barra_de_herramientas_de_comandos_pide_las_acciones_del_modulo(desk, qtbot):
+    ui, published = desk
+    ui.on_event(events.WorkdirChanged(str(Path("C:/Users/usuario/Proyectos"))))
+    window = shown(ui, qtbot, "comandos")
+    published.clear()
+    for button in range(5):  # subir, inicio, actualizar, árbol y terminal
+        click(ui, window, PADDING + 14 + 30 * button, HEADER + PADDING + 14)
+    actions = [(e.module, e.action) for e in published if isinstance(e, events.ActionRequested)]
+    assert actions == [
+        ("comandos", "cd"), ("comandos", "ls"), ("comandos", "cd"), ("comandos", "ls"),
+        ("comandos", "ls"), ("comandos", "arbol"), ("comandos", "abrir_consola"),
+    ]  # fmt: skip
+    assert ui.warnings == []
+
+
+def test_la_ventana_de_busqueda_busca_lo_que_se_escribe_en_su_campo(desk, qtbot):
+    ui, published = desk
+    window = shown(ui, qtbot, "busqueda")
+    published.clear()
+    click(ui, window, 120, HEADER + PADDING + 15)
+    type_text(ui.screen, "informe")
+    QTest.keyClick(ui.screen, Qt.Key.Key_Return)
+    requests = [e for e in published if isinstance(e, events.ActionRequested)]
+    assert [(e.module, e.action, dict(e.params)) for e in requests] == [
+        ("busqueda", "buscar", {"consulta": "informe", "tipo": "ambos"})
+    ]
+    assert input_of(ui.screen).property("text") == ""  # no ha ido a la caja de órdenes
+    assert ui.warnings == []
+
+
+def test_un_ejemplo_de_la_ayuda_se_escribe_en_la_caja_de_ordenes_sin_enviarlo(desk, qtbot):
+    ui, published = desk
+    ui.assistant.suggest("Abre GitHub")
+    assert input_of(ui.screen).property("text") == "Abre GitHub"
+    assert not [e for e in published if isinstance(e, events.TextSubmitted)]
+
+
+def test_todas_las_ventanas_abiertas_con_contenido_no_dan_avisos_de_qml(desk, qtbot):
+    ui, _ = desk
+    for spec_id in ("comandos", "aperturas", "busqueda", "historial", "ayuda"):
+        ui.workspace.show(spec_id)
+    ui.on_event(events.OrderQueueChanged(("lista", "árbol")))
+    for step in panel_tour():
+        ui.on_event(step.event)
+    qtbot.wait(300)
+    assert all(floating(ui, spec.id).isVisible() for spec in WINDOWS)
+    ui.workspace.reset()
+    qtbot.wait(300)
+    assert floating(ui, "actividad").isVisible() and not floating(ui, "ayuda").isVisible()
+    assert ui.warnings == []
+
+
+def test_la_disposicion_de_las_ventanas_se_guarda_al_salir(make_ui, qtbot, tmp_path):
+    path = tmp_path / "ventanas.json"
+    ui, _ = make_ui(layout_path=path)
+    ui.start()
+    ui.workspace.show("comandos")
+    ui.shutdown()
+    assert path.is_file()
+    other, _ = make_ui(layout_path=path)
+    assert other.workspace.placement("comandos").open
 
 
 # --- Caja de texto (entrada-texto.md, criterios de aceptación) --------------------------------

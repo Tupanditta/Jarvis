@@ -53,6 +53,7 @@ class AssistantModel(QObject):
     speakingChanged = Signal()
     subtitlesChanged = Signal()
     activePanelChanged = Signal()
+    suggested = Signal(str)  # texto propuesto para la caja de órdenes
 
     def __init__(
         self,
@@ -151,6 +152,11 @@ class AssistantModel(QObject):
         """Botón de silencio."""
         self._publish(events.SilenceRequested())
 
+    @Slot(str)
+    def suggest(self, text: str) -> None:
+        """Una ventana propone una orden: la caja de texto la muestra, sin enviarla."""
+        self.suggested.emit(text)
+
     # --- Propiedades -------------------------------------------------------------------------
 
     @Property(str, notify=stateChanged)
@@ -218,6 +224,7 @@ class TaskListModel(QAbstractListModel):
     """Tareas de la sesión, la más reciente arriba; las de un protocolo, bajo la suya."""
 
     countChanged = Signal()
+    queueChanged = Signal()
 
     ROLES = ("taskId", "parentId", "module", "description", "status", "detail", "time", "child")
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -225,6 +232,7 @@ class TaskListModel(QAbstractListModel):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._tasks: list[events.TaskUpdated] = []
+        self._queue: list[str] = []  # órdenes que esperan su turno
 
     def roleNames(self) -> dict[int, QByteArray]:
         return {
@@ -257,8 +265,16 @@ class TaskListModel(QAbstractListModel):
     def apply(self, event: object) -> None:
         if isinstance(event, events.TaskUpdated):
             self._upsert(event)
+        elif isinstance(event, events.OrderQueueChanged):
+            self._set_queue(list(event.waiting))
         elif isinstance(event, events.SessionOpened):
             self.clear()
+            self._set_queue([])
+
+    def _set_queue(self, queue: list[str]) -> None:
+        if queue != self._queue:
+            self._queue = queue
+            self.queueChanged.emit()
 
     def clear(self) -> None:
         if not self._tasks:
@@ -302,6 +318,15 @@ class TaskListModel(QAbstractListModel):
     @Property(int, notify=countChanged)
     def pendingCount(self) -> int:
         return sum(task.status == "pendiente" for task in self._tasks)
+
+    @Property(int, notify=countChanged)
+    def errorCount(self) -> int:
+        return sum(task.status == "error" for task in self._tasks)
+
+    @Property("QStringList", notify=queueChanged)
+    def queue(self) -> list[str]:
+        """Órdenes en la cola, en su orden: aún no han empezado."""
+        return self._queue
 
 
 class DialogueModel(QObject):

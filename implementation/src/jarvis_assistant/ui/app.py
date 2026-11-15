@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QMetaObject, QObject, Qt, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QFontDatabase, QWindow
+from PySide6.QtGui import QFontDatabase, QGuiApplication, QWindow
 from PySide6.QtQml import QQmlApplicationEngine, QQmlError
 from PySide6.QtQuick import QQuickWindow
 
@@ -32,6 +32,7 @@ from jarvis_assistant.ui.view_models import (
     TaskListModel,
     UiOptions,
 )
+from jarvis_assistant.ui.workspace import LayoutStore, WorkspaceModel
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,11 @@ class UiApp(QObject):
         debug: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
         output_lines: int = DEFAULT_OUTPUT_LINES,
+        layout_path: Path | None = None,
         parent: QObject | None = None,
     ) -> None:
+        """`layout_path`: archivo donde se guarda la disposición de las ventanas flotantes;
+        sin él, la disposición dura lo que la ejecución."""
         super().__init__(parent)
         self._platform = platform
         self._monotonic = monotonic
@@ -86,13 +90,16 @@ class UiApp(QObject):
             parent=self,
         )
         self.options = UiOptions(settings, debug, self)
-        self.commands = CommandsModel(output_lines, self)
+        self.commands = CommandsModel(output_lines, self, publish)
         self.opened = OpenedModel(publish, self)
-        self.search = SearchModel(self)
-        self.history = HistoryModel(self)
-        self.help = HelpModel(self)
+        self.search = SearchModel(self, publish)
+        self.history = HistoryModel(self, publish)
+        self.help = HelpModel(self, publish)
+        self.workspace = WorkspaceModel(
+            store=None if layout_path is None else LayoutStore(layout_path), parent=self
+        )
         self._models = (
-            self.assistant, self.tasks, self.dialogue, self.hud,
+            self.assistant, self.tasks, self.dialogue, self.hud, self.workspace,
             self.commands, self.opened, self.search, self.history, self.help,
         )  # fmt: skip
         self.controller = wc.WindowController()
@@ -115,6 +122,7 @@ class UiApp(QObject):
             ("search", self.search),
             ("history", self.history),
             ("help", self.help),
+            ("workspace", self.workspace),
             ("ui", self.options),
             ("windows", self),
         ):
@@ -169,6 +177,7 @@ class UiApp(QObject):
         self._quitting = True
         self._collapse_timer.stop()
         self._close_timer.stop()
+        self.workspace.save()
 
     @Slot(result=bool)
     def acceptClose(self) -> bool:
@@ -177,6 +186,13 @@ class UiApp(QObject):
             return True
         self._execute(self.controller.screen_closed())
         return False
+
+    @Slot(str)
+    def copyText(self, text: str) -> None:
+        """Copia `text` al portapapeles (rutas y salidas de las ventanas)."""
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
 
     @Slot()
     def hudInputPressed(self) -> None:

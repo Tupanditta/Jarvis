@@ -3,9 +3,13 @@
 Uno por panel, registrados como propiedades de contexto de QML. Como los de `view_models.py`,
 reconstruyen su estado solo con los eventos que reciben: cada evento de contenido lleva la
 lista completa de su panel. No contienen reglas de negocio.
+
+Los controles de cada ventana piden acciones a su módulo con `ActionRequested`: la acción
+entra en la cola de órdenes como si se hubiera escrito, y su resultado vuelve como evento.
 """
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path, PurePath
 from typing import Any
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
@@ -21,16 +25,34 @@ def _local(moment: datetime, fmt: str) -> str:
     return moment.astimezone().strftime(fmt)
 
 
+def _crumbs(path: str) -> list[dict[str, str]]:
+    """Las carpetas que llevan hasta `path`, de la raíz a ella, con la ruta de cada una."""
+    if not path:
+        return []
+    pure = PurePath(path)
+    chain = [*reversed(pure.parents), pure]
+    return [{"name": part.name or part.anchor.rstrip("\\/"), "path": str(part)} for part in chain]
+
+
 class CommandsModel(QObject):
     """Panel de comandos: el directorio de trabajo y, debajo, el último resultado (listado,
     árbol o salida de un binario). `clear` lo vacía."""
 
     changed = Signal()
 
-    def __init__(self, output_lines: int = DEFAULT_OUTPUT_LINES, parent: QObject | None = None):
+    MODULE = "comandos"
+
+    def __init__(
+        self,
+        output_lines: int = DEFAULT_OUTPUT_LINES,
+        parent: QObject | None = None,
+        publish: Publish = lambda _event: None,
+    ) -> None:
         super().__init__(parent)
         self._output_lines = output_lines
+        self._publish = publish
         self._path = ""
+        self._home = ""  # la carpeta en la que empieza la sesión
         self._reset()
 
     def _reset(self) -> None:
@@ -47,6 +69,7 @@ class CommandsModel(QObject):
     def apply(self, event: object) -> None:
         if isinstance(event, events.WorkdirChanged):
             self._path = event.path
+            self._home = self._home or event.path  # el primero de la sesión
         elif isinstance(event, events.DirectoryListed):
             self._reset()
             self._mode, self._path = "listing", event.path
@@ -71,15 +94,78 @@ class CommandsModel(QObject):
         elif isinstance(event, events.CommandPanelCleared):
             self._reset()
         elif isinstance(event, events.SessionOpened):
-            self._path = ""
+            self._path = self._home = ""
             self._reset()
         else:
             return
         self.changed.emit()
 
+    # --- Acciones de la ventana --------------------------------------------------------------
+
+    def _request(self, action: str, **params: object) -> None:
+        self._publish(events.ActionRequested(self.MODULE, action, params))
+
+    @Slot(str)
+    def goTo(self, path: str) -> None:
+        """Cambia a la carpeta `path` y la lista."""
+        if path:
+            self._request("cd", ruta=Path(path))
+            self._request("ls")
+
+    @Slot(str)
+    def enter(self, name: str) -> None:
+        """Entra en la carpeta `name` del directorio de trabajo."""
+        if self._path and name:
+            self.goTo(str(Path(self._path) / name))
+
+    @Slot()
+    def up(self) -> None:
+        if self._path:
+            self.goTo(str(Path(self._path).parent))
+
+    @Slot()
+    def home(self) -> None:
+        self.goTo(self._home)
+
+    @Slot()
+    def refresh(self) -> None:
+        self._request("ls")
+
+    @Slot()
+    def tree(self) -> None:
+        self._request("arbol")
+
+    @Slot()
+    def clear(self) -> None:
+        self._request("clear")
+
+    @Slot()
+    def terminal(self) -> None:
+        self._request("abrir_consola")
+
+    @Slot()
+    def reveal(self) -> None:
+        """Abre el directorio de trabajo en el gestor de archivos."""
+        self._publish(events.ActionRequested("apertura", "abrir_carpeta"))
+
+    @Slot(result=str)
+    def outputText(self) -> str:
+        """La salida que se ve, en texto: para copiarla."""
+        return "\n".join(line["text"] for line in self._lines)
+
+    # --- Propiedades -------------------------------------------------------------------------
+
     @Property(str, notify=changed)
     def path(self) -> str:
         return self._path
+
+    @Property("QVariantList", notify=changed)
+    def crumbs(self) -> list:
+        return _crumbs(self._path)
+
+    @Property(bool, notify=changed)
+    def canGoUp(self) -> bool:
+        return bool(self._path) and Path(self._path).parent != Path(self._path)
 
     @Property(str, notify=changed)
     def mode(self) -> str:
@@ -124,6 +210,7 @@ class OpenedModel(QObject):
         super().__init__(parent)
         self._publish = publish
         self._items: list[dict[str, Any]] = []
+        self._targets: list[dict[str, Any]] = []
         self._focus_supported = True
 
     def apply(self, event: object) -> None:
@@ -134,11 +221,24 @@ class OpenedModel(QObject):
                  "canFocus": item.can_focus}
                 for item in reversed(event.items)  # el más reciente arriba
             ]  # fmt: skip
+        elif isinstance(event, events.LaunchTargetsChanged):
+            self._targets = [{"name": t.name, "kind": t.kind} for t in event.targets]
         elif isinstance(event, events.SessionOpened):
             self._items = []
         else:
             return
         self.changed.emit()
+
+    @Slot(str)
+    def launch(self, name: str) -> None:
+        """Abre una aplicación o una página del catálogo por su nombre."""
+        if name:
+            self._publish(events.ActionRequested("apertura", "abrir", {"objetivo": name}))
+
+    @Property("QVariantList", notify=changed)
+    def targets(self) -> list:
+        """Aplicaciones y páginas del catálogo: el acceso rápido de la ventana."""
+        return self._targets
 
     @Slot(int)
     def focus(self, item_id: int) -> None:
@@ -159,8 +259,14 @@ class SearchModel(QObject):
 
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    MODULE = "busqueda"
+    KINDS = ("ambos", "archivos", "carpetas")
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
         super().__init__(parent)
+        self._publish = publish
         self._search: events.SearchResultsReady | None = None
 
     def apply(self, event: object) -> None:
@@ -172,6 +278,27 @@ class SearchModel(QObject):
             return
         self.changed.emit()
 
+    @Slot(str, str)
+    def run(self, query: str, kind: str) -> None:
+        """Busca `query`. `kind`: 'ambos', 'archivos' o 'carpetas'."""
+        if query.strip():
+            self._publish(
+                events.ActionRequested(
+                    self.MODULE, "buscar",
+                    {"consulta": query.strip(), "tipo": kind if kind in self.KINDS else "ambos"},
+                )
+            )  # fmt: skip
+
+    @Slot(int)
+    def open(self, index: int) -> None:
+        """Abre el resultado número `index`."""
+        self._publish(events.ActionRequested(self.MODULE, "abrir_resultado", {"n": index}))
+
+    @Slot(int)
+    def reveal(self, index: int) -> None:
+        """Abre la carpeta que contiene el resultado número `index`."""
+        self._publish(events.ActionRequested(self.MODULE, "abrir_ubicacion", {"n": index}))
+
     @Property(bool, notify=changed)
     def active(self) -> bool:
         return self._search is not None
@@ -179,6 +306,10 @@ class SearchModel(QObject):
     @Property(str, notify=changed)
     def query(self) -> str:
         return self._search.query if self._search else ""
+
+    @Property(str, notify=changed)
+    def kind(self) -> str:
+        return self._search.kind if self._search else "ambos"
 
     @Property(int, notify=changed)
     def total(self) -> int:
@@ -193,7 +324,8 @@ class SearchModel(QObject):
         if self._search is None:
             return []
         return [
-            {"index": r.index, "name": r.name, "isDir": r.is_dir, "folder": r.folder}
+            {"index": r.index, "name": r.name, "isDir": r.is_dir, "folder": r.folder,
+             "path": r.path}
             for r in self._search.results
         ]
 
@@ -203,8 +335,13 @@ class HistoryModel(QObject):
 
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    MODULE = "historial"
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
         super().__init__(parent)
+        self._publish = publish
         self._mode = ""  # "", "sessions" o "activities"
         self._sessions: list[dict[str, Any]] = []
         self._title = ""
@@ -232,6 +369,16 @@ class HistoryModel(QObject):
             return
         self.changed.emit()
 
+    @Slot()
+    def refresh(self) -> None:
+        """Muestra las sesiones recientes."""
+        self._publish(events.ActionRequested(self.MODULE, "mostrar"))
+
+    @Slot(int)
+    def open(self, session_id: int) -> None:
+        """Muestra las actividades de la sesión `session_id`."""
+        self._publish(events.ActionRequested(self.MODULE, "actividades", {"id": session_id}))
+
     @Property(str, notify=changed)
     def mode(self) -> str:
         return self._mode
@@ -239,6 +386,11 @@ class HistoryModel(QObject):
     @Property("QVariantList", notify=changed)
     def sessions(self) -> list:
         return self._sessions
+
+    @Property(int, notify=changed)
+    def errorCount(self) -> int:
+        """Actividades en `error` de la sesión que se muestra."""
+        return sum(activity["status"] == "error" for activity in self._activities)
 
     @Property(str, notify=changed)
     def sessionTitle(self) -> str:
@@ -254,8 +406,11 @@ class HelpModel(QObject):
 
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
         super().__init__(parent)
+        self._publish = publish
         self._rows: list[dict[str, Any]] = []
 
     def apply(self, event: object) -> None:
@@ -270,6 +425,11 @@ class HelpModel(QObject):
                 for entry in group.entries
             ]
         self.changed.emit()
+
+    @Slot()
+    def load(self) -> None:
+        """Pide las órdenes disponibles: las muestra la intención «ayuda» del núcleo."""
+        self._publish(events.ActionRequested("nucleo", "ayuda"))
 
     @Property("QVariantList", notify=changed)
     def rows(self) -> list:

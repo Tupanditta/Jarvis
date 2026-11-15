@@ -1,9 +1,16 @@
 """Modelos de vista de los paneles de los módulos: cada uno refleja sus eventos."""
 from datetime import UTC, datetime
+from pathlib import Path
 
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import HelpEntry, HelpGroup
-from jarvis_assistant.core.content import Entry, OpenedItem, SearchResult, TreeNode
+from jarvis_assistant.core.content import (
+    Entry,
+    LaunchTarget,
+    OpenedItem,
+    SearchResult,
+    TreeNode,
+)
 from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 from jarvis_assistant.ui.bridge import UI_EVENTS
 from jarvis_assistant.ui.panel_models import (
@@ -125,7 +132,10 @@ def test_busqueda_resultados_numerados():
     )
     model.apply(events.SearchResultsReady("informe", "ambos", results, 14, True))
     assert (model.active, model.query, model.total, model.limited) == (True, "informe", 14, True)
-    assert model.results[1] == {"index": 2, "name": "informes", "isDir": True, "folder": "C:/Docs"}
+    assert model.results[1] == {
+        "index": 2, "name": "informes", "isDir": True, "folder": "C:/Docs",
+        "path": "C:/Docs/informes",
+    }  # fmt: skip
     model.apply(events.SessionOpened(2, "otra"))
     assert not model.active and model.results == []
 
@@ -176,6 +186,101 @@ def test_ayuda_grupos_con_sus_ordenes_y_ejemplos():
     ]
 
 
+# --- Acciones de las ventanas ----------------------------------------------------------------
+
+
+def requested(published) -> list[tuple[str, str, dict]]:
+    assert all(isinstance(event, events.ActionRequested) and event.quiet for event in published)
+    return [(event.module, event.action, dict(event.params)) for event in published]
+
+
+def test_comandos_la_ruta_se_navega_carpeta_a_carpeta():
+    published = []
+    model = CommandsModel(publish=published.append)
+    assert model.crumbs == [] and not model.canGoUp
+    model.apply(events.WorkdirChanged(str(Path("C:/Users/usuario"))))
+    model.apply(events.WorkdirChanged(str(Path("C:/Users/usuario/Proyectos"))))
+    assert [crumb["name"] for crumb in model.crumbs] == ["C:", "Users", "usuario", "Proyectos"]
+    assert model.crumbs[2]["path"] == str(Path("C:/Users/usuario")) and model.canGoUp
+    model.goTo(model.crumbs[1]["path"])
+    model.up()
+    model.home()  # la carpeta en la que empezó la sesión
+    model.enter("jarvis")
+    assert requested(published) == [
+        ("comandos", "cd", {"ruta": Path("C:/Users")}), ("comandos", "ls", {}),
+        ("comandos", "cd", {"ruta": Path("C:/Users/usuario")}), ("comandos", "ls", {}),
+        ("comandos", "cd", {"ruta": Path("C:/Users/usuario")}), ("comandos", "ls", {}),
+        ("comandos", "cd", {"ruta": Path("C:/Users/usuario/Proyectos/jarvis")}),
+        ("comandos", "ls", {}),
+    ]  # fmt: skip
+
+
+def test_comandos_la_barra_de_herramientas_pide_las_acciones_del_modulo():
+    published = []
+    model = CommandsModel(publish=published.append)
+    for action in (model.refresh, model.tree, model.clear, model.terminal, model.reveal):
+        action()
+    assert requested(published) == [
+        ("comandos", "ls", {}), ("comandos", "arbol", {}), ("comandos", "clear", {}),
+        ("comandos", "abrir_consola", {}), ("apertura", "abrir_carpeta", {}),
+    ]  # fmt: skip
+    model.up()  # sin directorio de trabajo no hay adónde subir
+    assert len(published) == 5
+
+
+def test_comandos_la_salida_se_puede_copiar_como_texto():
+    model = CommandsModel()
+    model.apply(events.CommandOutputAppended(4, "git status", ("uno", "dos"), "out"))
+    assert model.outputText().splitlines() == ["uno", "dos"]
+
+
+def test_aperturas_acceso_rapido_al_catalogo():
+    published = []
+    model = OpenedModel(published.append)
+    model.apply(events.LaunchTargetsChanged(
+        (LaunchTarget("GitHub", "pagina"), LaunchTarget("Bloc de notas", "aplicacion"))
+    ))  # fmt: skip
+    assert model.targets == [
+        {"name": "GitHub", "kind": "pagina"}, {"name": "Bloc de notas", "kind": "aplicacion"},
+    ]  # fmt: skip
+    model.launch("GitHub")
+    model.launch("")
+    assert requested(published) == [("apertura", "abrir", {"objetivo": "GitHub"})]
+
+
+def test_busqueda_desde_la_ventana():
+    published = []
+    model = SearchModel(publish=published.append)
+    model.run("  informe ", "archivos")
+    model.run("informe", "otra cosa")  # un tipo desconocido busca de todo
+    model.run("   ", "ambos")  # sin texto no se busca
+    model.open(2)
+    model.reveal(2)
+    assert requested(published) == [
+        ("busqueda", "buscar", {"consulta": "informe", "tipo": "archivos"}),
+        ("busqueda", "buscar", {"consulta": "informe", "tipo": "ambos"}),
+        ("busqueda", "abrir_resultado", {"n": 2}), ("busqueda", "abrir_ubicacion", {"n": 2}),
+    ]  # fmt: skip
+
+
+def test_historial_y_ayuda_desde_sus_ventanas():
+    published = []
+    history = HistoryModel(publish=published.append)
+    history.refresh()
+    history.open(12)
+    HelpModel(publish=published.append).load()
+    assert requested(published) == [
+        ("historial", "mostrar", {}), ("historial", "actividades", {"id": 12}),
+        ("nucleo", "ayuda", {}),
+    ]  # fmt: skip
+    current = session(12, "redes")
+    history.apply(events.SessionActivitiesShown(current, (
+        ActivityRow(1, 12, None, "comandos", "git status", "completado", WHEN, None),
+        ActivityRow(2, 12, None, "apertura", "abrir GitHub", "error", WHEN, None),
+    )))  # fmt: skip
+    assert history.errorCount == 1
+
+
 # --- Puente ----------------------------------------------------------------------------------
 
 
@@ -184,5 +289,5 @@ def test_el_puente_entrega_los_eventos_de_contenido_de_los_paneles():
         events.WorkdirChanged, events.DirectoryListed, events.DirectoryTreeBuilt,
         events.CommandOutputAppended, events.CommandPanelCleared, events.OpenedItemsChanged,
         events.SearchResultsReady, events.HistoryShown, events.SessionActivitiesShown,
-        events.HelpShown,
+        events.HelpShown, events.LaunchTargetsChanged, events.OrderQueueChanged,
     } <= set(UI_EVENTS)  # fmt: skip

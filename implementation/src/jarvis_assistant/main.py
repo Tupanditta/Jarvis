@@ -31,7 +31,7 @@ from jarvis_assistant.core.orchestrator import Orchestrator, Reload
 from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
-from jarvis_assistant.paths import AppPaths, missing_models
+from jarvis_assistant.paths import LAYOUT_FILE_NAME, AppPaths, missing_models
 from jarvis_assistant.process.logging_setup import (
     LEVELS,
     install_asyncio_handler,
@@ -317,6 +317,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         platform=platform,
         debug=args.ui_debug,
         output_lines=config.settings.commands.output_lines,
+        layout_path=paths.data_dir / LAYOUT_FILE_NAME,
     )
 
     def exit_ui() -> None:

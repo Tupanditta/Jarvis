@@ -8,6 +8,11 @@ QtObject {
     readonly property color bgBase: "#05070B"
     readonly property color bgPanel: Qt.rgba(12 / 255, 18 / 255, 28 / 255, 0.78)
     readonly property color bgRaised: "#121B28"
+    readonly property color bgWindow: Qt.rgba(8 / 255, 13 / 255, 21 / 255, 0.92)
+    readonly property color bgHover: Qt.rgba(34 / 255, 211 / 255, 238 / 255, 0.09)
+    readonly property color bgSelected: Qt.rgba(34 / 255, 211 / 255, 238 / 255, 0.16)
+    readonly property color shadowNear: Qt.rgba(0, 0, 0, 0.30)
+    readonly property color shadowFar: Qt.rgba(0, 0, 0, 0.16)
     readonly property color lineSoft: "#1B2A3A"
     readonly property color lineStrong: "#2A4560"
     readonly property color primary: "#22D3EE"
@@ -45,12 +50,16 @@ QtObject {
     readonly property int space48: 48
     readonly property int radiusPanel: 10
     readonly property int radiusCard: 6
+    readonly property int radiusWindow: 12
+    readonly property int windowHeader: 38
+    readonly property int windowGrip: 6
     readonly property int cornerMark: 12
     readonly property real iconStroke: 1.5
 
     // Movimiento (ms)
     readonly property int motionTransition: 2000
     readonly property int motionPanel: 220
+    readonly property int motionWindow: 160
     readonly property int motionState: 400
     readonly property int motionLevel: 80
 

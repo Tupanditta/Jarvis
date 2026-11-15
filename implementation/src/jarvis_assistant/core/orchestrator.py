@@ -2,14 +2,20 @@
 (maquina-estados.md; arquitectura.md, sección 4).
 
 Vive en el hilo del núcleo y es el único dueño del estado. Consume entradas de una cola y
-ejecuta, en orden, los efectos que devuelve la FSM. Cada orden se atiende como un turno, una
-tarea `asyncio`: así las frases de control se atienden aunque haya una orden en curso (RN-44,
-RN-52). `run_task` es la única función que ejecuta acciones (AD-13). El diálogo llega con su
-fase.
+ejecuta, en orden, los efectos que devuelve la FSM.
+
+Un mensaje puede traer varias órdenes separadas por `--`. Cada orden entra en la cola de
+órdenes (`task_queue.py`), que decide cuándo puede empezar: las de módulos distintos se
+ejecutan a la vez y las del mismo módulo, o las que dependen de un recurso que otra cambia,
+en su orden. Cada orden se ejecuta en su propia tarea `asyncio`: así las frases de control se
+atienden aunque haya órdenes en curso (RN-52). Las respuestas no se dicen dentro de la orden:
+van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en que terminan.
+
+`run_task` es la única función que ejecuta acciones (AD-13). El diálogo llega con su fase.
 """
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -17,7 +23,14 @@ from typing import Any, Literal, Protocol
 from jarvis_assistant.config import Config, ConfigError
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
-from jarvis_assistant.core.action_api import ActionContext, ActionResult, Intent, Phrase
+from jarvis_assistant.core.action_api import (
+    ActionContext,
+    ActionResult,
+    Intent,
+    IntentSpec,
+    Phrase,
+)
+from jarvis_assistant.core.announcer import Announcement, Announcer
 from jarvis_assistant.core.clock import Clock, TimerHandle
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
@@ -25,7 +38,9 @@ from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.notices import Notice, NoticeQueue
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
+from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.intent_router.batch import split_orders
 from jarvis_assistant.intent_router.router import (
     CORE_MODULE,
     HELP,
@@ -33,6 +48,7 @@ from jarvis_assistant.intent_router.router import (
     REPEAT,
     SHOW_SCREEN,
     IntentRouter,
+    Order,
 )
 from jarvis_assistant.speaker.phrases import render
 from jarvis_assistant.speaker.speaker import Speaker
@@ -66,9 +82,23 @@ class _SilenceElapsed:
     token: int
 
 
+@dataclass
+class _Work:
+    """Orden en la cola: su texto y, cuando empieza, su intención y la tarea que la ejecuta.
+
+    Una orden escrita llega como `order` y se resuelve al empezar; una acción pedida desde
+    una ventana llega ya como `intent`.
+    """
+
+    text: str
+    order: Order | None = None
+    intent: Intent | None = None
+    runner: asyncio.Task | None = None
+
+
 @dataclass(frozen=True)
-class _TurnDone:
-    turn: asyncio.Task
+class _JobDone:
+    job: Job[_Work]
 
 
 @dataclass(frozen=True)
@@ -83,6 +113,7 @@ class _UserAction:
     module: str
     action: str
     params: Mapping[str, object]
+    quiet: bool = False
 
 
 @dataclass
@@ -139,9 +170,12 @@ class Orchestrator:
 
         self._modules: dict[str, Any] = {}
         self._panels: dict[tuple[str, str], str | None] = {}
-        self._turn: asyncio.Task | None = None
+        self._jobs: TaskQueue[_Work] = TaskQueue()
+        self._queued: tuple[str, ...] = ()  # lo último publicado en `OrderQueueChanged`
+        self._announcer = Announcer(
+            self._say, speaker.stop, on_idle=lambda: self._queue.put_nowait(_Poke())
+        )
         self._executing = 0  # acciones en ejecución: la actividad es «procesando»
-        self._waiting: str | None = None  # la orden que espera a que acabe el turno (RN-44)
         self._notices = NoticeQueue()
         self._background: dict[asyncio.Task, _Task] = {}
         self._places: dict[str, Path] = {}
@@ -156,6 +190,12 @@ class Orchestrator:
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
         bus.subscribe(events.TextSubmitted, self.submit)
         bus.subscribe(events.UserTyping, self.submit)
+        bus.subscribe(
+            events.ActionRequested,
+            lambda e: self.submit(_UserAction(e.module, e.action, e.params, e.quiet)),
+        )
+        # El botón de silencio calla la respuesta en curso y las que esperaban su turno.
+        bus.subscribe(events.SilenceRequested, lambda _e: self._announcer.clear())
         bus.subscribe(events.SpeechStarted, lambda _e: self._refresh())
         bus.subscribe(events.SpeechFinished, lambda _e: self._refresh())
 
@@ -236,8 +276,8 @@ class Orchestrator:
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
             await self._on_silence(entry)
-        elif isinstance(entry, _TurnDone):
-            self._on_turn_done(entry.turn)
+        elif isinstance(entry, _JobDone):
+            self._jobs.finish(entry.job)
         elif isinstance(entry, _UserAction):
             await self._on_user_action(entry)
         elif isinstance(entry, _Poke):
@@ -248,17 +288,16 @@ class Orchestrator:
             logger.warning("Entrada desconocida: %r", entry)
 
     async def _on_text(self, text: str) -> None:
-        if not text.strip():
+        orders = split_orders(text)
+        if len(orders) > 1:
+            await self._on_batch(orders)
             return
-        entry = self._router.route(text, self._machine.state)
+        if not orders:
+            return
+        if orders[0] != text.strip():
+            text = orders[0]  # un separador suelto al principio o al final no cuenta
+        entry = self._router.route(text, self._machine.state, resolve=False)
         if entry is None:
-            return
-        if isinstance(entry, fsm.IntentMatched) and self._turn_active():
-            # Un turno a la vez: como máximo una orden espera; las demás se descartan.
-            if self._waiting is None:
-                self._waiting = text
-            else:
-                logger.info("Orden descartada: ya hay una en espera")
             return
         recognized = fsm.Control | fsm.ClosingPhraseInIdle | fsm.WakeWord | fsm.IntentMatched
         if isinstance(entry, recognized):
@@ -266,14 +305,30 @@ class Orchestrator:
             self._bus.publish(events.CommandReceived(text, recognized=True))
         await self._handle(entry)
 
+    async def _on_batch(self, orders: Sequence[str]) -> None:
+        """Varias órdenes en un mensaje: entran en la cola en el orden en que se han escrito.
+        Dentro de un mensaje así solo valen órdenes: las frases de control y la de activación
+        se escriben solas."""
+        if self._machine.state not in (AssistantState.LISTENING_COMMAND, AssistantState.IDLE):
+            return
+        logger.info("Mensaje con %d órdenes", len(orders))
+        for text in orders:
+            order = self._router.prepare(text)
+            if order is None:
+                await self._handle(fsm.NoMatch(text))
+                continue
+            self._bus.publish(events.CommandReceived(text, recognized=True))
+            await self._handle(fsm.IntentMatched(order))
+
     async def _on_user_action(self, entry: _UserAction) -> None:
-        if self._session is None or self._turn_active():
+        if self._session is None or not self._router.specs_of(entry.module, entry.action):
             logger.info("Acción %s.%s ignorada", entry.module, entry.action)
             return
         intent = Intent(
             entry.module, entry.action, entry.params,
             description=entry.action.replace("_", " "),
             panel=self._panels.get((entry.module, entry.action)),
+            quiet=entry.quiet,
         )  # fmt: skip
         await self._handle(fsm.IntentMatched(intent))
 
@@ -308,7 +363,7 @@ class Orchestrator:
             case fsm.RestartSilenceTimer():
                 self._restart_silence_timer()
             case fsm.StopInterruptibleSpeech():
-                self._speaker.stop()
+                self._announcer.clear()
             case fsm.PublishUnrecognized(text=text):
                 if text.strip():
                     self._bus.publish(events.CommandReceived(text, recognized=False))
@@ -317,17 +372,13 @@ class Orchestrator:
             case fsm.ExitProcess():
                 self._stopping = True
                 self._on_exit()
-            case fsm.RunTurn(intent=intent):
-                if isinstance(intent, Intent):
-                    self._start_turn(self._run_intent(intent))
-                else:
-                    logger.warning("Intención desconocida: %r", intent)
-                    self._restart_silence_timer()
+            case fsm.RunTurn(intent=request):
+                self._enqueue(request)
             case fsm.CancelTurn(announce=announce):
                 await self._cancel(announce)
             case fsm.DeliverNotice(notice=notice):
                 if isinstance(notice, Notice):
-                    self._start_turn(self._deliver(notice))
+                    self._deliver(notice)
             case fsm.DeliverPendingNotices():
                 pass  # los entrega `_pump` cuando termina la frase de apertura
 
@@ -391,7 +442,7 @@ class Orchestrator:
 
     async def _close_session(self, reason: str, silent: bool) -> None:
         self._cancel_silence_timer()
-        await self._cancel_turn()
+        await self._cancel_orders()
         await self._cancel_background(CLOSED_REASON)  # RN-46
         self._speaker.stop()
         await self._session_hook("on_session_closed")
@@ -416,84 +467,125 @@ class Orchestrator:
             except Exception:
                 logger.exception("%s de %s ha fallado", name, module.name)
 
-    # --- Turnos ------------------------------------------------------------------------------
+    # --- Cola de órdenes ---------------------------------------------------------------------
 
-    def _turn_active(self) -> bool:
-        return self._turn is not None and not self._turn.done()
+    def _busy(self) -> bool:
+        """Hay órdenes en la cola o en ejecución, o respuestas por decir."""
+        return len(self._jobs) > 0 or self._announcer.active
 
-    def _start_turn(self, body: Coroutine[Any, Any, object]) -> None:
-        async def turn() -> None:
+    def _enqueue(self, request: object) -> None:
+        """`RunTurn`: la orden entra en la cola. Empieza cuando el planificador lo permite."""
+        if isinstance(request, Order):
+            self._jobs.add(self._claim(request.specs), _Work(request.text, order=request))
+        elif isinstance(request, Intent):
+            specs = self._router.specs_of(request.module, request.action)
+            claim = self._claim((request.module, spec) for spec in specs)
+            self._jobs.add(claim, _Work(request.description, intent=request))
+        else:
+            logger.warning("Orden desconocida: %r", request)
+
+    @staticmethod
+    def _claim(specs: Iterable[tuple[str, IntentSpec]]) -> Claim:
+        """Lo que ocupa una orden que puede acabar siendo cualquiera de `specs`."""
+        lanes: set[str] = set()
+        reads: set[str] = set()
+        writes: set[str] = set()
+        for module, spec in specs:
+            lanes.add(module)
+            reads |= spec.resources_read
+            writes |= spec.writes
+        return Claim(frozenset(lanes), frozenset(reads), frozenset(writes))
+
+    def _start_ready(self) -> None:
+        """Pone en marcha las órdenes que ya pueden empezar. Una orden escrita se resuelve
+        aquí, no al escribirla: así ve lo que han dejado las órdenes anteriores."""
+        while ready := self._jobs.take_ready():
+            for job in ready:
+                work = job.payload
+                if work.intent is None:
+                    assert work.order is not None
+                    work.intent = intent = self._router.resolve(work.order)
+                    specs = self._router.specs_of(intent.module, intent.action)
+                    self._jobs.narrow(job, self._claim((intent.module, spec) for spec in specs))
+                work.runner = self._spawn(job, work.intent)
+
+    def _spawn(self, job: Job[_Work], intent: Intent) -> asyncio.Task:
+        async def body() -> None:
             try:
-                await body
+                await self._run_intent(intent)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # RNF-23: un turno que falla no bloquea al asistente
-                logger.exception("El turno ha fallado")
+            except Exception:  # RNF-23: una orden que falla no bloquea al asistente
+                logger.exception("La orden %s ha fallado", intent.key)
 
-        self._cancel_silence_timer()  # la cuenta de inactividad no corre durante el turno
-        task = asyncio.ensure_future(turn())
-        self._turn = task
-        task.add_done_callback(lambda done: self._queue.put_nowait(_TurnDone(done)))
+        runner = asyncio.ensure_future(body())
+        runner.add_done_callback(lambda _done: self._queue.put_nowait(_JobDone(job)))
+        return runner
 
-    def _on_turn_done(self, turn: asyncio.Task) -> None:
-        if self._turn is turn:
-            self._turn = None
-        self._restart_silence_timer()  # la cuenta empieza al terminar la respuesta
+    def _publish_queue(self) -> None:
+        waiting = tuple(job.payload.text for job in self._jobs.waiting)
+        if waiting != self._queued:
+            self._queued = waiting
+            self._bus.publish(events.OrderQueueChanged(waiting))
 
     def _pump(self) -> None:
-        """Con el asistente libre: atiende la orden en espera o entrega el siguiente aviso."""
-        if self._stopping or self._session is None or self._turn_active():
+        """Tras cada entrada: arranca las órdenes que pueden empezar y, con el asistente
+        libre, entrega el siguiente aviso y mantiene la cuenta de inactividad."""
+        if self._stopping or self._session is None:
+            return
+        self._start_ready()
+        self._publish_queue()
+        if self._busy():
+            self._cancel_silence_timer()  # la cuenta no corre con órdenes o respuestas en curso
             return
         state = self._machine.state
         if state is AssistantState.LISTENING_COMMAND:
-            if self._waiting is not None:
-                text, self._waiting = self._waiting, None
-                self._queue.put_nowait(events.TextSubmitted(text))
-                return
             notice = self._notices.pop()
             if notice is not None:
-                self._start_turn(self._deliver(notice))
+                self._cancel_silence_timer()
+                self._deliver(notice)
+            elif self._silence_timer is None:
+                self._restart_silence_timer()  # la cuenta empieza al terminar la respuesta
         elif state is AssistantState.IDLE:
             # Un aviso de recordatorio pone al asistente en escucha; los demás esperan (RN-39).
             reminder = self._notices.pop_reminder()
             if reminder is not None:
                 self._queue.put_nowait(fsm.NoticeReady(reminder, reminder=True))
 
-    async def _cancel_turn(self) -> bool:
-        """Cancela el turno en curso y la orden en espera. True si había turno."""
-        self._waiting = None
-        turn = self._turn
-        if turn is None or turn.done():
-            return False
-        self._speaker.stop()
-        turn.cancel()
-        await asyncio.gather(turn, return_exceptions=True)
-        if self._turn is turn:
-            self._turn = None
-        return True
+    async def _cancel_orders(self) -> bool:
+        """Cancela las órdenes en curso y en espera y calla las respuestas. True si había
+        algo."""
+        jobs = self._jobs.clear()
+        runners = [job.payload.runner for job in jobs if job.payload.runner is not None]
+        for runner in runners:
+            runner.cancel()
+        await asyncio.gather(*runners, return_exceptions=True)
+        spoke = self._announcer.clear()
+        self._publish_queue()
+        return bool(jobs) or spoke
 
     async def _cancel(self, announce: bool) -> None:
         """`CancelTurn`. Con `announce` es «cancelar»: también detiene lo que sigue en segundo
         plano y, si había algo que cancelar, dice «Cancelado.»."""
-        cancelled = await self._cancel_turn()
+        cancelled = await self._cancel_orders()
         if not announce:
             return
         if self._background:
             await self._cancel_background(CANCELLED_REASON)
             cancelled = True
         if cancelled:
-            self._start_turn(self._say(Phrase("general.cancelado")))
+            self._announce(Phrase("general.cancelado"))
 
     async def _run_intent(self, intent: Intent) -> None:
         if intent.module == CORE_MODULE:
-            await self._run_core(intent)
+            self._run_core(intent)
         else:
             await self.run_task(
                 intent.module, intent.action, intent.params, origin="voz",
-                description=intent.description, error=intent.error,
+                description=intent.description, error=intent.error, quiet=intent.quiet,
             )  # fmt: skip
 
-    async def _run_core(self, intent: Intent) -> None:
+    def _run_core(self, intent: Intent) -> None:
         """Intenciones del núcleo: no son tareas de ningún módulo de acción."""
         if intent in (SHOW_SCREEN, HIDE_SCREEN):
             # Sin voz: solo la interfaz cambia (catalogo-intenciones.md, sección 2).
@@ -501,26 +593,41 @@ class Orchestrator:
         elif intent == HELP:
             self._bus.publish(events.HelpShown(self._router.help()))
             self._bus.publish(events.PanelActivated(HELP_PANEL))
-            await self._say(Phrase("general.ayuda"))
+            if not intent.quiet:
+                self._announce(Phrase("general.ayuda"))
         elif intent == REPEAT:
-            await self._say(self._speaker.last_phrase or Phrase("general.nada_que_repetir"))
+            self._announce(self._speaker.last_phrase or Phrase("general.nada_que_repetir"))
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
-    async def _deliver(self, notice: Notice) -> None:
-        if notice.panel is not None:
-            self._bus.publish(events.PanelActivated(notice.panel))
-        await self._say(notice.phrase)
-        if notice.on_delivered is not None:
-            notice.on_delivered()
+    # --- Voz ---------------------------------------------------------------------------------
 
-    async def _say(self, phrase: Phrase) -> None:
+    def _announce(self, *phrases: Phrase) -> None:
+        """Pone una respuesta en la cola de voz."""
+        if phrases:
+            self._announcer.submit(Announcement(phrases))
+
+    def _deliver(self, notice: Notice) -> None:
+        """Entrega un aviso: activa su panel al empezar a decirlo."""
+        panel = notice.panel
+        self._announcer.submit(
+            Announcement(
+                (notice.phrase,),
+                on_start=None if panel is None
+                else lambda: self._bus.publish(events.PanelActivated(panel)),
+                on_delivered=notice.on_delivered,
+            )
+        )  # fmt: skip
+
+    async def _say(self, phrase: Phrase) -> bool:
+        """Dice una frase. True si se ha cortado antes de terminar."""
         try:
-            await self._speaker.say(phrase)
+            return (await self._speaker.say(phrase)).interrupted
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("No se ha podido decir %s", phrase.id)
+            return False
 
     def _notify(self, notice: Notice) -> None:
         self._notices.add(notice)
@@ -541,7 +648,8 @@ class Orchestrator:
         quiet: bool = False,
     ) -> ActionResult:
         """Ejecuta una acción como tarea: la registra en `pendiente`, llama al módulo, captura
-        cualquier excepción (RNF-23), fija el estado final y dice la respuesta.
+        cualquier excepción (RNF-23), fija el estado final y deja la respuesta en la cola de
+        voz, que la dice cuando le llega el turno.
 
         `error`: una entidad no se pudo resolver; la tarea se crea ya en `error` con esa frase.
         Con `quiet`, la respuesta solo se dice si es un error.
@@ -561,11 +669,12 @@ class Orchestrator:
             self._bus.publish(events.PanelActivated(panel))
         self._executing += 1
         self._refresh()
+        speech: list[Phrase] = []  # la respuesta: lo que el módulo dice al trabajar y al final
         try:
             if error is not None:
                 result = ActionResult("error", error)
             else:
-                ctx = self._context(origin, task)
+                ctx = self._context(origin, task, speech)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
             self._finish_task(task, "error", CANCELLED_REASON)
@@ -582,11 +691,23 @@ class Orchestrator:
             self._publish_task(task, "pendiente")  # sigue en segundo plano
         else:
             self._finish_task(task, result.status, self._detail(result))
-        if result.speech is not None and not (quiet and result.status == "completado"):
-            await self._say(result.speech)
+        if result.speech is not None:
+            speech.append(result.speech)
+        if not (quiet and result.status == "completado"):
+            self._announce(*speech)
         return result
 
-    def _context(self, origin: Origin, task: _Task | None) -> ActionContext:
+    def _context(
+        self, origin: Origin, task: _Task | None, speech: list[Phrase] | None = None
+    ) -> ActionContext:
+        """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola."""
+
+        async def say(phrase: Phrase) -> None:
+            if speech is None:
+                self._announce(phrase)
+            else:
+                speech.append(phrase)
+
         def background(work: Coroutine[Any, Any, ActionResult]) -> None:
             if task is None:
                 work.close()
@@ -602,7 +723,7 @@ class Orchestrator:
             db=self._database,
             platform=self._platform,
             places=self._places,
-            say=self._say,
+            say=say,
             publish=self._bus.publish,
             notify=self._notify,
             background=background,
@@ -672,7 +793,7 @@ class Orchestrator:
 
     def _restart_silence_timer(self) -> None:
         self._cancel_silence_timer()
-        if self._machine.state is not AssistantState.LISTENING_COMMAND or self._turn_active():
+        if self._machine.state is not AssistantState.LISTENING_COMMAND or self._busy():
             return
         token = self._silence_token
         self._silence_timer = self._clock.call_later(

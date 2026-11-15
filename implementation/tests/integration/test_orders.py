@@ -299,20 +299,20 @@ async def test_una_orden_no_reconocida_no_crea_ninguna_tarea(rig):
     assert rig.of(events.CommandReceived) == [events.CommandReceived("qué tiempo hace hoy", False)]
 
 
-# --- Un turno a la vez (RN-44) y frases de control (RN-52) -----------------------------------
+# --- Cola de órdenes y frases de control (RN-52) ---------------------------------------------
 
 
-async def test_durante_un_turno_una_orden_espera_y_las_demas_se_descartan(rig):
+async def test_las_ordenes_escritas_durante_otra_esperan_en_la_cola(rig):
     await rig.write("espera uno")
     await rig.write("espera dos")
     await rig.write("espera tres")
     assert rig.probe.started == ["uno"]
-    assert [e.text for e in rig.of(events.CommandReceived)] == ["espera uno"]
+    assert [e.text for e in rig.of(events.CommandReceived)] == [
+        "espera uno", "espera dos", "espera tres",
+    ]  # fmt: skip
     rig.probe.gate.set()
-    await rig.advance(1.0)  # termina la respuesta de la primera
-    await rig.advance(1.0)
-    assert rig.probe.started == ["uno", "dos"]
-    assert [e.text for e in rig.of(events.CommandReceived)] == ["espera uno", "espera dos"]
+    await settle()
+    assert rig.probe.started == ["uno", "dos", "tres"]  # ninguna se descarta
 
 
 async def test_cancelar_detiene_la_orden_en_curso(rig):

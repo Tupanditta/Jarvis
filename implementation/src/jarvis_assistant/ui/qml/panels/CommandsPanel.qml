@@ -1,5 +1,10 @@
 // Panel de comandos: el directorio de trabajo y, debajo, el último resultado: listado de
 // `ls`, árbol o salida de un binario (hud.md, sección 3). `clear` lo vacía.
+//
+// En su ventana es un explorador: barra de herramientas (subir, inicio, actualizar, árbol,
+// terminal, gestor de archivos, limpiar), ruta navegable carpeta a carpeta, filtro del
+// listado, carpetas que se abren con un clic, copia de la salida de un programa y una línea
+// para ejecutar programas permitidos.
 import QtQuick
 import ".."
 import "../components"
@@ -8,15 +13,23 @@ PanelFrame {
     id: panel
 
     readonly property string mode: commands.mode
-    readonly property var rows: mode === "listing" ? commands.entries
-                              : mode === "tree" ? commands.nodes
-                              : mode === "output" ? commands.lines : []
+    readonly property bool isOutput: mode === "output"
+    readonly property bool browsing: mode === "listing" || mode === "tree"
+    property string needle: ""           // filtro del listado, en minúsculas
+    readonly property var source: mode === "listing" ? commands.entries
+                                  : mode === "tree" ? commands.nodes
+                                  : isOutput ? commands.lines : []
+    readonly property var rows: !browsing || needle.length === 0
+                                ? source
+                                : source.filter((row) => row.name.toLowerCase().indexOf(needle) >= 0)
     readonly property string footer: mode === "tree" && commands.truncated
                                      ? "… (árbol recortado)"
                                      : mode === "listing" && commands.hiddenEntries > 0
                                        ? "… y " + commands.hiddenEntries + " más" : ""
 
     title: "Comandos"
+    summary: isOutput ? commands.lines.length + " líneas"
+             : browsing ? rows.length + (rows.length === 1 ? " elemento" : " elementos") : ""
 
     Column {
         id: head
@@ -24,10 +37,86 @@ PanelFrame {
         width: parent.width
         spacing: Theme.space8
 
+        ToolBar {
+            width: parent.width
+            visible: panel.rich
+            actions: [
+                { icon: "subir", hint: "Carpeta superior", enabled: commands.canGoUp,
+                  run: () => commands.up() },
+                { icon: "inicio", hint: "Carpeta personal", run: () => commands.home() },
+                { icon: "actualizar", hint: "Listar la carpeta", run: () => commands.refresh() },
+                { icon: "arbol", hint: "Árbol de la carpeta", run: () => commands.tree() },
+                { icon: "terminal", hint: "Abrir una terminal aquí",
+                  run: () => commands.terminal() },
+                { icon: "carpeta", hint: "Abrir en el gestor de archivos",
+                  run: () => commands.reveal() },
+                { icon: "limpiar", hint: "Limpiar el panel", enabled: panel.mode.length > 0,
+                  run: () => commands.clear() }
+            ]
+        }
+
+        // Ruta navegable: cada carpeta lleva a ella.
+        ListView {
+            id: crumbs
+
+            width: parent.width
+            height: 22
+            visible: panel.rich
+            orientation: ListView.Horizontal
+            clip: true
+            model: commands.crumbs
+            boundsBehavior: Flickable.StopAtBounds
+            onCountChanged: positionViewAtEnd()
+
+            delegate: Row {
+                id: crumb
+
+                required property var modelData
+                required property int index
+                readonly property bool last: index === crumbs.count - 1
+
+                height: crumbs.height
+                spacing: Theme.space4
+
+                Text {
+                    text: crumb.modelData.name
+                    color: crumb.last ? Theme.textPrimary
+                                      : crumbHover.hovered ? Theme.primaryBright
+                                                           : Theme.textSecondary
+                    font.family: Theme.fontMono
+                    font.pixelSize: Theme.sizeSecondary
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    HoverHandler {
+                        id: crumbHover
+                        enabled: !crumb.last
+                        cursorShape: Qt.PointingHandCursor
+                    }
+
+                    TapHandler {
+                        enabled: !crumb.last
+                        onTapped: commands.goTo(crumb.modelData.path)
+                    }
+                }
+
+                Text {
+                    text: "›"
+                    visible: !crumb.last
+                    color: Theme.textMuted
+                    font.family: Theme.fontMono
+                    font.pixelSize: Theme.sizeSecondary
+                    rightPadding: Theme.space4
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+
+        // En el HUD, la ruta en una línea.
         Row {
             width: parent.width
             height: 20
             spacing: Theme.space8
+            visible: !panel.rich
 
             Image {
                 width: 16
@@ -55,20 +144,22 @@ PanelFrame {
             color: Theme.lineSoft
         }
 
-        // Cabecera de la salida: el comando y su estado.
-        Row {
+        // Cabecera de la salida: el comando, su estado y el botón de copiar.
+        Item {
             width: parent.width
-            height: 20
-            spacing: Theme.space8
-            visible: panel.mode === "output"
+            height: 28
+            visible: panel.isOutput
 
             StatusDot {
+                id: outputDot
+
                 status: commands.commandStatus
                 anchors.verticalCenter: parent.verticalCenter
             }
 
             Text {
-                width: parent.width - 8 - Theme.space8
+                x: outputDot.width + Theme.space8
+                width: Math.max(0, copy.x - x - Theme.space8)
                 text: commands.command
                 color: Theme.textSecondary
                 font.family: Theme.fontMono
@@ -76,6 +167,25 @@ PanelFrame {
                 elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
             }
+
+            IconButton {
+                id: copy
+
+                x: parent.width - (visible ? width : 0)
+                icon: "copiar"
+                visible: panel.rich
+                enabled: commands.lines.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: windows.copyText(commands.outputText())
+            }
+        }
+
+        TextField {
+            width: parent.width
+            visible: panel.rich && panel.browsing
+            icon: "filtro"
+            placeholder: "Filtrar por nombre"
+            onEdited: (text) => panel.needle = text.trim().toLowerCase()
         }
     }
 
@@ -84,26 +194,35 @@ PanelFrame {
 
         y: head.height + Theme.space8
         width: parent.width
-        height: Math.max(0, parent.height - y)
+        height: Math.max(0, parent.height - y - (prompt.visible ? prompt.height + Theme.space8 : 0))
         clip: true
         model: panel.rows
         interactive: contentHeight > height
         boundsBehavior: Flickable.StopAtBounds
-        onCountChanged: if (panel.mode === "output") positionViewAtEnd()
+        onCountChanged: if (panel.isOutput) positionViewAtEnd()
 
         delegate: Item {
             id: line
 
             required property var modelData
-            readonly property bool isOutput: panel.mode === "output"
             readonly property int depth: modelData.depth !== undefined ? modelData.depth : 1
+            // Una carpeta del listado se abre con un clic.
+            readonly property bool opens: panel.rich && panel.mode === "listing"
+                                          && modelData.isDir === true
 
             width: ListView.view.width
-            height: isOutput ? 18 : 24
+            height: panel.isOutput ? 18 : 24
+
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusCard
+                color: Theme.bgHover
+                visible: line.opens && lineHover.hovered
+            }
 
             // Líneas guía del árbol: una por nivel.
             Repeater {
-                model: line.isOutput ? 0 : line.depth - 1
+                model: panel.isOutput ? 0 : line.depth - 1
 
                 Rectangle {
                     required property int index
@@ -123,21 +242,32 @@ PanelFrame {
                 height: 16
                 sourceSize.width: 32
                 sourceSize.height: 32
-                visible: !line.isOutput
+                visible: !panel.isOutput
                 source: Theme.icon(line.modelData.isDir === true ? "carpeta" : "archivo")
                 anchors.verticalCenter: parent.verticalCenter
             }
 
             Text {
-                x: line.isOutput ? 0 : glyph.x + 16 + Theme.space8
+                x: panel.isOutput ? 0 : glyph.x + 16 + Theme.space8
                 width: parent.width - x
-                text: line.isOutput ? line.modelData.text : line.modelData.name
-                color: line.isOutput && line.modelData.error === true ? Theme.statusError
-                                                                      : Theme.textPrimary
-                font.family: line.isOutput ? Theme.fontMono : Theme.fontBody
-                font.pixelSize: line.isOutput ? Theme.sizeSecondary : Theme.sizeText
+                text: panel.isOutput ? line.modelData.text : line.modelData.name
+                color: panel.isOutput && line.modelData.error === true ? Theme.statusError
+                                                                       : Theme.textPrimary
+                font.family: panel.isOutput ? Theme.fontMono : Theme.fontBody
+                font.pixelSize: panel.isOutput ? Theme.sizeSecondary : Theme.sizeText
                 elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
+            }
+
+            HoverHandler {
+                id: lineHover
+                enabled: line.opens
+                cursorShape: Qt.PointingHandCursor
+            }
+
+            TapHandler {
+                enabled: line.opens
+                onTapped: commands.enter(line.modelData.name)
             }
         }
 
@@ -157,7 +287,26 @@ PanelFrame {
         y: list.y
         width: parent.width
         height: list.height
-        visible: (panel.mode === "listing" || panel.mode === "tree") && list.count === 0
-        text: "Carpeta vacía"
+        visible: list.count === 0 && (panel.browsing || panel.rich)
+        text: !panel.browsing ? "Liste la carpeta o ejecute un programa"
+              : panel.needle.length > 0 ? "Ningún nombre coincide" : "Carpeta vacía"
+    }
+
+    // Línea de programas: lo escrito se envía como la orden «ejecuta …».
+    TextField {
+        id: prompt
+
+        y: parent.height - height
+        width: parent.width
+        visible: panel.rich
+        mono: true
+        icon: "ejecutar"
+        placeholder: "Ejecutar un programa permitido: git status"
+        onAccepted: (text) => {
+            if (text.trim().length > 0) {
+                assistant.submit("ejecuta " + text.trim())
+                prompt.text = ""
+            }
+        }
     }
 }

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 DB_FILE_NAME = "jarvis.db"
+LAYOUT_FILE_NAME = "ventanas.json"  # disposición de las ventanas flotantes
 
 
 class _UserDirs(Protocol):

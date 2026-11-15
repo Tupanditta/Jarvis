@@ -173,6 +173,29 @@ def test_tareas_de_un_protocolo_bajo_la_suya_en_orden(qtbot):
     assert rows(model, "parentId") == [-1, -1, 2, 2, -1]
 
 
+def test_la_cola_de_ordenes_y_el_recuento_de_errores(qtbot):
+    model = TaskListModel()
+    model.apply(task(1, "error"))
+    model.apply(task(2))
+    assert (model.errorCount, model.pendingCount) == (1, 1)
+    with qtbot.waitSignal(model.queueChanged):
+        model.apply(events.OrderQueueChanged(("lista", "árbol")))
+    assert model.queue == ["lista", "árbol"]
+    with qtbot.assertNotEmitted(model.queueChanged):
+        model.apply(events.OrderQueueChanged(("lista", "árbol")))
+    with qtbot.waitSignal(model.queueChanged):
+        model.apply(events.SessionOpened(2, "2026-11-15"))
+    assert model.queue == []
+
+
+def test_una_ventana_propone_una_orden_para_la_caja_de_texto(qtbot):
+    published = []
+    model = AssistantModel(published.append)
+    with qtbot.waitSignal(model.suggested) as signal:
+        model.suggest("Abre GitHub")
+    assert signal.args == ["Abre GitHub"] and published == []  # se escribe, no se envía
+
+
 def test_la_lista_de_tareas_se_vacia_al_abrir_otra_sesion(qtbot):
     model = TaskListModel()
     model.apply(task(1))

@@ -54,6 +54,17 @@ Rectangle {
         elide: Text.ElideRight
     }
 
+    // Una ventana propone una orden (un ejemplo de la ayuda): se escribe, sin enviarla.
+    Connections {
+        target: assistant
+
+        function onSuggested(text) {
+            input.text = text
+            input.cursorPosition = text.length
+            input.forceActiveFocus()
+        }
+    }
+
     // Avisa del clic antes de que la caja lo reciba (el HUD necesita aceptar el foco).
     MouseArea {
         anchors.fill: parent

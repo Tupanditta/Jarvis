@@ -15,6 +15,7 @@ from typing import Any
 
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import (
+    WORKDIR,
     ActionContext,
     ActionResult,
     CommandLine,
@@ -158,26 +159,28 @@ class CommandRunner:
 
     def intents(self) -> Sequence[IntentSpec]:
         path = Slot("ruta", SlotType.DIR_PATH)
+        here = frozenset({WORKDIR})  # la acción usa el directorio de trabajo
         return (
             IntentSpec(
                 # «ve {ruta}» atiende «ve atrás», «ve arriba» y «ve aquí».
                 "cd", ("ve a {ruta}", "ve {ruta}", "entra en {ruta}",
                        "cambia a la carpeta {ruta}", "cd {ruta}"),
                 (path,), "Cambiar de carpeta", "Ve a proyectos barra jarvis", PANEL,
+                writes=here,
             ),
             IntentSpec(
                 "ls", ("lista", "lista el directorio", "qué hay aquí", "ls"), (),
-                "Listar la carpeta actual", "Qué hay aquí", PANEL,
+                "Listar la carpeta actual", "Qué hay aquí", PANEL, reads=here,
             ),
             IntentSpec(
                 "pwd", ("dónde estoy", "directorio actual", "en qué carpeta estoy"), (),
-                "Decir la carpeta actual", "Dónde estoy", PANEL,
+                "Decir la carpeta actual", "Dónde estoy", PANEL, reads=here,
             ),
             IntentSpec(
                 "arbol", ("árbol", "muestra el árbol", "árbol de {ruta}",
                           "muestra el árbol de {ruta}", "mapa de {ruta}"),
                 (Slot("ruta", SlotType.DIR_PATH, optional=True),),
-                "Mostrar el árbol de una carpeta", "Árbol de documentos", PANEL,
+                "Mostrar el árbol de una carpeta", "Árbol de documentos", PANEL, reads=here,
             ),
             IntentSpec(
                 "clear", ("limpia", "limpia la consola", "clear"), (),
@@ -187,12 +190,12 @@ class CommandRunner:
                 "ejecutar", ("ejecuta {comando}", "lanza el comando {comando}",
                              "corre {comando}"),
                 (Slot("comando", SlotType.COMMAND_LINE),),
-                "Ejecutar un programa permitido", "Ejecuta git status", PANEL,
+                "Ejecutar un programa permitido", "Ejecuta git status", PANEL, reads=here,
             ),
             IntentSpec(
                 "abrir_consola", ("abre una consola", "abre la consola", "abre una terminal",
                                   "abre la terminal"),
-                (), "Abrir la terminal del sistema", "Abre una terminal",
+                (), "Abrir la terminal del sistema", "Abre una terminal", reads=here,
             ),
         )  # fmt: skip
 

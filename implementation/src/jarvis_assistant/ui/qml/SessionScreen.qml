@@ -1,6 +1,7 @@
 // Pantalla de sesión (Interfaz, sección 5; hud.md, sección 1).
 // Pantalla completa en el monitor principal. Visible también en dormido: fondo oscuro, orbe
-// apagado y la caja de texto. Cerrarla solo la oculta: el proceso sigue en la bandeja.
+// apagado y la caja de texto. Con la sesión abierta muestra las ventanas flotantes de los
+// módulos y su selector. Cerrarla solo la oculta: el proceso sigue en la bandeja.
 import QtQuick
 import QtQuick.Window
 import "orb"
@@ -25,7 +26,6 @@ Window {
     readonly property bool resting: assistant.activity === "reposo"
     property real panels: 0              // opacidad de paneles y subtítulos
     property bool cursorHidden: false
-    property string now: Qt.formatTime(new Date(), "HH:mm")
 
     function focusInput() {
         input.focusInput()
@@ -92,13 +92,6 @@ Window {
         }
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: screen.drawing
-        onTriggered: screen.now = Qt.formatTime(new Date(), "HH:mm")
-    }
-
     // --- Cursor: se oculta tras 2 s sin moverse ----------------------------------------------
 
     HoverHandler {
@@ -140,90 +133,27 @@ Window {
         running: screen.drawing
     }
 
-    // --- Barra superior ----------------------------------------------------------------------
+    // --- Ventanas flotantes -----------------------------------------------------------------
 
-    Item {
-        id: topBar
+    // Una ventana por módulo. Se abren solas cuando su módulo muestra algo y a mano desde el
+    // selector; se mueven, cambian de tamaño y se cierran con el ratón.
+    Workspace {
+        id: desk
 
-        x: screen.margin
-        y: screen.margin
-        width: screen.width - 2 * screen.margin
-        height: 44
-        opacity: screen.panels
-
-        Row {
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space12
-
-            DisplayText {
-                text: "Jarvis"
-                size: Theme.sizeTitle
-                color: Theme.primary
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: assistant.sessionName.length > 0 ? "· " + assistant.sessionName : ""
-                width: Math.min(implicitWidth, topBar.width * 0.4)
-                color: Theme.textSecondary
-                font.family: Theme.fontBody
-                font.pixelSize: Theme.sizeText
-                elide: Text.ElideRight
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Image {
-                visible: assistant.sessionImportant
-                width: 16
-                height: 16
-                sourceSize.width: 32
-                sourceSize.height: 32
-                source: Theme.icon("estrella")
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-
-        Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space24
-
-            StateLabel {
-                activity: assistant.activity
-                text: assistant.stateText
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: screen.now
-                color: Theme.textSecondary
-                font.family: Theme.fontBody
-                font.pixelSize: Theme.sizeClock
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-    }
-
-    // --- Columnas ----------------------------------------------------------------------------
-
-    ActivityPanel {
-        id: activityPanel
-
-        x: screen.margin
-        y: topBar.y + topBar.height + screen.margin
-        width: Math.round(360 * screen.k)
-        height: Math.max(160, subtitles.y - y - screen.margin)
+        x: Theme.space8
+        y: Theme.space8
+        width: screen.width - 2 * Theme.space8
+        height: Math.max(0, input.y - Theme.space8 - y)
         opacity: screen.panels
         visible: opacity > 0
     }
 
-    PanelHost {
-        x: screen.width - screen.margin - width
-        y: activityPanel.y
-        width: Math.round(420 * screen.k)
-        height: activityPanel.height
-        panel: assistant.activePanel
+    Dock {
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: Theme.space12
+        z: 1
         opacity: screen.panels
+        visible: opacity > 0
     }
 
     // --- Subtítulos y caja de texto ----------------------------------------------------------

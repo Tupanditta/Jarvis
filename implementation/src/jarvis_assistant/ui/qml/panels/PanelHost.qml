@@ -12,16 +12,10 @@ Item {
     property bool flat: false
     property bool active: true
 
-    // Nombre del panel → archivo QML de `panels/`. Se amplía con cada módulo.
-    readonly property var components: ({
-        "comandos": "CommandsPanel.qml",
-        "aperturas": "OpenedPanel.qml",
-        "busqueda": "SearchPanel.qml",
-        "historial": "HistoryPanel.qml",
-        "ayuda": "HelpPanel.qml"
-    })
-    readonly property url source: components[panel] !== undefined
-                                  ? Qt.resolvedUrl(components[panel]) : ""
+    // Nombre del panel → archivo QML de `panels/`: sale del registro de ventanas
+    // (`ui/workspace.py`), el único sitio donde se declara el panel de un módulo.
+    readonly property string component: workspace.component(panel)
+    readonly property url source: component.length > 0 ? Qt.resolvedUrl(component) : ""
 
     visible: panel.length > 0
 

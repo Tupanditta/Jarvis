@@ -19,6 +19,12 @@ if TYPE_CHECKING:
     from jarvis_assistant.core.workdir import Workdir
 
 
+# Recurso compartido entre módulos: el directorio de trabajo (RN-14). Las acciones declaran
+# los recursos que leen y que cambian; el planificador usa esa declaración para decidir qué
+# tareas pueden ejecutarse a la vez (`core/task_queue.py`).
+WORKDIR = "workdir"
+
+
 class SlotType(Enum):
     TEXT = "text"  # texto libre
     DIR_PATH = "dir_path"  # carpeta existente (resolución de rutas)
@@ -50,6 +56,23 @@ class IntentSpec:
     in_protocols: bool = True  # invocable como tarea de protocolo
     # Parámetros que fija el propio patrón («busca el archivo…» fija el tipo).
     fixed: Mapping[str, object] = field(default_factory=dict)
+    # Recursos compartidos que la acción lee y que cambia, además de los que se deducen de
+    # sus entidades (`resources_read`). Una tarea espera a las anteriores que cambian algo
+    # que ella usa; las demás se ejecutan en paralelo con las de otros módulos.
+    reads: frozenset[str] = frozenset()
+    writes: frozenset[str] = frozenset()
+
+    @property
+    def resources_read(self) -> frozenset[str]:
+        """Lo declarado en `reads` más lo que leen sus entidades al resolverse: una ruta se
+        resuelve respecto al directorio de trabajo y un elemento de catálogo, en su lista."""
+        found = set(self.reads)
+        for slot in self.slots:
+            if slot.type is SlotType.DIR_PATH:
+                found.add(WORKDIR)
+            elif slot.type is SlotType.CATALOG and slot.catalog:
+                found.add(slot.catalog)
+        return frozenset(found)
 
 
 @dataclass(frozen=True)
@@ -96,6 +119,9 @@ class Intent:
     error: Phrase | None = None
     description: str = field(default="", compare=False)
     panel: str | None = field(default=None, compare=False)
+    # La respuesta solo se dice si es un error: el resultado ya se ve en la ventana que
+    # pidió la acción.
+    quiet: bool = field(default=False, compare=False)
 
     @property
     def key(self) -> str:
@@ -127,7 +153,9 @@ class ActionContext:
     db: "Database"
     platform: Any
     places: Mapping[str, Path]
-    say: Callable[[Phrase], Awaitable[object]]  # dice una frase intermedia
+    # Añade una frase a la respuesta de la tarea. La respuesta completa se dice seguida,
+    # cuando le llega el turno en la cola de voz: no se mezcla con la de otra tarea.
+    say: Callable[[Phrase], Awaitable[object]]
     publish: "Callable[[Event], None]"  # publica un evento de contenido para su panel
     notify: "Callable[[Notice], None]"  # encola un aviso
     # Deja la tarea en segundo plano: al terminar la corrutina, su resultado fija el estado
@@ -154,4 +182,5 @@ class ActionModule(Protocol):
 #       Catálogos para las entidades `CATALOG`. Cada uno es una lista de fuentes, por orden
 #       de prioridad: gana la primera con una coincidencia que supere el umbral.
 #   def user_actions(self) -> Mapping[type[Event], Callable[[Event], tuple[str, Mapping]]]
-#       Acciones del usuario en la interfaz que ejecutan una acción del módulo.
+#       Acciones del usuario en la interfaz que ejecutan una acción del módulo. Para las
+#       acciones de las ventanas basta el evento genérico `ActionRequested`.

@@ -9,12 +9,12 @@ discover_installed_apps = true
 #
 # [[apps]]
 # name = "Visual Studio Code"
-# aliases = ["code", "vs code", "el editor"]
+# aliases = ["code", "vs code", "el editor", "vscode]
 # path = "C:/Users/usuario/AppData/Local/Programs/Microsoft VS Code/Code.exe"
 # args = []
 
 # Una página: se abre en Microsoft Edge.
 [[pages]]
 name = "GitHub"
-aliases = ["git hub"]
+aliases = ["git hub", "github", "Github"]
 url = "https://github.com"

@@ -8,13 +8,19 @@ de tareas, el panel activo, las acciones del usuario y los de contenido de los p
 módulos ya construidos; los demás se añaden con los módulos que los publican.
 """
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
 from jarvis_assistant.core.action_api import HelpGroup
-from jarvis_assistant.core.content import Entry, OpenedItem, SearchResult, TreeNode
+from jarvis_assistant.core.content import (
+    Entry,
+    LaunchTarget,
+    OpenedItem,
+    SearchResult,
+    TreeNode,
+)
 from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 
 
@@ -165,6 +171,14 @@ class TaskUpdated(Event):
 
 
 @dataclass(frozen=True)
+class OrderQueueChanged(Event):
+    """Órdenes que esperan su turno en la cola, en su orden. Las que ya se ejecutan son
+    tareas `pendiente` y no están aquí."""
+
+    waiting: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PanelActivated(Event):
     """`panel` pasa a ser el panel activo de la interfaz."""
 
@@ -226,6 +240,13 @@ class OpenedItemsChanged(Event):
 
 
 @dataclass(frozen=True)
+class LaunchTargetsChanged(Event):
+    """Aplicaciones y páginas del catálogo, para abrirlas desde la ventana de aperturas."""
+
+    targets: tuple[LaunchTarget, ...]
+
+
+@dataclass(frozen=True)
 class SearchResultsReady(Event):
     """Resultados numerados que muestra el panel. `total`: los encontrados."""
 
@@ -274,6 +295,17 @@ class FocusItemRequested(Event):
 
     item_id: int
 
+
+@dataclass(frozen=True)
+class ActionRequested(Event):
+    """Un control de una ventana pide una acción de un módulo. Entra en la cola de órdenes
+    como una orden escrita. `params`: las entidades ya con su tipo (una ruta es un `Path`).
+    `quiet`: la respuesta solo se dice si es un error; el resultado ya se ve en la ventana."""
+
+    module: str
+    action: str
+    params: Mapping[str, object] = field(default_factory=dict)
+    quiet: bool = True
 
 
 @dataclass(frozen=True)

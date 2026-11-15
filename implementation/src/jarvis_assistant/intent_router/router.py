@@ -5,6 +5,11 @@ activación, las frases de control y el cierre en reposo, y clasifica las órden
 patrones que registran los módulos de acción, resolviendo sus entidades. En reposo, cualquier
 otro texto se atiende como orden: la FSM despierta en silencio. Las respuestas de diálogo
 llegan con el diálogo de varios turnos.
+
+Reconocer una orden tiene dos pasos: `prepare` compara el texto con los patrones y `resolve`
+resuelve sus entidades. Van separados porque una orden que espera en la cola se resuelve
+cuando le llega el turno: «ve a proyectos -- ve a jarvis» resuelve «jarvis» ya dentro de
+«proyectos».
 """
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -124,6 +129,24 @@ class _Registered:
     order: int
 
 
+@dataclass(frozen=True)
+class Order:
+    """Orden reconocida por sus patrones, con las entidades todavía sin resolver.
+
+    `candidates`: los patrones que coinciden, en orden de elección. Cuál gana se sabe al
+    resolver las entidades (`IntentRouter.resolve`).
+    """
+
+    text: str
+    tokens: Tokens
+    candidates: tuple[tuple[patterns.Match, _Registered], ...]
+
+    @property
+    def specs(self) -> tuple[tuple[str, IntentSpec], ...]:
+        """Las intenciones que la orden puede acabar siendo, con su módulo."""
+        return tuple((item.module, item.spec) for _found, item in self.candidates)
+
+
 def _best(normalized: str, phrases: Iterable[str]) -> float:
     return max(fuzz.ratio(normalized, phrase) for phrase in phrases)
 
@@ -217,6 +240,10 @@ class IntentRouter:
         """Todas las intenciones registradas, con su módulo, en orden de registro."""
         return [(module, spec) for (module, _), specs in self._specs.items() for spec in specs]
 
+    def specs_of(self, module: str, action: str) -> tuple[IntentSpec, ...]:
+        """Las intenciones registradas de una acción; vacío si no existe."""
+        return tuple(self._specs.get((module, action), ()))
+
     def help(self) -> tuple[HelpGroup, ...]:
         """Órdenes disponibles con un ejemplo, agrupadas por módulo (RF-92)."""
         groups: dict[str, list[HelpEntry]] = {}
@@ -231,21 +258,27 @@ class IntentRouter:
 
     # --- Despacho ----------------------------------------------------------------------------
 
-    def route(self, text: str, state: AssistantState, dialogue: object = None) -> Input | None:
-        """Entrada para la FSM, o None si el texto se descarta sin efecto."""
+    def route(
+        self, text: str, state: AssistantState, dialogue: object = None, *, resolve: bool = True
+    ) -> Input | None:
+        """Entrada para la FSM, o None si el texto se descarta sin efecto.
+
+        Con `resolve=False`, una orden reconocida llega como `IntentMatched(Order)`: sus
+        entidades se resuelven después, con `resolve`.
+        """
         normalized = normalize(text, self._aliases)
         if state in _ATTENDING:
             entry = self._attending(normalized)
             if entry is None and state is AssistantState.LISTENING_COMMAND:
-                entry = self._classify(text)
+                entry = self._classify(text, resolve)
             return entry or NoMatch(text)
         if self._is_wake(normalized):
             return WakeWord()
         if state is AssistantState.IDLE:
-            return self._resting(text, normalized)
+            return self._resting(text, normalized, resolve)
         return None
 
-    def _resting(self, text: str, normalized: str) -> Input | None:
+    def _resting(self, text: str, normalized: str, resolve: bool = True) -> Input | None:
         """En reposo, cualquier texto despierta y se atiende como orden. El cierre exige su
         umbral de reposo; las frases de control sin sentido en reposo se descartan."""
         if fuzz.ratio(normalized, CLOSING_PHRASE) >= self._settings.idle_closing_threshold:
@@ -255,7 +288,7 @@ class IntentRouter:
         control = self._attending(normalized)
         if isinstance(control, Control) and control.kind is not ControlKind.CERRAR:
             return None
-        return self._classify(text) or NoMatch(text)
+        return self._classify(text, resolve) or NoMatch(text)
 
     def _is_wake(self, normalized: str) -> bool:
         return bool(normalized) and _best(normalized, WAKE_PHRASES) >= self._settings.wake_threshold
@@ -277,8 +310,16 @@ class IntentRouter:
 
     # --- Clasificación -----------------------------------------------------------------------
 
-    def _classify(self, text: str) -> IntentMatched | None:
+    def _classify(self, text: str, resolve: bool = True) -> IntentMatched | None:
         """La intención del texto, con sus entidades, o None si ningún patrón coincide."""
+        order = self.prepare(text)
+        if order is None:
+            return None
+        return IntentMatched(self.resolve(order) if resolve else order)
+
+    def prepare(self, text: str) -> Order | None:
+        """Compara el texto con los patrones, sin resolver entidades. None si ninguno
+        coincide."""
         tokens = tokenize(text, self._aliases)
         if not tokens.words:
             return None
@@ -287,9 +328,16 @@ class IntentRouter:
             found = patterns.match(item.pattern, tokens.words, self._settings.intent_threshold)
             if found is not None:
                 candidates.append((found, item))
-        description = text.strip()
+        if not candidates:
+            return None
+        return Order(text.strip(), tokens, tuple(_ranked(candidates)))
+
+    def resolve(self, order: Order) -> Intent:
+        """La intención de la orden, con sus entidades resueltas en este momento. Si ninguna
+        candidata se resuelve, la intención lleva el error de la primera."""
+        tokens, description = order.tokens, order.text
         failed: Intent | None = None
-        for found, item in _ranked(candidates):
+        for found, item in order.candidates:
             spec = item.spec
             try:
                 params = {
@@ -303,13 +351,12 @@ class IntentRouter:
                     description=description, panel=spec.panel,
                 )  # fmt: skip
                 continue
-            return IntentMatched(
-                Intent(
-                    item.module, spec.action, {**params, **spec.fixed},
-                    description=description, panel=spec.panel,
-                )
-            )
-        return None if failed is None else IntentMatched(failed)
+            return Intent(
+                item.module, spec.action, {**params, **spec.fixed},
+                description=description, panel=spec.panel,
+            )  # fmt: skip
+        assert failed is not None  # una orden tiene al menos una candidata
+        return failed
 
     def resolve_params(
         self, module: str, action: str, raw: Mapping[str, object]
