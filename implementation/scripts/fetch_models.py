@@ -20,8 +20,6 @@ DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 DOWNLOAD_TIMEOUT_SECONDS = 60
 _HASH_BLOCK_BYTES = 1024 * 1024
 
-_OPENWAKEWORD = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1"
-_WHISPER = "https://huggingface.co/Systran/faster-whisper-small/resolve/main"
 _PIPER = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium"
 
 
@@ -39,46 +37,6 @@ class ModelFile:
 
 
 MANIFEST: tuple[ModelFile, ...] = (
-    ModelFile(
-        f"{_OPENWAKEWORD}/hey_jarvis_v0.1.onnx",
-        "openwakeword/hey_jarvis_v0.1.onnx",
-        "94a13cfe60075b132f6a472e7e462e8123ee70861bc3fb58434a73712ee0d2cb",
-    ),
-    ModelFile(
-        f"{_OPENWAKEWORD}/silero_vad.onnx",
-        "openwakeword/silero_vad.onnx",
-        "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28",
-    ),
-    ModelFile(
-        f"{_OPENWAKEWORD}/melspectrogram.onnx",
-        "openwakeword/melspectrogram.onnx",
-        "ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f",
-    ),
-    ModelFile(
-        f"{_OPENWAKEWORD}/embedding_model.onnx",
-        "openwakeword/embedding_model.onnx",
-        "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f",
-    ),
-    ModelFile(
-        f"{_WHISPER}/model.bin",
-        "faster-whisper-small/model.bin",
-        "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
-    ),
-    ModelFile(
-        f"{_WHISPER}/config.json",
-        "faster-whisper-small/config.json",
-        "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
-    ),
-    ModelFile(
-        f"{_WHISPER}/tokenizer.json",
-        "faster-whisper-small/tokenizer.json",
-        "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
-    ),
-    ModelFile(
-        f"{_WHISPER}/vocabulary.txt",
-        "faster-whisper-small/vocabulary.txt",
-        "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
-    ),
     ModelFile(
         f"{_PIPER}/es_ES-davefx-medium.onnx",
         "piper/es_ES-davefx-medium.onnx",

@@ -12,7 +12,6 @@ from jarvis_assistant.core.state_machine import (
     DeliverPendingNotices,
     ExitProcess,
     IntentMatched,
-    LoadTranscriber,
     NoMatch,
     NoticeReady,
     OpenSession,
@@ -48,7 +47,6 @@ def test_dormido_con_hey_jarvis_abre_sesion_y_escucha():
     assert fsm.state is S.LISTENING_COMMAND
     assert effects == [
         OpenSession(),
-        LoadTranscriber(),
         SayLifecycle("ciclo.apertura", Transition.SESSION_OPENED),
         DeliverPendingNotices(),
         RestartSilenceTimer(),

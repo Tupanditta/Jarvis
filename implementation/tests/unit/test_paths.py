@@ -40,30 +40,19 @@ def test_ensure_crea_las_carpetas_del_usuario_y_no_la_de_modelos(tmp_path):
 def test_los_archivos_del_usuario_estan_en_la_carpeta_de_datos(tmp_path):
     app_paths = paths.AppPaths(tmp_path / "data", tmp_path / "cfg", tmp_path / "log", tmp_path)
     assert app_paths.db_path == tmp_path / "data" / "jarvis.db"
-    assert app_paths.verifier_path == tmp_path / "data" / "wakeword_verifier.pkl"
 
 
-def test_los_modelos_exigidos_son_los_de_res_46():
-    required = paths.required_models()
-    assert set(required) == {
-        Path("openwakeword/hey_jarvis_v0.1.onnx"),
-        Path("openwakeword/melspectrogram.onnx"),
-        Path("openwakeword/embedding_model.onnx"),
-        Path("openwakeword/silero_vad.onnx"),
-        Path("faster-whisper-small/model.bin"),
-        Path("faster-whisper-small/config.json"),
-        Path("faster-whisper-small/tokenizer.json"),
-        Path("faster-whisper-small/vocabulary.txt"),
+def test_los_modelos_exigidos_son_solo_los_de_la_voz():
+    assert set(paths.required_models()) == {
         Path("piper/es_ES-davefx-medium.onnx"),
         Path("piper/es_ES-davefx-medium.onnx.json"),
     }
 
 
 def test_los_modelos_exigidos_siguen_a_la_configuracion():
-    required = paths.required_models(stt_model="base", voice="es_ES-otra-medium")
-    assert Path("faster-whisper-base/model.bin") in required
+    required = paths.required_models(voice="es_ES-otra-medium")
     assert Path("piper/es_ES-otra-medium.onnx") in required
-    assert not any("small" in str(path) or "davefx" in str(path) for path in required)
+    assert not any("davefx" in str(path) for path in required)
 
 
 def test_missing_models_lista_los_que_faltan(tmp_path):

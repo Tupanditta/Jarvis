@@ -42,7 +42,7 @@ class Input:
 
 @dataclass(frozen=True)
 class WakeWord(Input):
-    """«Hey Jarvis» detectada."""
+    """Frase de activación «Hey Jarvis» escrita por el usuario."""
 
 
 @dataclass(frozen=True)
@@ -64,12 +64,12 @@ class NoMatch(Input):
 
 @dataclass(frozen=True)
 class ClosingPhraseInIdle(Input):
-    """«Buenas noches Jarvis» captada en reposo por la escucha restringida."""
+    """«Buenas noches Jarvis» escrita en reposo."""
 
 
 @dataclass(frozen=True)
 class SilenceTimeout(Input):
-    """Han pasado los segundos de silencio que llevan a reposo (RF-78)."""
+    """Han pasado los segundos sin escribir que llevan a reposo (RF-78)."""
 
 
 @dataclass(frozen=True)
@@ -102,11 +102,6 @@ class OpenSession(Effect):
 
 
 @dataclass(frozen=True)
-class LoadTranscriber(Effect):
-    """Cargar el transcriptor en paralelo con la frase que sigue."""
-
-
-@dataclass(frozen=True)
 class SayLifecycle(Effect):
     """Decir una frase del ciclo de vida y publicar su evento al empezar el audio (RNF-22)."""
 
@@ -131,7 +126,7 @@ class DeliverNotice(Effect):
 
 @dataclass(frozen=True)
 class RestartSilenceTimer(Effect):
-    """Iniciar o reiniciar la cuenta de silencio."""
+    """Iniciar o reiniciar la cuenta de inactividad."""
 
 
 @dataclass(frozen=True)
@@ -160,7 +155,11 @@ class CancelTurn(Effect):
 
 @dataclass(frozen=True)
 class CloseSession(Effect):
-    """Cierre de sesión completo. `silent`: sin frase ni animación."""
+    """Cierre de sesión completo. `silent`: sin frase ni animación.
+
+    `reason="voz"` es el cierre pedido por el usuario con la frase de cierre. El valor se
+    conserva de cuando la frase se decía: es el que guarda la base de datos.
+    """
 
     reason: Literal["voz", "salida"]
     silent: bool = False
@@ -203,7 +202,6 @@ class StateMachine:
             self.state = _S.LISTENING_COMMAND
             return [
                 OpenSession(),
-                LoadTranscriber(),
                 SayLifecycle("ciclo.apertura", Transition.SESSION_OPENED),
                 DeliverPendingNotices(),
                 RestartSilenceTimer(),

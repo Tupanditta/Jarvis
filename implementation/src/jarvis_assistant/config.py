@@ -33,30 +33,8 @@ CONFIG_FILES = (
 
 
 @dataclass(frozen=True)
-class AudioSettings:
-    input_device: str = ""
-    wakeword_threshold: float = 0.5
-    input_hostapi: str = ""
-    input_gain: float = 1.0
-    wakeword_verifier: bool = True
-    wakeword_verifier_gate: float = 0.2
-    vad_threshold: float = 0.5
-    end_of_speech_seconds: float = 1.0
-    max_utterance_seconds: float = 15.0
-    silence_to_idle_seconds: float = 30.0
-    reopen_delay_seconds: float = 0.3
-    mic_retry_seconds: float = 5.0
-    closing_phrase_in_idle: bool = True
-
-
-@dataclass(frozen=True)
-class SttSettings:
-    model: str = "small"
-    beam_size: int = 3
-    cpu_threads: int = 0
-    no_speech_threshold: float = 0.6
-    vocabulary_workdir_entries: int = 30
-    vocabulary_max_chars: int = 600
+class InputSettings:
+    inactivity_to_idle_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -69,6 +47,7 @@ class TtsSettings:
 @dataclass(frozen=True)
 class RouterSettings:
     intent_threshold: int = 80
+    wake_threshold: int = 80
     control_threshold: int = 80
     idle_closing_threshold: int = 85
     catalog_threshold: int = 75
@@ -105,7 +84,6 @@ class RemindersSettings:
 class UiSettings:
     hud_corner: str = "top-right"
     hud_collapse_seconds: float = 8.0
-    wake_brings_screen_to_front: bool = False
     quality: str = "high"
     reduce_motion: bool = False
 
@@ -122,8 +100,7 @@ class LoggingSettings:
 
 @dataclass(frozen=True)
 class Settings:
-    audio: AudioSettings = field(default_factory=AudioSettings)
-    stt: SttSettings = field(default_factory=SttSettings)
+    input: InputSettings = field(default_factory=InputSettings)
     tts: TtsSettings = field(default_factory=TtsSettings)
     router: RouterSettings = field(default_factory=RouterSettings)
     dialogue: DialogueSettings = field(default_factory=DialogueSettings)
@@ -141,25 +118,12 @@ _UNIT = (0, 1)
 
 # Límites de cada clave: (mínimo, máximo), valores admitidos o `_NON_EMPTY`.
 _SETTINGS_RULES: dict[str, tuple[float, float] | frozenset[str] | str] = {
-    "audio.wakeword_threshold": _UNIT,
-    "audio.input_gain": (0.5, 8),
-    "audio.wakeword_verifier_gate": _UNIT,
-    "audio.vad_threshold": _UNIT,
-    "audio.end_of_speech_seconds": (0.2, 5),
-    "audio.max_utterance_seconds": (1, 60),
-    "audio.silence_to_idle_seconds": (5, 600),
-    "audio.reopen_delay_seconds": (0, 2),
-    "audio.mic_retry_seconds": (1, 60),
-    "stt.model": frozenset({"small", "base"}),
-    "stt.beam_size": (1, 10),
-    "stt.cpu_threads": (0, 64),
-    "stt.no_speech_threshold": _UNIT,
-    "stt.vocabulary_workdir_entries": (0, 200),
-    "stt.vocabulary_max_chars": (0, 2000),
+    "input.inactivity_to_idle_seconds": (5, 600),
     "tts.voice": _NON_EMPTY,
     "tts.volume": _UNIT,
     "tts.cache_size": (0, 1024),
     "router.intent_threshold": _PERCENT,
+    "router.wake_threshold": _PERCENT,
     "router.control_threshold": _PERCENT,
     "router.idle_closing_threshold": _PERCENT,
     "router.catalog_threshold": _PERCENT,

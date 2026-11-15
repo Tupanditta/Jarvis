@@ -8,28 +8,20 @@ from jarvis_assistant import config as cfg
 
 # Tabla de `settings.toml` de configuracion.md.
 SPEC_DEFAULTS = {
-    "audio": {
-        "input_device": "", "wakeword_threshold": 0.5, "input_hostapi": "", "input_gain": 1.0,
-        "wakeword_verifier": True, "wakeword_verifier_gate": 0.2, "vad_threshold": 0.5,
-        "end_of_speech_seconds": 1.0, "max_utterance_seconds": 15, "silence_to_idle_seconds": 30,
-        "reopen_delay_seconds": 0.3, "mic_retry_seconds": 5, "closing_phrase_in_idle": True,
-    },
-    "stt": {
-        "model": "small", "beam_size": 3, "cpu_threads": 0, "no_speech_threshold": 0.6,
-        "vocabulary_workdir_entries": 30, "vocabulary_max_chars": 600,
-    },
+    "input": {"inactivity_to_idle_seconds": 30},
     "tts": {"voice": "es_ES-davefx-medium", "volume": 1.0, "cache_size": 64},
     "router": {
-        "intent_threshold": 80, "control_threshold": 80, "idle_closing_threshold": 85,
-        "catalog_threshold": 75, "path_threshold": 80, "default_hour": 9,
+        "intent_threshold": 80, "wake_threshold": 80, "control_threshold": 80,
+        "idle_closing_threshold": 85, "catalog_threshold": 75, "path_threshold": 80,
+        "default_hour": 9,
     },
     "dialogue": {"timeout_seconds": 20, "max_collisions": 3},
     "commands": {"default_timeout_seconds": 120, "output_lines": 200},
     "search": {"max_results": 10, "fallback_timeout_seconds": 5},
     "reminders": {"snooze_minutes": 10, "max_triggers": 5, "autoconfirm_seconds": 300},
     "ui": {
-        "hud_corner": "top-right", "hud_collapse_seconds": 8,
-        "wake_brings_screen_to_front": False, "quality": "high", "reduce_motion": False,
+        "hud_corner": "top-right", "hud_collapse_seconds": 8, "quality": "high",
+        "reduce_motion": False,
     },
     "startup": {"open_session_on_start": False},
     "logging": {"level": "INFO"},
@@ -78,22 +70,22 @@ def test_un_archivo_vacio_es_valido(tmp_path, name):
 
 
 def test_una_clave_presente_sustituye_solo_a_su_predeterminado(tmp_path):
-    write(tmp_path, "settings.toml", "[audio]\nwakeword_threshold = 0.7\n")
-    audio = load_ok(tmp_path).settings.audio
-    assert audio.wakeword_threshold == 0.7
-    assert audio.vad_threshold == 0.5
+    write(tmp_path, "settings.toml", "[tts]\nvolume = 0.7\n")
+    tts = load_ok(tmp_path).settings.tts
+    assert tts.volume == 0.7
+    assert tts.cache_size == 64
 
 
 def test_un_entero_vale_donde_se_espera_un_decimal(tmp_path):
-    write(tmp_path, "settings.toml", "[audio]\ninput_gain = 2\n")
-    gain = load_ok(tmp_path).settings.audio.input_gain
-    assert gain == 2.0 and isinstance(gain, float)
+    write(tmp_path, "settings.toml", "[input]\ninactivity_to_idle_seconds = 45\n")
+    seconds = load_ok(tmp_path).settings.input.inactivity_to_idle_seconds
+    assert seconds == 45.0 and isinstance(seconds, float)
 
 
 def test_la_configuracion_es_inmutable(tmp_path):
     config = load_ok(tmp_path)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        config.settings.audio.vad_threshold = 0.9
+        config.settings.tts.volume = 0.9
     with pytest.raises(TypeError):
         config.aliases["a"] = "b"
     with pytest.raises(TypeError):
@@ -104,12 +96,12 @@ def test_la_configuracion_es_inmutable(tmp_path):
 
 
 def test_una_clave_desconocida_avisa_y_no_invalida_el_archivo(tmp_path):
-    write(tmp_path, "settings.toml", "[audio]\nvad_threshold = 0.4\nvolumen = 3\n")
+    write(tmp_path, "settings.toml", "[tts]\nvolume = 0.4\nvolumen = 3\n")
     config, errors = cfg.load(tmp_path)
-    assert config.settings.audio.vad_threshold == 0.4
+    assert config.settings.tts.volume == 0.4
     assert len(errors) == 1
     error = errors[0]
-    assert (error.file, error.key, error.warning) == ("settings.toml", "audio.volumen", True)
+    assert (error.file, error.key, error.warning) == ("settings.toml", "tts.volumen", True)
     assert "desconocida" in error.reason
 
 
@@ -117,6 +109,21 @@ def test_una_seccion_desconocida_avisa(tmp_path):
     write(tmp_path, "settings.toml", "[inventada]\nx = 1\n")
     _, errors = cfg.load(tmp_path)
     assert [(e.key, e.warning) for e in errors] == [("inventada", True)]
+
+
+def test_las_secciones_de_la_entrada_por_voz_solo_producen_avisos(tmp_path):
+    """Un `settings.toml` anterior al cambio a texto se sigue cargando."""
+    write(
+        tmp_path,
+        "settings.toml",
+        "[audio]\nsilence_to_idle_seconds = 60\n[stt]\nmodel = \"small\"\n"
+        "[tts]\nvolume = 0.5\n[ui]\nwake_brings_screen_to_front = true\n",
+    )
+    config, errors = cfg.load(tmp_path)
+    assert config.settings.tts.volume == 0.5
+    assert config.settings.input.inactivity_to_idle_seconds == 30.0
+    assert all(error.warning for error in errors)
+    assert {error.key for error in errors} == {"audio", "stt", "ui.wake_brings_screen_to_front"}
 
 
 def test_una_clave_desconocida_en_un_elemento_de_lista_avisa(tmp_path):
@@ -132,17 +139,21 @@ def test_una_clave_desconocida_en_un_elemento_de_lista_avisa(tmp_path):
 @pytest.mark.parametrize(
     ("text", "key", "fragment"),
     [
-        ('[audio]\nwakeword_threshold = "alto"\n', "audio.wakeword_threshold", "número"),
-        ("[audio]\nclosing_phrase_in_idle = 1\n", "audio.closing_phrase_in_idle", "booleano"),
-        ("[stt]\nbeam_size = 2.5\n", "stt.beam_size", "entero"),
-        ("[stt]\nbeam_size = true\n", "stt.beam_size", "entero"),
+        ('[tts]\nvolume = "alto"\n', "tts.volume", "número"),
+        ("[ui]\nreduce_motion = 1\n", "ui.reduce_motion", "booleano"),
+        ("[tts]\ncache_size = 2.5\n", "tts.cache_size", "entero"),
+        ("[tts]\ncache_size = true\n", "tts.cache_size", "entero"),
         ("[tts]\nvoice = 3\n", "tts.voice", "texto"),
-        ("audio = 3\n", "audio", "tabla"),
-        ("[audio]\nwakeword_threshold = 1.5\n", "audio.wakeword_threshold", "entre 0 y 1"),
-        ("[audio]\ninput_gain = 0.1\n", "audio.input_gain", "entre 0.5 y 8"),
+        ("input = 3\n", "input", "tabla"),
+        ("[tts]\nvolume = 1.5\n", "tts.volume", "entre 0 y 1"),
+        (
+            "[input]\ninactivity_to_idle_seconds = 1\n",
+            "input.inactivity_to_idle_seconds",
+            "entre 5 y 600",
+        ),
+        ("[router]\nwake_threshold = 101\n", "router.wake_threshold", "entre 0 y 100"),
         ("[router]\ndefault_hour = 24\n", "router.default_hour", "entre 0 y 23"),
         ("[router]\nintent_threshold = -1\n", "router.intent_threshold", "entre 0 y 100"),
-        ('[stt]\nmodel = "large"\n', "stt.model", "small"),
         ('[ui]\nquality = "ultra"\n', "ui.quality", "high"),
         ('[ui]\nhud_corner = "centro"\n', "ui.hud_corner", "top-right"),
         ('[logging]\nlevel = "TRACE"\n', "logging.level", "INFO"),
@@ -173,7 +184,7 @@ def test_un_archivo_que_no_es_utf8_es_un_error(tmp_path):
 
 
 def test_el_error_de_un_archivo_no_afecta_a_los_demas(tmp_path):
-    write(tmp_path, "settings.toml", "[stt]\nbeam_size = 0\n")
+    write(tmp_path, "settings.toml", "[tts]\ncache_size = -1\n")
     write(tmp_path, "aliases.toml", '[aliases]\n"ce de" = "cd"\n')
     config, errors = cfg.load(tmp_path)
     assert [e.file for e in errors] == ["settings.toml"]

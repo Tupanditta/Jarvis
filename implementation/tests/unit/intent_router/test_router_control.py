@@ -1,4 +1,4 @@
-"""Frases de control y cierre en reposo (catalogo-intenciones.md, secciones 1 y 6)."""
+"""Frase de activación, frases de control y cierre en reposo (catalogo-intenciones.md)."""
 import pytest
 
 from jarvis_assistant.config import RouterSettings
@@ -8,6 +8,7 @@ from jarvis_assistant.core.state_machine import (
     Control,
     ControlKind,
     NoMatch,
+    WakeWord,
 )
 from jarvis_assistant.intent_router.router import IntentRouter
 
@@ -16,12 +17,15 @@ ATTENDING = (S.LISTENING_COMMAND, S.AWAITING_CONFIRMATION, S.AWAITING_PARAMETER)
 
 NEGATIVE_CONTROLS = [
     "muchas gracias jarvis por todo",
-    "jarvis",
     "buenas noches",
     "qué tiempo hace hoy",
-    "hey jarvis",
     "abre",
+    "jarvis abre el navegador",
 ]
+
+WAKE_TEXTS = [
+    "hey jarvis", "Hey Jarvis", "Hey, Jarvis.", "hey jarbis", "ey jarvis", "jarvis", "Jarvis",
+]  # fmt: skip
 
 
 @pytest.fixture
@@ -77,8 +81,29 @@ def test_en_reposo_el_umbral_es_mas_exigente_que_en_escucha():
     assert router.route(text, S.IDLE) is None
 
 
-def test_en_dormido_no_se_enruta_nada(router):
-    assert router.route("buenas noches jarvis", S.DORMIDO) is None
+@pytest.mark.parametrize("text", WAKE_TEXTS)
+@pytest.mark.parametrize("state", [S.DORMIDO, S.IDLE, *ATTENDING])
+def test_la_frase_de_activacion_se_reconoce_en_todos_los_estados(router, state, text):
+    assert router.route(text, state) == WakeWord()
+
+
+@pytest.mark.parametrize(
+    "text", [*NEGATIVE_CONTROLS, "gracias jarvis", "buenas noches jarvis", "cancelar", "hola", ""]
+)
+def test_en_dormido_solo_vale_la_frase_de_activacion(router, text):
+    assert router.route(text, S.DORMIDO) is None
+
+
+def test_el_umbral_de_activacion_es_configurable():
+    strict = IntentRouter(RouterSettings(wake_threshold=100))
+    assert strict.route("hey jarbis", S.DORMIDO) is None
+    assert strict.route("hey jarbis", S.LISTENING_COMMAND) == NoMatch("hey jarbis")
+    assert strict.route("hey jarvis", S.DORMIDO) == WakeWord()
+
+
+def test_en_escucha_una_frase_de_control_no_se_confunde_con_la_activacion():
+    loose = IntentRouter(RouterSettings(wake_threshold=50, control_threshold=80))
+    assert loose.route("gracias jarvis", S.LISTENING_COMMAND) == Control(ControlKind.REPOSO)
 
 
 def test_los_alias_se_aplican_antes_de_comparar():

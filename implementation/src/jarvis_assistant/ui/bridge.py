@@ -12,8 +12,7 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.RestEntered,
     events.SessionClosed,
     events.AssistantActivityChanged,
-    events.MicStatusChanged,
-    events.TranscriptReady,
+    events.CommandReceived,
     events.SpeechStarted,
     events.ShowScreenRequested,
 )

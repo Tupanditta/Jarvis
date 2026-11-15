@@ -1,6 +1,6 @@
 """Registro de diagnóstico: archivo rotativo y excepciones no capturadas (proceso.md).
 
-Privacidad (RES-48): nunca se registra audio; el texto transcrito y el de los recordatorios
+Privacidad (RES-48): el texto de las órdenes escritas y el de los recordatorios
 solo se escriben en nivel `DEBUG`. No se escribe en la consola.
 """
 import asyncio

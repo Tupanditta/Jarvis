@@ -9,12 +9,14 @@ from jarvis_assistant.core.events import (
     Activity,
     AssistantActivityChanged,
     AudioLevel,
+    CommandReceived,
     Event,
     ListeningResumed,
-    MicStatusChanged,
     RestEntered,
     SessionClosed,
     SessionOpened,
+    TextSubmitted,
+    UserTyping,
 )
 
 EVENT_CLASSES = [
@@ -27,7 +29,8 @@ EVENT_CLASSES = [
 def test_el_catalogo_tiene_los_eventos_del_ciclo_de_vida_y_de_estado():
     assert {cls.__name__ for cls in EVENT_CLASSES} >= {
         "SessionOpened", "ListeningResumed", "RestEntered", "SessionClosed",
-        "AssistantActivityChanged", "MicStatusChanged", "AudioLevel",
+        "AssistantActivityChanged", "AudioLevel", "CommandReceived", "TextSubmitted",
+        "UserTyping",
     }  # fmt: skip
 
 
@@ -52,7 +55,9 @@ def test_campos_de_los_eventos():
     assert names(RestEntered) == []
     assert names(SessionClosed) == []
     assert names(AssistantActivityChanged) == ["state", "activity"]
-    assert names(MicStatusChanged) == ["available"]
+    assert names(CommandReceived) == ["text", "recognized"]
+    assert names(TextSubmitted) == ["text"]
+    assert names(UserTyping) == []
     assert names(AudioLevel) == ["level", "source"]
 
 
@@ -75,11 +80,17 @@ def test_las_actividades_son_las_seis_de_la_especificacion():
 @pytest.mark.parametrize("level", [-0.1, 1.1])
 def test_el_nivel_de_audio_esta_entre_0_y_1(level):
     with pytest.raises(ValueError):
-        AudioLevel(level=level, source="mic")
+        AudioLevel(level=level, source="assistant")
 
 
-def test_el_origen_del_nivel_de_audio_es_mic_assistant_o_none():
-    for source in ("mic", "assistant", "none"):
+def test_el_origen_del_nivel_de_audio_es_assistant_o_none():
+    for source in ("assistant", "none"):
         AudioLevel(level=0.5, source=source)
-    with pytest.raises(ValueError):
-        AudioLevel(level=0.5, source="altavoz")
+    for source in ("mic", "altavoz"):
+        with pytest.raises(ValueError):
+            AudioLevel(level=0.5, source=source)
+
+
+def test_no_quedan_eventos_de_la_entrada_por_voz():
+    assert not hasattr(events, "MicStatusChanged")
+    assert not hasattr(events, "TranscriptReady")

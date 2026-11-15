@@ -1,8 +1,7 @@
 """Composición y arranque del proceso (proceso.md).
 
 `build_app` construye y conecta todos los componentes sin lanzar hilos ni abrir dispositivos.
-`main` añade lo real: carpetas, registro, instancia única, modelos, Qt, el hilo del núcleo y
-el hilo de audio.
+`main` añade lo real: carpetas, registro, instancia única, modelos, Qt y el hilo del núcleo.
 """
 import argparse
 import asyncio
@@ -18,15 +17,13 @@ from typing import Any
 from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
 from jarvis_assistant.action_modules.session_manager import SessionManager
-from jarvis_assistant.audio_capture.processor import AudioProcessor
-from jarvis_assistant.audio_capture.types import MicrophoneSource, VoiceDetector, WakeWordDetector
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.orchestrator import CaptureController, Orchestrator
+from jarvis_assistant.core.orchestrator import Orchestrator
 from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.paths import AppPaths, missing_models
@@ -40,7 +37,6 @@ from jarvis_assistant.process.single_instance import acquire_single_instance
 from jarvis_assistant.speaker.piper_synth import Synthesizer
 from jarvis_assistant.speaker.player import AudioPlayer
 from jarvis_assistant.speaker.speaker import Speaker
-from jarvis_assistant.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +55,6 @@ class Adapters:
     platform: Any
     clock: Clock
     database: Database
-    microphone: MicrophoneSource
-    wakeword: WakeWordDetector
-    vad: VoiceDetector
-    transcriber: Transcriber
     synthesizer: Synthesizer
     player: AudioPlayer
 
@@ -75,7 +67,6 @@ class App:
     router: IntentRouter
     sessions: SessionManager
     speaker: Speaker
-    capture: AudioProcessor
     orchestrator: Orchestrator
     adapters: Adapters
 
@@ -91,23 +82,12 @@ def build_app(
     settings = config.settings
     bus = bus or EventBus()
     machine = StateMachine()
-    capture = AudioProcessor(
-        microphone=adapters.microphone,
-        wakeword=adapters.wakeword,
-        vad=adapters.vad,
-        settings=settings.audio,
-        deliver=lambda entry: orchestrator.submit(entry),
-        monotonic=adapters.clock.monotonic,
-        can_refresh=lambda: not speaker.speaking,
-    )
-    capture_controller = CaptureController(capture, machine, adapters.clock, settings.audio)
     speaker = Speaker(
         synthesizer=adapters.synthesizer,
         player=adapters.player,
         bus=bus,
         clock=adapters.clock,
         settings=settings.tts,
-        capture_gate=capture_controller,
     )
     router = IntentRouter(settings.router, config.aliases)
     sessions = SessionManager(adapters.database, adapters.clock, bus)
@@ -117,21 +97,18 @@ def build_app(
         clock=adapters.clock,
         config=config,
         router=router,
-        transcriber=adapters.transcriber,
         speaker=speaker,
-        capture=capture,
-        capture_controller=capture_controller,
         sessions=sessions,
         on_exit=on_exit,
     )
-    return App(config, bus, machine, router, sessions, speaker, capture, orchestrator, adapters)
+    return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters)
 
 
 # --- Arranque real ---------------------------------------------------------------------------
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="jarvis_assistant", description="Asistente de voz")
+    parser = argparse.ArgumentParser(prog="jarvis_assistant", description="Asistente personal")
     parser.add_argument("--log-level", choices=LEVELS, help="nivel del registro de diagnóstico")
     return parser.parse_args(argv)
 
@@ -146,12 +123,8 @@ def create_platform() -> Any:
 
 def real_adapters(config: Config, platform: Any, paths: AppPaths, clock: Clock) -> Adapters:
     """Adaptadores reales. Abre la base de datos: debe llamarse en el hilo del núcleo."""
-    from jarvis_assistant.audio_capture.microphone import Microphone
-    from jarvis_assistant.audio_capture.vad import SileroVad
-    from jarvis_assistant.audio_capture.wakeword import OpenWakeWordDetector
     from jarvis_assistant.speaker.piper_synth import PiperSynthesizer
     from jarvis_assistant.speaker.player import Player
-    from jarvis_assistant.transcriber.whisper_transcriber import WhisperTranscriber
 
     settings = config.settings
     database = Database(paths.db_path, now=clock.now)
@@ -160,15 +133,6 @@ def real_adapters(config: Config, platform: Any, paths: AppPaths, clock: Clock) 
         platform=platform,
         clock=clock,
         database=database,
-        microphone=Microphone(settings.audio),
-        wakeword=OpenWakeWordDetector(
-            paths.models_dir,
-            verifier_path=paths.verifier_path,
-            use_verifier=settings.audio.wakeword_verifier,
-            verifier_gate=settings.audio.wakeword_verifier_gate,
-        ),
-        vad=SileroVad(paths.models_dir),
-        transcriber=WhisperTranscriber(paths.models_dir, settings.stt),
         synthesizer=PiperSynthesizer(paths.models_dir, settings.tts.voice),
         player=Player(clock),
     )
@@ -222,18 +186,13 @@ class CoreThread:
         self.app = app
         try:
             app.sessions.recover_interrupted()
-            app.capture.start()  # el hilo de audio carga sus modelos mientras se carga la voz
             await app.speaker.preload()
             logger.info("Listo en %.1f s", time.monotonic() - started)
             if self._config.settings.startup.open_session_on_start:
                 app.orchestrator.submit(fsm.OpenSessionRequested())
             await app.orchestrator.run()
         finally:
-            app.capture.stop()
             app.speaker.close()
-            close = getattr(adapters.transcriber, "close", None)
-            if close is not None:
-                close()
             adapters.database.close()
 
 
@@ -292,7 +251,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         log_dir=paths.log_dir,
     )
 
-    missing = missing_models(paths.models_dir, config.settings.stt.model, config.settings.tts.voice)
+    missing = missing_models(paths.models_dir, config.settings.tts.voice)
     if missing:
         names = ", ".join(str(path) for path in missing)
         logger.error(
@@ -305,7 +264,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         qt_app.exec()
         return 1
 
-    window = StatusWindow()
+    window = StatusWindow(publish=bus.publish_threadsafe)
     bridge.eventReceived.connect(window.on_event, Qt.ConnectionType.QueuedConnection)
     bridge.eventReceived.connect(tray.on_event, Qt.ConnectionType.QueuedConnection)
     bridge.exitRequested.connect(qt_app.quit, Qt.ConnectionType.QueuedConnection)
@@ -321,6 +280,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
     )
     core.start()
     tray.show()
+    window.show_and_focus()
     qt_app.exec()
 
     tray.hide()

@@ -3,8 +3,9 @@
 Todos son `dataclass` inmutables y la suscripción es por clase. El bus no guarda eventos:
 la interfaz reconstruye su estado solo con los que recibe.
 
-Este módulo contiene los eventos del ciclo de vida, de estado, de voz y las acciones del
-usuario; los de diálogo, tareas y paneles se añaden con los componentes que los publican.
+Este módulo contiene los eventos del ciclo de vida, de estado, de órdenes, de voz y las
+acciones del usuario; los de diálogo, tareas y paneles se añaden con los componentes que los
+publican.
 """
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,14 +22,14 @@ class Activity(StrEnum):
 
     DORMIDO = "dormido"
     REPOSO = "reposo"
-    ESCUCHANDO = "escuchando"
+    ESCUCHANDO = "escuchando"  # atiende las órdenes escritas
     PROCESANDO = "procesando"
     HABLANDO = "hablando"
     ESPERANDO = "esperando"
 
 
-AudioSource = Literal["mic", "assistant", "none"]
-_AUDIO_SOURCES = ("mic", "assistant", "none")
+AudioSource = Literal["assistant", "none"]
+_AUDIO_SOURCES = ("assistant", "none")
 
 
 # --- Ciclo de vida y estado ------------------------------------------------------------------
@@ -68,15 +69,8 @@ class AssistantActivityChanged(Event):
 
 
 @dataclass(frozen=True)
-class MicStatusChanged(Event):
-    """El micrófono ha pasado a estar disponible o no disponible."""
-
-    available: bool
-
-
-@dataclass(frozen=True)
 class AudioLevel(Event):
-    """Nivel de audio (0-1) del micrófono o de la voz del asistente, a 20 Hz."""
+    """Nivel de audio (0-1) de la voz del asistente, a 20 Hz."""
 
     level: float
     source: AudioSource
@@ -100,12 +94,12 @@ class SessionChanged(Event):
     is_important: bool
 
 
-# --- Voz -------------------------------------------------------------------------------------
+# --- Órdenes y voz ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class TranscriptReady(Event):
-    """Texto de una orden transcrita. `recognized=False`: frase no reconocida (RN-51)."""
+class CommandReceived(Event):
+    """Texto de una orden escrita. `recognized=False`: frase no reconocida (RN-51)."""
 
     text: str
     recognized: bool
@@ -125,6 +119,18 @@ class SpeechFinished(Event):
 
 
 # --- Acciones del usuario (interfaz → núcleo, con `publish_threadsafe`) ----------------------
+
+
+@dataclass(frozen=True)
+class TextSubmitted(Event):
+    """El usuario ha enviado `text` desde la caja de texto."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class UserTyping(Event):
+    """El usuario está tecleando en la caja de texto; como mucho, una vez por segundo."""
 
 
 @dataclass(frozen=True)

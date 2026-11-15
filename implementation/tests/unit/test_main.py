@@ -1,15 +1,14 @@
 """Composición y arranque (proceso.md)."""
+import dataclasses
 import threading
 import time
 
 import pytest
 
-from fakes.audio import FakeMicrophone, FakeVad, FakeWakeWord
 from fakes.clock import FakeClock
 from fakes.platform import FakePlatform
-from fakes.voice import FakePlayer, FakeSynthesizer, FakeTranscriber
+from fakes.voice import FakePlayer, FakeSynthesizer
 from jarvis_assistant import main as main_module
-from jarvis_assistant.audio_capture.types import CaptureMode
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core.database import Database
@@ -29,10 +28,6 @@ def fake_adapters(tmp_path, database=None):
         platform=FakePlatform(tmp_path),
         clock=clock,
         database=database,
-        microphone=FakeMicrophone(),
-        wakeword=FakeWakeWord(),
-        vad=FakeVad(),
-        transcriber=FakeTranscriber(),
         synthesizer=FakeSynthesizer(),
         player=FakePlayer(clock),
     )
@@ -44,10 +39,8 @@ def test_build_app_construye_el_grafo_completo_sin_hilos_ni_dispositivos(tmp_pat
     app = build_app(Config(), adapters)
     assert threading.active_count() == threads
     assert app.machine.state is AssistantState.DORMIDO
-    assert app.capture.mode is CaptureMode.WAKE_ONLY
     assert app.orchestrator.state is AssistantState.DORMIDO
-    assert adapters.microphone.opened == 0
-    assert not adapters.synthesizer.loaded and not adapters.transcriber.loaded
+    assert not adapters.synthesizer.loaded
     assert not adapters.player.is_open
     assert app.sessions.current is None
     assert ACTION_MODULES == []  # todavía no hay módulos de acción que registrar
@@ -62,6 +55,12 @@ def test_build_app_usa_el_bus_que_se_le_pasa(tmp_path):
     assert app.bus is bus
     app.speaker.close()
     adapters.database.close()
+
+
+def test_el_proceso_no_tiene_entrada_por_voz(tmp_path):
+    fields = {field.name for field in dataclasses.fields(main_module.Adapters)}
+    assert fields == {"platform", "clock", "database", "synthesizer", "player"}
+    assert not hasattr(main_module.App, "capture")
 
 
 def test_argumentos():
@@ -112,11 +111,10 @@ def test_el_nucleo_recupera_al_arrancar_y_al_salir_deja_la_sesion_cerrada(tmp_pa
     exited = threading.Event()
     core = CoreThread(Config(), bus, make_adapters, exited.set)
     core.start()
-    bus.publish_threadsafe(events.OpenSessionRequested())
+    bus.publish_threadsafe(events.TextSubmitted("Hey Jarvis"))  # como lo envía la ventana
     assert _until(lambda: core.app is not None and core.app.speaker.speaking)
     adapters = made["adapters"]
     assert adapters.synthesizer.loaded
-    assert _until(lambda: adapters.wakeword.loaded)  # el hilo de audio está en marcha
     bus.publish_threadsafe(events.QuitRequested())
     # La frase de apertura suena según el reloj falso: se deja terminar.
     core.app.orchestrator._loop.call_soon_threadsafe(adapters.clock.advance, 1.0)

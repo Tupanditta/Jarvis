@@ -14,17 +14,7 @@ from pathlib import Path
 
 import pytest
 
-BUENAS_NOCHES = "openwakeword/buenas_noches_jarvis.onnx"
-
 RUTAS_SECCION_6 = {
-    "openwakeword/hey_jarvis_v0.1.onnx",
-    "openwakeword/silero_vad.onnx",
-    "openwakeword/melspectrogram.onnx",
-    "openwakeword/embedding_model.onnx",
-    "faster-whisper-small/model.bin",
-    "faster-whisper-small/config.json",
-    "faster-whisper-small/tokenizer.json",
-    "faster-whisper-small/vocabulary.txt",
     "piper/es_ES-davefx-medium.onnx",
     "piper/es_ES-davefx-medium.onnx.json",
 }
@@ -88,12 +78,6 @@ def test_entradas_del_manifiesto_tienen_url_https_y_sha256_valido(fm):
     for e in fm.MANIFEST:
         assert e.url.startswith("https://"), e.relative_path
         assert re.fullmatch(r"[0-9a-f]{64}", e.sha256), e.relative_path
-
-
-def test_manifiesto_no_incluye_buenas_noches_jarvis(fm):
-    nombres = {Path(e.relative_path).name for e in fm.MANIFEST}
-
-    assert "buenas_noches_jarvis.onnx" not in nombres
 
 
 # --- fetch -------------------------------------------------------------------------------
@@ -167,7 +151,7 @@ def test_main_informa_de_cada_archivo_y_termina_bien(fm, tmp_path, monkeypatch, 
 
 
 def test_main_termina_con_error_si_falta_un_modelo(fm, tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(fm, "MANIFEST", [_entry(fm, "openwakeword/silero_vad.onnx")])
+    monkeypatch.setattr(fm, "MANIFEST", [_entry(fm, "piper/es_ES-davefx-medium.onnx")])
     monkeypatch.setattr(fm, "download_https", _fake_download)
 
     assert fm.main([str(tmp_path)]) == 1
@@ -182,29 +166,21 @@ def test_main_termina_con_error_si_una_suma_no_coincide(fm, tmp_path, monkeypatc
     assert "SHA-256" in capsys.readouterr().err
 
 
-def test_fetch_no_crea_buenas_noches_jarvis(fm, tmp_path):
-    manifest = _manifest_con_sumas_de_prueba(fm)
-
-    fm.fetch(manifest, tmp_path, _fake_download)
-
-    assert not (tmp_path / BUENAS_NOCHES).exists()
-
-
 def test_fetch_informa_de_los_archivos_de_la_seccion_6_no_descargados(fm, tmp_path):
-    manifest = [_entry(fm, "openwakeword/silero_vad.onnx")]
+    manifest = [_entry(fm, "piper/es_ES-davefx-medium.onnx")]
 
     faltan = {Path(f).as_posix() for f in fm.fetch(manifest, tmp_path, _fake_download)}
 
-    assert faltan == (RUTAS_SECCION_6 - {"openwakeword/silero_vad.onnx"})
+    assert faltan == (RUTAS_SECCION_6 - {"piper/es_ES-davefx-medium.onnx"})
 
 
 def test_fetch_crea_los_directorios_intermedios(fm, tmp_path):
     destino = tmp_path / "aun_no_existe"
-    manifest = [_entry(fm, "faster-whisper-small/model.bin")]
+    manifest = [_entry(fm, "piper/es_ES-davefx-medium.onnx.json")]
 
     fm.fetch(manifest, destino, _fake_download)
 
-    assert (destino / "faster-whisper-small" / "model.bin").is_file()
+    assert (destino / "piper" / "es_ES-davefx-medium.onnx.json").is_file()
 
 
 # --- Verificación SHA-256 ----------------------------------------------------------------
@@ -226,7 +202,7 @@ def test_fetch_con_suma_erronea_no_deja_archivos_parciales(fm, tmp_path):
 
 
 def test_fetch_con_suma_erronea_conserva_los_archivos_anteriores_correctos(fm, tmp_path):
-    buena = _entry(fm, "openwakeword/silero_vad.onnx", url="https://ejemplo.invalid/a")
+    buena = _entry(fm, "piper/es_ES-davefx-medium.onnx", url="https://ejemplo.invalid/a")
     mala = dataclasses.replace(
         _entry(fm, "piper/x.bin", url="https://ejemplo.invalid/b"), sha256=_sha(b"otra cosa")
     )
@@ -234,7 +210,7 @@ def test_fetch_con_suma_erronea_conserva_los_archivos_anteriores_correctos(fm, t
     with pytest.raises(ValueError):
         fm.fetch([buena, mala], tmp_path, _fake_download)
 
-    assert _files_under(tmp_path) == [tmp_path / "openwakeword" / "silero_vad.onnx"]
+    assert _files_under(tmp_path) == [tmp_path / "piper" / "es_ES-davefx-medium.onnx"]
 
 
 # --- Seguridad: rutas del manifiesto y esquema de la URL (T-33, D-36) ---------------------

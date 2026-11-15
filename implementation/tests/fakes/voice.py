@@ -1,7 +1,6 @@
-"""Dobles de la voz: sintetizador, reproductor y transcriptor."""
+"""Dobles de la voz: sintetizador y reproductor."""
 import asyncio
-from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 
 import numpy as np
 
@@ -70,30 +69,3 @@ class FakePlayer:
 
     def current_level(self) -> float:
         return self.level
-
-
-class FakeTranscriber:
-    """Devuelve, en orden, los textos de `texts`. Registra cargas y llamadas."""
-
-    def __init__(self) -> None:
-        self.texts: deque[str] = deque()
-        self.loaded = False
-        self.loads = 0
-        self.unloads = 0
-        self.calls: list[bool] = []  # `restricted` de cada transcripción
-        self.vocabulary: tuple[str, ...] = ()
-
-    async def load(self) -> None:
-        self.loaded = True
-        self.loads += 1
-
-    def unload(self) -> None:
-        self.loaded = False
-        self.unloads += 1
-
-    async def transcribe(self, pcm: np.ndarray, *, restricted: bool = False) -> str:
-        self.calls.append(restricted)
-        return self.texts.popleft() if self.texts else ""
-
-    def set_vocabulary(self, terms: Sequence[str]) -> None:
-        self.vocabulary = tuple(terms)

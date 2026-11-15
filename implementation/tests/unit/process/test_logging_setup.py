@@ -86,20 +86,20 @@ def test_no_escribe_en_la_consola(tmp_path):
     assert set(logging.getLogger().handlers) - before == {handler}
 
 
-def test_con_el_nivel_predeterminado_no_se_registra_el_texto_transcrito(tmp_path):
+def test_con_el_nivel_predeterminado_no_se_registra_el_texto_de_las_ordenes(tmp_path):
     setup_logging(tmp_path)
-    logger = logging.getLogger("jarvis_assistant.transcriber")
-    logger.debug("texto transcrito: abre el bloc de notas")
-    logger.info("transcripción en 0,4 s")
+    logger = logging.getLogger("jarvis_assistant.core.orchestrator")
+    logger.debug("texto de la orden: abre el bloc de notas")
+    logger.info("orden atendida en 0,4 s")
     content = read_log(tmp_path)
     assert "abre el bloc de notas" not in content  # RES-48
-    assert "transcripción en 0,4 s" in content
+    assert "orden atendida en 0,4 s" in content
 
 
-def test_en_nivel_debug_se_registra_el_texto_transcrito(tmp_path):
+def test_en_nivel_debug_se_registra_el_texto_de_las_ordenes(tmp_path):
     setup_logging(tmp_path, "DEBUG")
-    logging.getLogger("jarvis_assistant.transcriber").debug("texto transcrito: hola")
-    assert "texto transcrito: hola" in read_log(tmp_path)
+    logging.getLogger("jarvis_assistant.core.orchestrator").debug("texto de la orden: hola")
+    assert "texto de la orden: hola" in read_log(tmp_path)
 
 
 def test_un_nivel_desconocido_es_un_error(tmp_path):

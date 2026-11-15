@@ -5,7 +5,7 @@
 #
 # [[protocols]]
 # id = "modo-trabajo"
-# name = "modo trabajo"                # nombre que se dice y que se propone para la sesión
+# name = "modo trabajo"                # nombre que se escribe y que se propone para la sesión
 # aliases = ["a trabajar"]
 # important = true                     # marca la sesión como importante
 #

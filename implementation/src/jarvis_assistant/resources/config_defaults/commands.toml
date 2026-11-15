@@ -1,8 +1,8 @@
 # Lista cerrada de binarios que se pueden ejecutar por voz.
 # El asistente solo lee este archivo.
 #
-# name: nombre que se dice. executable: nombre en el PATH o ruta absoluta.
-# aliases: otras formas de decirlo o de transcribirlo.
+# name: nombre que se escribe. executable: nombre en el PATH o ruta absoluta.
+# aliases: otras formas de escribirlo.
 # timeout_seconds: tiempo máximo; si falta, vale commands.default_timeout_seconds.
 
 [[binaries]]

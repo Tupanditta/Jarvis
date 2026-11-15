@@ -1,11 +1,10 @@
-"""Cola de locuciones, interrupción y modos de captura mientras se habla (sintetizador.md)."""
+"""Cola de locuciones e interrupción (sintetizador.md)."""
 import asyncio
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Protocol
 
 import numpy as np
 
@@ -26,13 +25,6 @@ class SpeechOutcome:
     interrupted: bool
 
 
-class CaptureGate(Protocol):
-    """Lo que el `speaker` necesita de la captura de audio (AD-07)."""
-
-    def speech_started(self, lifecycle: bool) -> None: ...
-    def speech_finished(self) -> None: ...
-
-
 class Speaker:
     def __init__(
         self,
@@ -42,7 +34,6 @@ class Speaker:
         bus: EventBus,
         clock: Clock,
         settings: TtsSettings,
-        capture_gate: CaptureGate,
         executor: Executor | None = None,
     ) -> None:
         self._synthesizer = synthesizer
@@ -50,7 +41,6 @@ class Speaker:
         self._bus = bus
         self._clock = clock
         self._settings = settings
-        self._gate = capture_gate
         self._executor = executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts")
         self._preloaded: dict[str, np.ndarray] = {}
         self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
@@ -108,12 +98,10 @@ class Speaker:
                     on_start()
 
             self._speaking, self._interruptible = True, not lifecycle
-            self._gate.speech_started(lifecycle)
             try:
                 completed = await self._player.play(pcm, started)
             finally:
                 self._speaking = False
-                self._gate.speech_finished()
             if not lifecycle:
                 self._last_phrase = phrase
             self._bus.publish(SpeechFinished(interrupted=not completed))

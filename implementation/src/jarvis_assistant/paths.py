@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Protocol
 
 DB_FILE_NAME = "jarvis.db"
-VERIFIER_FILE_NAME = "wakeword_verifier.pkl"
 
 
 class _UserDirs(Protocol):
@@ -54,33 +53,12 @@ class AppPaths:
     def db_path(self) -> Path:
         return self.data_dir / DB_FILE_NAME
 
-    @property
-    def verifier_path(self) -> Path:
-        """Verificador personal de «Hey Jarvis»; lo genera `calibrate_wakeword.py`."""
-        return self.data_dir / VERIFIER_FILE_NAME
 
-
-def required_models(
-    stt_model: str = "small", voice: str = "es_ES-davefx-medium"
-) -> tuple[Path, ...]:
+def required_models(voice: str = "es_ES-davefx-medium") -> tuple[Path, ...]:
     """Archivos, relativos a `models/`, sin los que el proceso no arranca (RES-46)."""
-    whisper = Path(f"faster-whisper-{stt_model}")
-    return (
-        Path("openwakeword/hey_jarvis_v0.1.onnx"),
-        Path("openwakeword/melspectrogram.onnx"),
-        Path("openwakeword/embedding_model.onnx"),
-        Path("openwakeword/silero_vad.onnx"),
-        whisper / "model.bin",
-        whisper / "config.json",
-        whisper / "tokenizer.json",
-        whisper / "vocabulary.txt",
-        Path(f"piper/{voice}.onnx"),
-        Path(f"piper/{voice}.onnx.json"),
-    )
+    return (Path(f"piper/{voice}.onnx"), Path(f"piper/{voice}.onnx.json"))
 
 
-def missing_models(
-    directory: Path, stt_model: str = "small", voice: str = "es_ES-davefx-medium"
-) -> list[Path]:
+def missing_models(directory: Path, voice: str = "es_ES-davefx-medium") -> list[Path]:
     """Modelos exigidos que no están en `directory`."""
-    return [p for p in required_models(stt_model, voice) if not (directory / p).is_file()]
+    return [p for p in required_models(voice) if not (directory / p).is_file()]

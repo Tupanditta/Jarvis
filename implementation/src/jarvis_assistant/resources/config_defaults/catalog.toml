@@ -4,7 +4,7 @@
 # Añadir al catálogo las aplicaciones del menú Inicio.
 discover_installed_apps = true
 
-# Una aplicación: nombre que se dice, otras formas de decirlo, y qué se lanza
+# Una aplicación: nombre que se escribe, otras formas de escribirlo, y qué se lanza
 # (ejecutable, acceso directo o nombre en el PATH).
 #
 # [[apps]]

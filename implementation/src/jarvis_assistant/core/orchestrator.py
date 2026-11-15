@@ -1,4 +1,4 @@
-"""Bucle de turnos: une captura, transcripción, enrutador, FSM y voz (maquina-estados.md).
+"""Bucle de turnos: une la entrada escrita, el enrutador, la FSM y la voz (maquina-estados.md).
 
 Vive en el hilo del núcleo y es el único dueño del estado. Consume entradas de una cola y
 ejecuta, en orden, los efectos que devuelve la FSM. La ejecución de acciones (`run_task`), el
@@ -10,8 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from jarvis_assistant.audio_capture.types import CaptureMode, Utterance, WakeWordDetected
-from jarvis_assistant.config import AudioSettings, Config
+from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import Phrase
@@ -22,17 +21,11 @@ from jarvis_assistant.core.repositories import SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.speaker.speaker import Speaker
-from jarvis_assistant.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
 
 LEVEL_INTERVAL_SECONDS = 0.05  # 20 Hz (AD-14)
 
-_ATTENDING = (
-    AssistantState.LISTENING_COMMAND,
-    AssistantState.AWAITING_CONFIRMATION,
-    AssistantState.AWAITING_PARAMETER,
-)
 _ACTIVITY_OF_STATE = {
     AssistantState.DORMIDO: Activity.DORMIDO,
     AssistantState.IDLE: Activity.REPOSO,
@@ -42,50 +35,9 @@ _ACTIVITY_OF_STATE = {
 }
 
 
-class Capture(Protocol):
-    """Lo que el núcleo usa de `AudioProcessor`."""
-
-    epoch: int
-
-    def set_mode(self, mode: CaptureMode, *, reopen_at: float | None = None) -> None: ...
-    def current_level(self) -> float: ...
-    @property
-    def capturing(self) -> bool: ...
-
-
 class Sessions(Protocol):
     def open_session(self) -> SessionRow: ...
     def close_session(self, reason: str) -> None: ...
-
-
-class CaptureController:
-    """Fija el modo de captura según el estado y lo silencia durante las locuciones (AD-07)."""
-
-    def __init__(
-        self, capture: Capture, machine: StateMachine, clock: Clock, settings: AudioSettings
-    ) -> None:
-        self._capture = capture
-        self._machine = machine
-        self._clock = clock
-        self._settings = settings
-
-    def mode_for_state(self) -> CaptureMode:
-        state = self._machine.state
-        if state in _ATTENDING:
-            return CaptureMode.COMMANDS
-        if state is AssistantState.IDLE and self._settings.closing_phrase_in_idle:
-            return CaptureMode.WAKE_AND_CLOSING
-        return CaptureMode.WAKE_ONLY
-
-    def sync(self) -> None:
-        self._capture.set_mode(self.mode_for_state())
-
-    def speech_started(self, lifecycle: bool) -> None:
-        self._capture.set_mode(CaptureMode.MUTED if lifecycle else CaptureMode.WAKE_ONLY)
-
-    def speech_finished(self) -> None:
-        reopen_at = self._clock.monotonic() + self._settings.reopen_delay_seconds
-        self._capture.set_mode(self.mode_for_state(), reopen_at=reopen_at)
 
 
 @dataclass(frozen=True)
@@ -102,10 +54,7 @@ class Orchestrator:
         clock: Clock,
         config: Config,
         router: IntentRouter,
-        transcriber: Transcriber,
         speaker: Speaker,
-        capture: Capture,
-        capture_controller: CaptureController,
         sessions: Sessions,
         on_exit: Callable[[], None] = lambda: None,
     ) -> None:
@@ -114,39 +63,31 @@ class Orchestrator:
         self._clock = clock
         self._config = config
         self._router = router
-        self._transcriber = transcriber
         self._speaker = speaker
-        self._capture = capture
-        self._gate = capture_controller
         self._sessions = sessions
         self._on_exit = on_exit
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
-        self._epoch = 0
         self._session: SessionRow | None = None
-        self._processing = False
         self._published: tuple[str, Activity] | None = None
         self._silence_timer: TimerHandle | None = None
         self._silence_token = 0
         self._level_timer: TimerHandle | None = None
-        self._background: set[asyncio.Task[None]] = set()
 
         bus.subscribe(
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
         )
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
+        bus.subscribe(events.TextSubmitted, self.submit)
+        bus.subscribe(events.UserTyping, self.submit)
         bus.subscribe(events.SpeechStarted, lambda _e: self._refresh())
         bus.subscribe(events.SpeechFinished, lambda _e: self._refresh())
 
     @property
     def state(self) -> AssistantState:
         return self._machine.state
-
-    @property
-    def epoch(self) -> int:
-        return self._epoch
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -169,7 +110,6 @@ class Orchestrator:
     async def run(self) -> None:
         """Consume entradas y ejecuta efectos hasta que la FSM pide terminar el proceso."""
         self._loop = asyncio.get_running_loop()
-        self._gate.sync()
         self._refresh()
         while not self._stopping:
             entry = await self._queue.get()
@@ -188,12 +128,10 @@ class Orchestrator:
     # --- Entradas ----------------------------------------------------------------------------
 
     async def _dispatch(self, entry: object) -> None:
-        if isinstance(entry, Utterance):
-            await self._on_utterance(entry)
-        elif isinstance(entry, WakeWordDetected):
-            await self._handle(fsm.WakeWord())
-        elif isinstance(entry, events.MicStatusChanged):
-            self._bus.publish(entry)
+        if isinstance(entry, events.TextSubmitted):
+            await self._on_text(entry.text)
+        elif isinstance(entry, events.UserTyping):
+            self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
             await self._on_silence(entry)
         elif isinstance(entry, fsm.Input):
@@ -201,46 +139,21 @@ class Orchestrator:
         else:
             logger.warning("Entrada desconocida: %r", entry)
 
-    async def _on_utterance(self, utterance: Utterance) -> None:
-        state = self._machine.state
-        if utterance.epoch != self._epoch:
-            logger.debug("Orden de una época anterior descartada")
-            return
-        if state is AssistantState.DORMIDO or utterance.restricted != (
-            state is AssistantState.IDLE
-        ):
-            return
-        if not utterance.restricted:
-            self._cancel_silence_timer()  # la orden cuenta como voz
-            self._processing = True
-            self._refresh()
-        try:
-            text = await self._transcriber.transcribe(
-                utterance.pcm, restricted=utterance.restricted
-            )
-        except Exception:
-            logger.exception("No se ha podido transcribir la orden")
-            text = ""  # se trata como frase no reconocida: la cuenta de silencio sigue
-        finally:
-            self._processing = False
-        if utterance.epoch != self._epoch:
-            logger.debug("Transcripción de una época anterior descartada")
+    async def _on_text(self, text: str) -> None:
+        if not text.strip():
             return
         entry = self._router.route(text, self._machine.state)
         if entry is None:
             return
-        if isinstance(entry, fsm.Control | fsm.ClosingPhraseInIdle):
-            logger.info("Frase de control reconocida: %s", type(entry).__name__)
-            self._bus.publish(events.TranscriptReady(text, recognized=True))
+        if isinstance(entry, fsm.Control | fsm.ClosingPhraseInIdle | fsm.WakeWord):
+            logger.info("Frase reconocida: %s", type(entry).__name__)
+            self._bus.publish(events.CommandReceived(text, recognized=True))
         await self._handle(entry)
 
     async def _on_silence(self, elapsed: _SilenceElapsed) -> None:
         if elapsed.token != self._silence_token:
             return
         if self._machine.state is not AssistantState.LISTENING_COMMAND:
-            return
-        if self._capture.capturing:  # hay voz en curso: no es silencio
-            self._restart_silence_timer()
             return
         await self._handle(fsm.SilenceTimeout())
 
@@ -250,15 +163,8 @@ class Orchestrator:
         after = self._machine.state
         if after is not before:
             logger.info("Estado: %s → %s (%s)", before, after, type(entry).__name__)
-            if before is AssistantState.DORMIDO or after in (
-                AssistantState.DORMIDO, AssistantState.IDLE,
-            ):
-                self._epoch += 1
-                self._capture.epoch = self._epoch
             if after is not AssistantState.LISTENING_COMMAND:
                 self._cancel_silence_timer()
-            if not self._speaker.speaking:
-                self._gate.sync()
         for effect in effects:
             await self._execute(effect)
 
@@ -269,8 +175,6 @@ class Orchestrator:
             case fsm.OpenSession():
                 self._session = self._sessions.open_session()
                 self._speaker.open_output()
-            case fsm.LoadTranscriber():
-                self._spawn(self._load_transcriber())
             case fsm.SayLifecycle(phrase_id=phrase_id, announces=transition):
                 await self._say_lifecycle(phrase_id, transition)
             case fsm.PublishListeningResumed(silent=silent):
@@ -281,7 +185,7 @@ class Orchestrator:
                 self._speaker.stop()
             case fsm.PublishUnrecognized(text=text):
                 if text.strip():
-                    self._bus.publish(events.TranscriptReady(text, recognized=False))
+                    self._bus.publish(events.CommandReceived(text, recognized=False))
             case fsm.CloseSession(reason=reason, silent=silent):
                 await self._close_session(reason, silent)
             case fsm.ExitProcess():
@@ -328,21 +232,9 @@ class Orchestrator:
         else:
             await self._say_lifecycle("ciclo.cierre", Transition.SESSION_CLOSED)
         if self._machine.state is AssistantState.DORMIDO:  # no se ha abierto otra entretanto
-            self._transcriber.unload()
             self._speaker.close_output()
 
-    async def _load_transcriber(self) -> None:
-        try:
-            await self._transcriber.load()
-        except Exception:
-            logger.exception("No se ha podido cargar el transcriptor")
-
-    def _spawn(self, coroutine) -> None:
-        task = asyncio.ensure_future(coroutine)
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
-
-    # --- Cuenta de silencio ------------------------------------------------------------------
+    # --- Cuenta de inactividad ---------------------------------------------------------------
 
     def _restart_silence_timer(self) -> None:
         self._cancel_silence_timer()
@@ -350,7 +242,7 @@ class Orchestrator:
             return
         token = self._silence_token
         self._silence_timer = self._clock.call_later(
-            self._config.settings.audio.silence_to_idle_seconds,
+            self._config.settings.input.inactivity_to_idle_seconds,
             lambda: self._queue.put_nowait(_SilenceElapsed(token)),
         )
 
@@ -365,12 +257,7 @@ class Orchestrator:
     def _refresh(self) -> None:
         """Publica la actividad si ha cambiado y mantiene el temporizador del nivel."""
         state = self._machine.state
-        if self._speaker.speaking:
-            activity = Activity.HABLANDO
-        elif self._processing:
-            activity = Activity.PROCESANDO
-        else:
-            activity = _ACTIVITY_OF_STATE[state]
+        activity = Activity.HABLANDO if self._speaker.speaking else _ACTIVITY_OF_STATE[state]
         current = (state.value, activity)
         if current != self._published:
             self._published = current
@@ -379,9 +266,7 @@ class Orchestrator:
             self._schedule_level()
 
     def _level_source(self) -> events.AudioSource:
-        if self._speaker.speaking:
-            return "assistant"
-        return "mic" if self._machine.state in _ATTENDING else "none"
+        return "assistant" if self._speaker.speaking else "none"
 
     def _schedule_level(self) -> None:
         self._level_timer = self._clock.call_later(LEVEL_INTERVAL_SECONDS, self._publish_level)
@@ -389,12 +274,7 @@ class Orchestrator:
     def _publish_level(self) -> None:
         self._level_timer = None
         source = self._level_source()
-        if source == "assistant":
-            level = self._speaker.current_level()
-        elif source == "mic":
-            level = self._capture.current_level()
-        else:
-            level = 0.0
+        level = self._speaker.current_level() if source == "assistant" else 0.0
         self._bus.publish(events.AudioLevel(min(1.0, max(0.0, level)), source))
         if source != "none" and not self._stopping:
             self._schedule_level()

@@ -199,17 +199,6 @@ async def test_un_flujo_que_no_reproduce_no_bloquea_la_frase():
 # --- Speaker ---------------------------------------------------------------------------------
 
 
-class Gate:
-    def __init__(self):
-        self.calls = []
-
-    def speech_started(self, lifecycle):
-        self.calls.append(("start", lifecycle))
-
-    def speech_finished(self):
-        self.calls.append(("end",))
-
-
 class Rig:
     def __init__(self, settings=None):
         self.clock = FakeClock()
@@ -219,10 +208,9 @@ class Rig:
         self.bus.subscribe(SpeechFinished, self.events.append)
         self.synthesizer = FakeSynthesizer()
         self.player = FakePlayer(self.clock)
-        self.gate = Gate()
         self.speaker = Speaker(
             synthesizer=self.synthesizer, player=self.player, bus=self.bus, clock=self.clock,
-            settings=settings or TtsSettings(), capture_gate=self.gate,
+            settings=settings or TtsSettings(),
         )
 
     async def advance(self, seconds):
@@ -248,18 +236,16 @@ async def test_preload_carga_la_voz_y_sintetiza_el_ciclo_de_vida(rig):
     assert len(rig.synthesizer.texts) == len(PRELOADED_IDS)  # no se vuelve a sintetizar
 
 
-async def test_frase_del_ciclo_de_vida_silencia_la_captura_y_avisa_al_empezar(rig):
+async def test_frase_del_ciclo_de_vida_avisa_al_empezar(rig):
     started = []
     task = asyncio.ensure_future(
         rig.speaker.say(Phrase("ciclo.reposo"), lifecycle=True, on_start=lambda: started.append(1))
     )
     await settle()
-    assert rig.gate.calls == [("start", True)]
     assert started == [1] and rig.speaker.speaking
     assert rig.events == [SpeechStarted("A su disposición.", interruptible=False)]
     await rig.advance(1.0)
     assert not (await task).interrupted
-    assert rig.gate.calls == [("start", True), ("end",)]
     assert rig.events[-1] == SpeechFinished(interrupted=False)
     assert not rig.speaker.speaking
     assert rig.speaker.last_phrase is None
@@ -270,7 +256,6 @@ async def test_las_frases_se_dicen_de_una_en_una_y_en_orden(rig):
     second = asyncio.ensure_future(rig.speaker.say(Phrase("general.error")))
     await settle()
     assert len(rig.player.played) == 1
-    assert rig.gate.calls == [("start", False)]
     await rig.advance(1.0)
     assert first.done() and not second.done()
     assert len(rig.player.played) == 2
@@ -290,7 +275,6 @@ async def test_stop_interrumpe_la_locucion_y_vacia_la_cola(rig):
     assert (await first).interrupted and (await second).interrupted
     assert len(rig.player.played) == 1
     assert rig.events[-1] == SpeechFinished(interrupted=True)
-    assert rig.gate.calls == [("start", False), ("end",)]
 
 
 async def test_el_boton_de_silencio_calla_la_locucion(rig):

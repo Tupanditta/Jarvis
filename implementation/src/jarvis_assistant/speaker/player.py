@@ -10,8 +10,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from jarvis_assistant.audio_capture.telemetry import level_of
 from jarvis_assistant.core.clock import Clock
+from jarvis_assistant.speaker.level import level_of
 
 logger = logging.getLogger(__name__)
 
