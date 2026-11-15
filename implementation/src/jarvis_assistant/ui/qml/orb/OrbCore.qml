@@ -1,5 +1,5 @@
-// Núcleo del orbe: esfera con degradado radial y meridianos elípticos que giran para dar
-// volumen. Su resplandor crece con el nivel de la voz.
+// Núcleo del orbe: plasma. Tres capas translúcidas de contorno irregular que se deforman
+// cada una a su ritmo. La deformación crece con el caos (pensar) y con el nivel de la voz.
 import QtQuick
 import QtQuick.Shapes
 import ".."
@@ -10,11 +10,35 @@ Item {
     property real diameter: 100
     property color color: Theme.primary
     property real glow: 0            // 0–1: nivel de la voz y respiración
-    property real phase: 0           // fase del giro de los meridianos, en radianes
+    property real time: 0            // reloj del pensamiento (`mind` del orbe)
+    property real chaos: 0
+    property real level: 0           // nivel de la voz, de 0 a 1
+    property bool fluid: true        // falso: contorno liso (calidad baja, movimiento reducido)
+
+    readonly property int points: 64
+    readonly property real middle: diameter * 0.75
+    readonly property real ripple: fluid ? 0.03 + 0.1 * chaos + 0.07 * level : 0
+
+    // Contorno cerrado de radio `radius`, deformado por tres ondas de distinta frecuencia.
+    function outline(radius, seed, turn) {
+        var result = []
+        var t = time * turn
+        for (var i = 0; i < points; i++) {
+            var a = i * 2 * Math.PI / points
+            var k = 1 + ripple * (0.5 * Math.sin(3 * a + t * 1.3 + seed)
+                                  + 0.3 * Math.sin(5 * a - t * 1.9 + seed * 2)
+                                  + 0.2 * Math.sin(8 * a + t * 2.9 + seed * 3))
+            result.push(Qt.point(middle + Math.cos(a) * radius * k,
+                                 middle + Math.sin(a) * radius * k))
+        }
+        result.push(result[0])
+        return result
+    }
 
     width: diameter
     height: diameter
 
+    // Resplandor.
     Shape {
         anchors.centerIn: parent
         width: core.diameter * 1.5
@@ -24,18 +48,18 @@ Item {
         ShapePath {
             strokeWidth: -1
             fillGradient: RadialGradient {
-                centerX: core.diameter * 0.75
-                centerY: core.diameter * 0.75
+                centerX: core.middle
+                centerY: core.middle
                 focalX: centerX
                 focalY: centerY
-                centerRadius: core.diameter * 0.75
+                centerRadius: core.middle
                 GradientStop { position: 0.0; color: Theme.alpha(core.color, 0.55) }
                 GradientStop { position: 1.0; color: Theme.alpha(core.color, 0.0) }
             }
             PathAngleArc {
-                centerX: core.diameter * 0.75
-                centerY: core.diameter * 0.75
-                radiusX: core.diameter * 0.75
+                centerX: core.middle
+                centerY: core.middle
+                radiusX: core.middle
                 radiusY: radiusX
                 sweepAngle: 360
             }
@@ -43,50 +67,60 @@ Item {
     }
 
     Shape {
-        anchors.fill: parent
+        anchors.centerIn: parent
+        width: core.diameter * 1.5
+        height: width
+        preferredRendererType: Shape.CurveRenderer
 
+        // Capa exterior: membrana.
+        ShapePath {
+            strokeColor: Theme.alpha(core.color, 0.6)
+            strokeWidth: 1
+            fillGradient: RadialGradient {
+                centerX: core.middle
+                centerY: core.middle
+                focalX: centerX
+                focalY: centerY
+                centerRadius: core.diameter * 0.55
+                GradientStop { position: 0.0; color: Theme.alpha(core.color, 0.5) }
+                GradientStop { position: 1.0; color: Theme.alpha(core.color, 0.1) }
+            }
+            PathPolyline { path: core.outline(core.diameter * 0.47, 0.0, 1) }
+        }
+
+        // Capa media: gira al revés que la membrana.
+        ShapePath {
+            strokeColor: Theme.alpha(Theme.primaryBright, 0.45)
+            strokeWidth: 1
+            fillGradient: RadialGradient {
+                centerX: core.middle
+                centerY: core.middle
+                focalX: centerX
+                focalY: centerY
+                centerRadius: core.diameter * 0.4
+                GradientStop { position: 0.0; color: Theme.alpha(Theme.primaryBright, 0.55) }
+                GradientStop { position: 1.0; color: Theme.alpha(core.color, 0.15) }
+            }
+            PathPolyline { path: core.outline(core.diameter * 0.33, 2.1, -1.4) }
+        }
+
+        // Centro: casi blanco; es lo más brillante de la pantalla.
         ShapePath {
             strokeWidth: -1
             fillGradient: RadialGradient {
-                centerX: core.diameter / 2
-                centerY: core.diameter / 2
+                centerX: core.middle
+                centerY: core.middle
                 focalX: centerX
                 focalY: centerY
-                centerRadius: core.diameter / 2
-                GradientStop { position: 0.0; color: Theme.primaryBright }
-                GradientStop { position: 0.45; color: core.color }
+                centerRadius: core.diameter * 0.24
+                GradientStop {
+                    position: 0.0
+                    color: Theme.mix(Theme.primaryBright, Theme.primaryHot, core.glow)
+                }
+                GradientStop { position: 0.6; color: Theme.alpha(Theme.primaryBright, 0.7) }
                 GradientStop { position: 1.0; color: Theme.alpha(core.color, 0.0) }
             }
-            PathAngleArc {
-                centerX: core.diameter / 2
-                centerY: core.diameter / 2
-                radiusX: core.diameter / 2
-                radiusY: radiusX
-                sweepAngle: 360
-            }
-        }
-    }
-
-    Repeater {
-        model: 3
-
-        Rectangle {
-            id: meridian
-
-            required property int index
-
-            anchors.centerIn: parent
-            width: core.diameter * 0.82
-            height: width
-            radius: width / 2
-            color: "transparent"
-            border.width: 1
-            border.color: Theme.alpha(Theme.primaryBright, 0.45)
-            transform: Scale {
-                origin.x: meridian.width / 2
-                origin.y: meridian.height / 2
-                xScale: Math.cos(core.phase + meridian.index * Math.PI / 3)
-            }
+            PathPolyline { path: core.outline(core.diameter * 0.2, 4.4, 2.2) }
         }
     }
 }

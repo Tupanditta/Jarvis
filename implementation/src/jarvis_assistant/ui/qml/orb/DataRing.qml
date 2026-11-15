@@ -10,6 +10,8 @@ Canvas {
     property real diameter: 100
     property color color: Theme.primary
     property bool showText: true
+    property real sparks: 0          // 0–1: visibilidad de los segmentos que parpadean
+    property real time: 0            // reloj del pensamiento (`mind` del orbe)
     readonly property real pad: 26   // margen para el texto que queda fuera del anillo
 
     readonly property var values: ["0x3F", "128", "0xA7", "64", "0x1C", "2048"]
@@ -29,6 +31,32 @@ Canvas {
         ctx.translate(0, -radius)
         ctx.fillText(text, 0, 0)
         ctx.restore()
+    }
+
+    // Segmentos que parpadean sobre el anillo, cada uno a su ritmo. Giran con él.
+    Repeater {
+        model: 5
+
+        Item {
+            id: spark
+
+            required property int index
+
+            anchors.fill: parent
+            rotation: index * 72 + ring.variant * 23
+
+            Rectangle {
+                width: ring.diameter * 0.06
+                height: 2
+                radius: 1
+                y: ring.pad - 1
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: Theme.primaryBright
+                opacity: ring.sparks * Math.pow(Math.max(0, Math.sin(
+                    ring.time * (1.1 + spark.index * 0.43) + spark.index * 2.3 + ring.variant)), 8)
+                visible: opacity > 0.01
+            }
+        }
     }
 
     onPaint: {

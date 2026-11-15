@@ -12,6 +12,7 @@ QtObject {
     readonly property color lineStrong: "#2A4560"
     readonly property color primary: "#22D3EE"
     readonly property color primaryBright: "#7DF3FF"
+    readonly property color primaryHot: "#E8FDFF"
     readonly property color primaryDim: "#0E7490"
     readonly property color primaryDeep: "#0B2A4A"
     readonly property color textPrimary: "#E6F1F8"

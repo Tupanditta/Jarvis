@@ -38,6 +38,7 @@ jarvis_assistant = [
     "ui/qml/qmldir",
     "ui/qml/*.qml",
     "ui/qml/*/*.qml",
+    "ui/qml/*/*.js",
     "ui/assets/fonts/*",
     "ui/assets/icons/*",
 ]

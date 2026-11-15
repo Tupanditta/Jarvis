@@ -49,10 +49,10 @@ Window {
             orb.play(kind)
             panelFade.stop()
             if (kind === "wake") {
-                // Los paneles aparecen con un fundido entre 0,6 y 1,6 s (solo al abrir).
+                // Los paneles aparecen con el estallido, entre 1,0 y 1,8 s (solo al abrir).
                 panelFade.target = 1
-                panelFade.delay = 600
-                panelFade.span = 1000
+                panelFade.delay = 1000
+                panelFade.span = 800
             } else if (kind === "wake_from_rest") {
                 panelFade.target = 1
                 panelFade.delay = 0
@@ -62,9 +62,10 @@ Window {
                 panelFade.delay = 400
                 panelFade.span = 1200
             } else {
+                // Cierre: los paneles se apagan mientras el orbe colapsa.
                 panelFade.target = 0
-                panelFade.delay = 400
-                panelFade.span = 1600
+                panelFade.delay = 200
+                panelFade.span = 1100
             }
             if (ui.reduceMotion) {
                 panelFade.delay = 0
@@ -115,11 +116,20 @@ Window {
         onTriggered: screen.cursorHidden = true
     }
 
-    // --- Orbe --------------------------------------------------------------------------------
+    // --- Fondo vivo y orbe -------------------------------------------------------------------
+
+    LifeField {
+        anchors.fill: parent
+        conductor: orb
+        centerX: orb.x + orb.width / 2
+        centerY: orb.y + orb.height / 2
+        quality: ui.quality
+    }
 
     Orb {
         id: orb
 
+        objectName: "orb"
         anchors.centerIn: parent
         anchors.verticalCenterOffset: -screen.height * 0.04
         d: Math.min(screen.width, screen.height) * 0.42

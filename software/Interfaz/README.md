@@ -28,6 +28,7 @@ Los tokens viven en `ui/qml/Theme.qml`.
 | `line.strong` | `#2A4560` | Borde del panel activo. |
 | `primary` | `#22D3EE` | Cian principal: orbe, acentos, elemento activo. |
 | `primary.bright` | `#7DF3FF` | Centro del núcleo, destellos. |
+| `primary.hot` | `#E8FDFF` | Blanco cian: centro del plasma al máximo brillo y sinapsis al dispararse. |
 | `primary.dim` | `#0E7490` | Elementos del orbe en reposo. |
 | `primary.deep` | `#0B2A4A` | Azul marino profundo: final de la animación de dormirse. |
 | `text.primary` | `#E6F1F8` | Texto principal. |
@@ -88,13 +89,33 @@ Tamaños relativos a `D` = 42 % del lado menor de la pantalla. De dentro afuera:
 
 | Capa | Radio | Descripción |
 |---|---|---|
-| Halo | 0,60 D | Resplandor difuso detrás de todo; da la sensación de luz proyectada. |
-| Núcleo | 0,16 D | Esfera: degradado radial de `primary.bright` en el centro a `primary` y a transparente en el borde, con dos o tres meridianos elípticos finos que giran para dar volumen. |
+| Halo | 0,60 D | Resplandor difuso detrás de todo; da la sensación de luz proyectada. Crece y se aviva con `energy`. |
+| Núcleo (plasma) | 0,16 D | Tres capas translúcidas de contorno irregular que se deforman cada una a su ritmo, de `primary.hot` en el centro a `primary` en la membrana. La deformación crece con `chaos` y con la voz. Liso en calidad baja. |
+| Red neuronal | 0,20 D | Nodos repartidos en una esfera que gira en 3D alrededor del núcleo, unidos a sus vecinos por enlaces que se encienden y se apagan como sinapsis. 28 nodos en calidad alta, 14 en media, ninguno en baja. |
+| Arcos giroscópicos | 0,27 – 0,32 D | Tres arcos inclinados que giran en planos distintos. `chaos` los desalinea. |
 | Anillo de espectro | 0,24 D | 64 barras radiales cuya longitud sigue el nivel de audio (ver «Reacción a la voz»). |
 | Anillo de datos 1 | 0,30 D | Línea fina con marcas cada 5°. Gira en sentido horario. |
 | Anillo de datos 2 | 0,36 D | Arcos segmentados con números y valores hexadecimales en `font.mono`. Gira en sentido antihorario. |
 | Anillo de datos 3 | 0,43 D | Línea discontinua con fragmentos de código en cuatro puntos. Gira en sentido horario, más lento. |
+| Satélites | 0,47 – 0,65 D | Cinco puntos brillantes en órbitas excéntricas, con estela en calidad alta. Destellan al paso del latido. |
+| Glifos | 0,47 – 0,67 D | Fragmentos de código en `font.mono` que aparecen y se desvanecen, cada vez en un sitio. Se ven más con `chaos`. 10 en calidad alta, 5 en media, ninguno en baja. |
 | Partículas | hasta 0,70 D | Puntos pequeños que se alejan despacio del centro, muy tenues. 120 en calidad alta, 60 en media, ninguna en baja. |
+| Onda del latido | hasta 2,5 D | Anillo fino que nace en el núcleo con cada latido y cruza toda la pantalla. |
+
+Los anillos de datos llevan además cinco segmentos cada uno que parpadean a ritmos distintos.
+
+### El director
+
+Hay muchos elementos y son distintos entre sí, pero se mueven como uno solo porque todos, los del orbe y los del fondo de la pantalla (sección 5), leen las mismas señales del componente `Orb`:
+
+| Señal | Qué es |
+|---|---|
+| `energy` | 0–1 según la actividad. Marca la velocidad y el brillo de los elementos vivos. |
+| `chaos` | 0–1 según la actividad. Marca la irregularidad: deformación del plasma, sinapsis, glifos, señales. |
+| Latido (`beat`) | Onda periódica que nace en el núcleo y se propaga hacia fuera. Cada elemento se ilumina cuando la onda pasa por su distancia al centro. Es lo que une el centro con el fondo. |
+| Nivel de la voz y color | Los mismos para todos. En «esperando», los acentos pasan a `status.pending`. |
+
+Las capas vivas (red, arcos, satélites, glifos, partículas, segmentos y fondo) solo se ven con el asistente despierto.
 
 Los datos de los anillos son decorativos y fijos (no muestran información real), en `primary` al 60 %.
 
@@ -104,22 +125,26 @@ Los datos de los anillos son decorativos y fijos (no muestran información real)
 
 | Actividad | Aspecto |
 |---|---|
-| **Escuchando** | Atención activa. El orbe pulsa con una «respiración» luminosa (resplandor interior que aumenta y disminuye, periodo de 2,4 s). El asistente atiende las órdenes escritas. El núcleo queda quieto y el espectro no se ve: no hay audio que seguir. Los anillos giran a velocidad media-alta. Brillo 100 %. |
+| **Escuchando** | Atención activa. El orbe pulsa con una «respiración» luminosa (resplandor interior que aumenta y disminuye, periodo de 2,4 s). El asistente atiende las órdenes escritas. El plasma ondula despacio y el espectro no se ve: no hay audio que seguir. Los anillos giran a velocidad media-alta y todas las capas vivas están activas. Late cada 2,4 s. Brillo 100 %. |
 | **Hablando** | Igual que escuchando, y además el núcleo y el espectro reaccionan a la voz del asistente: ondas de espectro a lo largo del anillo interior, sincronizadas con su volumen. Incluye las frases que coinciden con la animación de dormirse («A su disposición.», «Buenas noches. Sesión cerrada.»). |
-| **Procesando** | Entre el fin de la orden y la respuesta. El espectro se sustituye por un arco luminoso que recorre el anillo interior (una vuelta cada 1,2 s) y los anillos giran más deprisa. Indica «trabajando» sin texto. |
-| **Esperando** | Como escuchando, con el anillo de datos 2 en `status.pending`: el asistente ha hecho una pregunta. |
-| **Reposo** | El orbe se mantiene estable en el centro, con una flotación muy sutil (±4 px, periodo de 6 s). Sin picos de espectro ni reacción al audio una vez terminada la frase del asistente: el núcleo queda quieto. El giro de los anillos es constante pero mucho más lento. El brillo es más tenue (45 %) pero persistente: el sistema está latente, no apagado. |
+| **Procesando** | Entre el fin de la orden y la respuesta. El espectro se sustituye por un arco luminoso que recorre el anillo interior (una vuelta cada 1,2 s) y los anillos giran más deprisa. Es el momento de más caos: el plasma se deforma al máximo, las sinapsis se disparan sin parar, el fondo acelera y el latido baja a 0,9 s. Indica «trabajando» sin texto. |
+| **Esperando** | Más calmado que escuchando, con el anillo de datos 2, la onda del latido, la retícula y los orbes satélite en `status.pending`: el asistente ha hecho una pregunta. Late cada 1,8 s. |
+| **Reposo** | El orbe se mantiene estable en el centro, con una flotación muy sutil (±4 px, periodo de 6 s). Sin picos de espectro ni reacción al audio una vez terminada la frase del asistente: el núcleo queda quieto. El giro de los anillos es constante pero mucho más lento. Solo quedan el núcleo y los anillos de datos, casi en marino, al 22 %: sin red, arcos, satélites, glifos, partículas ni latido. El contraste con el asistente despierto se nota de un vistazo; aun así el brillo es persistente: el sistema está latente, no apagado. |
 
 Valores de control (cada uno es una propiedad animable del componente `Orb`):
 
 | Propiedad | Reposo | Escuchando / Hablando | Procesando | Esperando |
 |---|---|---|---|---|
-| `brightness` | 0,45 | 1,0 | 0,9 | 1,0 |
+| `brightness` | 0,22 | 1,0 | 1,0 | 1,0 |
 | `spin` (°/s de los anillos 1, 2 y 3) | 3 / −2 / 1 | 18 / −12 / 8 | 40 / −30 / 20 | 18 / −12 / 8 |
 | `breath` (amplitud del resplandor) | 0 | 0,25 | 0,1 | 0,25 |
 | `spectrum` (visibilidad del espectro) | 0 | 1 | 0 (arco) | 1 |
 | `assembly` (0 colapsado – 1 formado) | 1 | 1 | 1 | 1 |
-| `tint` (0 cian – 1 marino) | 0,35 | 0 | 0 | 0 |
+| `tint` (0 cian – 1 marino) | 0,6 | 0 | 0 | 0 |
+| `energy` | 0,08 | 0,6 | 1 | 0,45 |
+| `chaos` | 0 | 0,35 | 1 | 0,2 |
+| `beatRate` (latidos por segundo) | 0 | 1 / 2,4 | 1 / 0,9 | 1 / 1,8 |
+| `particles` (capas vivas) | 0 | 1 | 1 | 1 |
 
 Referencia de escucha: [referencia-escucha-espectro.jpg](referencia-escucha-espectro.jpg).
 
@@ -138,15 +163,16 @@ Cada una dura 2 s fijos y empieza a la vez que su frase de voz, sin esperar a qu
 
 Se muestra al abrir la sesión y al volver a escuchar desde reposo.
 
-La pantalla pasa de vacío absoluto a iluminarse. Un único punto de luz cian aparece en el centro exacto, emitiendo un destello brillante. Desde ese punto se expanden rápidamente los anillos geométricos y los componentes de la interfaz en 360 grados. Los anillos giran en direcciones opuestas y se «ensamblan» mediante interpolación de escala y rotación, con salida suave, hasta formar el núcleo central estabilizado. La opacidad de todo el conjunto sube del 0 % al 100 % en el primer segundo.
+Es un estallido. La pantalla pasa de vacío absoluto a iluminarse en dos tiempos: primero la masa se concentra en el centro y el punto del modo dormido se convierte en una masa con vida; después estalla, y de ese estallido salen los anillos y todos los componentes de la interfaz en 360 grados. Los anillos giran en direcciones opuestas y se «ensamblan» mediante interpolación de escala y rotación hasta formar el núcleo central estabilizado.
 
 | Tiempo | Qué ocurre |
 |---|---|
-| 0 – 0,15 s | Aparece el punto de luz en el centro; destello (halo al máximo). |
-| 0 – 1,0 s | Opacidad global de 0 a 100 %. |
-| 0,15 – 1,2 s | Los anillos se expanden desde el punto, escalonados 80 ms del interior al exterior: escala de 0 a 1 y media vuelta de giro, en sentidos opuestos, con salida suave. `assembly` de 0 a 1. |
-| 1,2 – 2,0 s | Estabilización: el núcleo se asienta con un leve rebote (1,06 → 1), aparece el espectro, empiezan las partículas y los giros convergen a los valores de «escuchando». |
-| 0,6 – 1,6 s | Los paneles laterales aparecen con un fundido (solo al abrir la sesión). |
+| 0 – 1,0 s | **Concentración.** Materia que cae en espiral hacia el centro (trazos que se alargan al acelerar y anillos que se cierran sobre el núcleo: `inflow`). El núcleo crece desde el punto (`mass`), se agita (`chaos` alto) y vira del marino al cian. Opacidad global de 0 a 100 %. |
+| 0,8 – 1,0 s | El núcleo se comprime (0,72) justo antes de estallar. |
+| 1,0 s | **Estallido.** Destello, el núcleo salta a 1,35 y vuelve a 1, y un anillo de luz grueso sale del centro. Empieza el primer latido, cuya onda cruza toda la pantalla. |
+| 1,0 – 1,5 s | Los anillos salen despedidos desde el centro, escalonados del interior al exterior, con un leve rebasamiento: `assembly` de 0 a 1. El fondo vivo sale del núcleo con ellos. Los giros arrancan muy deprisa. |
+| 1,0 – 2,0 s | Estabilización: aparecen las capas vivas y el espectro, y energía, caos, giros y latido convergen a los valores de «escuchando». |
+| 1,0 – 1,8 s | Los paneles laterales aparecen con un fundido (solo al abrir la sesión). |
 
 **Desde reposo**, el orbe ya está formado: no hay punto de luz ni vacío. Las propiedades pasan de sus valores de reposo a los de escucha en 2 s, y un anillo de luz fino se expande una vez desde el núcleo hacia fuera, como eco del destello.
 
@@ -156,21 +182,33 @@ Referencia: [referencia-orbe-general.jpg](referencia-orbe-general.jpg).
 
 Se muestra al pasar a reposo y al cerrar la sesión.
 
-Es un efecto de colapso y disipación, inverso al despertar. Los anillos exteriores frenan su rotación con una fricción suave (entrada suave). Toda la estructura geométrica colapsa hacia el centro, absorbida por el núcleo. A la vez, el cian brillante se degrada hacia un azul marino profundo. En los últimos instantes el orbe se reduce a una única chispa que desaparece por completo, dejando unas ligeras partículas o chispas digitales que se disipan en el fondo oscuro.
+Es un efecto de colapso, inverso al despertar. Toda la estructura geométrica cae hacia el centro, absorbida por el núcleo. A la vez, el cian brillante se degrada hacia un azul marino profundo.
+
+**Variante reposo** (al pasar a reposo): un colapso contenido.
 
 | Tiempo | Qué ocurre |
 |---|---|
-| 0 – 0,8 s | Los anillos frenan (entrada suave); el espectro se desvanece, salvo que el asistente siga hablando. |
-| 0,4 – 1,6 s | La estructura se contrae hacia el centro, escalonada del exterior al interior. `tint` avanza hacia el marino. |
-| 1,6 – 2,0 s | Variante **cierre**: el orbe se reduce a una chispa que desaparece; las partículas se disipan; al terminar, la interfaz se oculta. Variante **reposo**: la contracción se detiene y el orbe se asienta en su aspecto de reposo. |
+| 0 – 0,8 s | Los anillos frenan (entrada suave); el espectro se desvanece, salvo que el asistente siga hablando. Las capas vivas se apagan. |
+| 0,4 – 1,6 s | La estructura se contrae hasta 0,8 y vuelve a 1. `tint` avanza hacia el marino. |
+| 1,6 – 2,0 s | El orbe se asienta en su aspecto de reposo. |
 
-La diferencia entre las dos variantes es el valor final de `assembly`: 0 en el cierre (desaparece) y 1 en el reposo (queda formado, tenue y lento). En el paso a reposo la estructura se contrae hasta 0,8 a mitad de la animación y vuelve a 1, de modo que se percibe el colapso sin que el orbe desaparezca. Mientras suena la frase («A su disposición.», «Buenas noches. Sesión cerrada.») el núcleo sigue reaccionando a la voz.
+**Variante cierre** (al cerrar la sesión): el núcleo se vuelve un agujero negro y lo atrae todo.
+
+| Tiempo | Qué ocurre |
+|---|---|
+| 0 – 0,5 s | Se abre el horizonte en el centro: un disco negro con un filo de luz que se traga el núcleo (`horizon`). Empieza a caer materia en espiral (`inflow`). |
+| 0 – 1,5 s | Los anillos no frenan: giran cada vez más deprisa mientras caen. |
+| 0,25 – 1,6 s | Toda la estructura cae hacia el centro, cada vez más deprisa, del exterior al interior (`assembly` de 1 a 0), y el fondo vivo con ella. `tint` avanza hacia el marino. Los paneles se apagan. |
+| 1,2 – 1,6 s | El horizonte se cierra sobre sí mismo. |
+| 1,6 – 2,0 s | La singularidad: una chispa que se apaga. Queda el punto del modo dormido. |
+
+En el reposo `assembly` termina en 1 (queda formado, tenue y lento) y en el cierre en 0 (desaparece). En el paso a reposo la estructura se contrae hasta 0,8 a mitad de la animación y vuelve a 1, de modo que se percibe el colapso sin que el orbe desaparezca. Mientras suena la frase («A su disposición.», «Buenas noches. Sesión cerrada.») el núcleo sigue reaccionando a la voz.
 
 Referencia: [referencia-dormirse-colapso.jpg](referencia-dormirse-colapso.jpg).
 
 ### Fundido entre animaciones
 
-El orbe no tiene animaciones cerradas que se «reproducen»: tiene propiedades de control (`brightness`, `spin`, `breath`, `spectrum`, `assembly`, `tint`) y cada fase fija sus valores finales. Una transición siempre parte de los valores actuales. Por eso, si llega una transición con otra en curso, la nueva continúa desde donde estaba la anterior, sin saltos; en particular, «Hey Jarvis» durante la animación de cierre funde el colapso con el despertar sin que la pantalla llegue a ocultarse.
+El orbe no tiene animaciones cerradas que se «reproducen»: tiene propiedades de control (`brightness`, `spin`, `breath`, `spectrum`, `assembly`, `tint`, `energy`, `chaos`, `beatRate`, y las de las transiciones: `mass`, `inflow`, `horizon`) y cada fase fija sus valores finales. Una transición siempre parte de los valores actuales. Por eso, si llega una transición con otra en curso, la nueva continúa desde donde estaba la anterior, sin saltos; en particular, «Hey Jarvis» durante la animación de cierre funde el colapso con el despertar sin que la pantalla llegue a ocultarse.
 
 ## 5. Pantalla de sesión
 
@@ -206,7 +244,20 @@ Pantalla completa, fondo `bg.base`. Referencia a 1920 × 1080; los márgenes y c
 | Franja inferior | Subtítulos, centrados, ancho máximo 900 px: la última orden entre comillas en `text.secondary` (en `text.muted` y con la marca «no reconocido» si lo es) y, debajo, la última respuesta en `text.primary`, tamaño 18. Se desvanecen a los 6 s. |
 | Caja de texto | Bajo los subtítulos, centrada, ancho máximo 900 px: una línea, fondo `bg.panel`, borde `line.soft` (`line.strong` con el foco), radio 6, texto en `text.primary` y texto de ayuda en `text.muted`. Es la única entrada de órdenes ([entrada-texto.md](../Modulos/Infraestructura/entrada-texto.md)). Tiene el foco siempre que la pantalla es la ventana activa. No se atenúa en reposo. |
 
-En reposo, los paneles y los subtítulos bajan su opacidad al 50 % junto con el orbe.
+En reposo, los paneles y los subtítulos bajan su opacidad al 50 %.
+
+### Fondo vivo
+
+Toda la pantalla tiene vida mientras el asistente está despierto. El fondo se dibuja por debajo del orbe y de los paneles, con poca opacidad, y no tiene reloj propio: lo mueve el director del orbe (sección 3).
+
+| Elemento | Descripción |
+|---|---|
+| Retícula | Malla de puntos muy tenue, centrada en el orbe, que se ondula al paso del latido. Solo en calidad alta. |
+| Polvo | Puntos diminutos que cruzan la pantalla muy despacio; los cercanos, más deprisa. 70 en calidad alta, 35 en media. |
+| Constelación | Mini orbes con halo, de tamaños distintos, a la deriva (45 en calidad alta, 22 en media), unidos a sus vecinos por líneas tenues por las que viajan señales. Se iluminan al paso del latido. Ninguno queda dentro del orbe. |
+| Orbes satélite | Cinco orbes pequeños con su propio anillo, a 1 D del centro (arriba y a los lados), unidos al orbe por un hilo por el que viajan señales. En «esperando», en `status.pending`. |
+
+Al despertar, el fondo sale del núcleo; al dormirse, vuelve a él antes de que colapsen los anillos. En reposo solo queda una parte del polvo y uno de cada cuatro mini orbes, quietos y muy tenues, sin enlaces. En dormido no hay fondo.
 
 En modo dormido la pantalla sigue visible: fondo `bg.base`, el orbe apagado (un punto en `primary.deep`), sin paneles ni subtítulos, y la caja de texto con la ayuda «Escriba «Hey Jarvis» para iniciar la sesión».
 
@@ -269,7 +320,7 @@ Un círculo con un anillo, en cuatro variantes: dormido (gris), reposo (cian ten
 
 ## 10. Calidad y rendimiento
 
-- ⚙ `ui.quality`: `high` (todo), `medium` (la mitad de partículas, resplandor más barato), `low` (sin partículas ni resplandor; anillos sin texto).
+- ⚙ `ui.quality`: `high` (todo), `medium` (la mitad de partículas, nodos, glifos, mini orbes y polvo; sin retícula ni estelas), `low` (sin fondo, red, glifos, partículas ni resplandor; núcleo liso; anillos sin texto).
 - Las animaciones son declarativas de Qt Quick; no se ejecuta código Python por frame.
 - Una ventana oculta o tapada no se dibuja. En reposo solo se anima lo que está a la vista.
 - Objetivo: 60 fps en el equipo de referencia y nunca menos de 30 (RNF-21).
@@ -280,10 +331,13 @@ Se revisa con `--preview` y en uso real al cerrar las fases 2 y 7.
 
 - [ ] El orbe se parece a las tres imágenes de referencia: esfera luminosa, anillos concéntricos con datos, cian sobre negro.
 - [ ] Donde se cruzan dos capas del orbe, la zona es más clara.
-- [ ] Despertar: punto de luz, destello, expansión de anillos en sentidos opuestos, estabilización. Dura 2 s.
-- [ ] Dormirse: frenado, colapso, viraje a marino; en el cierre, chispa y partículas; en reposo, orbe tenue y lento.
+- [ ] Despertar: la masa se concentra en el centro, estalla, los anillos salen despedidos en sentidos opuestos y todo se estabiliza. Dura 2 s.
+- [ ] Dormirse: en el cierre, horizonte negro, caída en espiral cada vez más rápida, viraje a marino y chispa final; en reposo, contracción contenida y orbe tenue y lento.
 - [ ] Interrumpir una animación con la contraria no produce ningún salto.
-- [ ] Al hablar el asistente, el núcleo y el espectro siguen su voz; en escucha y en reposo, quietos.
+- [ ] Al hablar el asistente, el núcleo y el espectro siguen su voz; en escucha el plasma ondula despacio; en reposo, quieto.
+- [ ] Reposo y despierto se distinguen de un vistazo: en reposo solo quedan el núcleo y los anillos, tenues.
+- [ ] Los elementos del centro y del fondo se mueven a la vez: la onda del latido los ilumina a su paso.
+- [ ] El fondo no dificulta leer los paneles ni los subtítulos.
 - [ ] Los cinco aspectos (escuchando, hablando, procesando, esperando, reposo) se distinguen sin leer el texto.
 - [ ] Ningún color fuera de la tabla de tokens. Los colores de estado solo indican estado.
 - [ ] Todo el texto se lee a un metro de la pantalla; ningún texto se corta sin elipsis.

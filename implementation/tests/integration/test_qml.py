@@ -65,6 +65,9 @@ def test_hay_qml_de_todas_las_partes_de_la_interfaz():
         "components/PanelFrame.qml", "components/TaskCard.qml", "components/StatusDot.qml",
         "components/Subtitles.qml", "components/StateLabel.qml", "components/Badge.qml",
         "components/EmptyState.qml", "components/IconButton.qml", "panels/ActivityPanel.qml",
+        "orb/NeuralNet.qml", "orb/GyroArcs.qml", "orb/Satellites.qml", "orb/Glyphs.qml",
+        "orb/LifeField.qml", "orb/Constellation.qml", "orb/SatelliteOrbs.qml", "orb/Dust.qml",
+        "orb/Lattice.qml", "orb/Accretion.qml",
     } <= names  # fmt: skip
 
 
@@ -101,6 +104,25 @@ def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
     qtbot.wait(150)
     assert seen == {activity.value for activity in Activity}
     assert ui.warnings == []
+
+
+def test_el_orbe_distingue_reposo_de_despierto(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    orb = ui.screen.findChild(QObject, "orb")
+    assert orb is not None
+    ui.on_event(events.AssistantActivityChanged("IDLE", Activity.REPOSO))
+    qtbot.wait(600)  # fundido corto (motion.state)
+    assert 0 < orb.property("brightness") <= 0.25
+    assert orb.property("energy") < 0.1
+    assert orb.property("chaos") == 0
+    assert orb.property("live") == 0
+    ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.PROCESANDO))
+    qtbot.wait(600)
+    assert orb.property("brightness") == 1
+    assert orb.property("energy") == 1
+    assert orb.property("chaos") == 1
+    assert orb.property("live") == 1
 
 
 # --- Ventanas ---------------------------------------------------------------------------------
