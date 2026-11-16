@@ -133,6 +133,7 @@ class IntentSpec:
     example: str = ""                  # para la ayuda
     panel: str | None = None           # panel que se activa al ejecutarla
     in_protocols: bool = True          # invocable como tarea de protocolo
+    exclusive: bool = False            # ocupa el turno: ninguna otra orden se ejecuta a la vez (RN-55)
 
 @dataclass(frozen=True)
 class Phrase:
@@ -145,6 +146,7 @@ class ActionResult:
     speech: Phrase | None = None
     description: str | None = None     # sustituye la descripción de la tarea
     background: bool = False           # la tarea sigue pendiente (regla 4 de la sección 4)
+    on_spoken: Callable[[], None] | None = None  # al terminar de decir la respuesta (RN-29)
 
 class ActionModule(Protocol):
     name: str                          # "comandos" (clave estable; es `module_name` en la base de datos)
@@ -163,13 +165,14 @@ class ActionModule(Protocol):
 | `session` | Sesión actual (id, nombre, importancia). |
 | `origin` | `"voz"` o `"protocolo"`. |
 | `workdir` | Directorio de trabajo compartido (`core/workdir.py`). Solo `comandos.cd` lo modifica. |
-| `clock`, `config`, `db`, `platform`, `scheduler` | Dependencias inyectadas. |
+| `clock`, `config`, `db`, `platform`, `scheduler` | Dependencias inyectadas. `scheduler` programa trabajos a una fecha con identificador estable (`core/scheduler.py`). |
+| `active_panel` | Panel destacado de la interfaz (el último `PanelActivated`). Lo usa Recordatorio para RN-25. |
 | `await say(phrase)` | Dice una frase intermedia. |
 | `await ask(question, expected, metadata=…, timeout=…)` | Abre un diálogo y devuelve la respuesta (sección 6). |
 | `publish(event)` | Publica un evento de contenido para su panel. |
-| `subtask(description)` | Crea una tarea hija con su propio estado (la usa Protocolos). |
+| `subtask(module, description)` | Crea una tarea hija en `pendiente` y devuelve un `Subtask` (`id`, `fail(motivo)`). Se ejecuta después con `invoke(..., subtask=…)`; si no llega a ejecutarse, `fail` la deja en `error`. Al terminar la tarea padre, las subtareas sin ejecutar quedan en `error` con el motivo de la cancelación. La usa Protocolos. |
 | `notify(notice)` | Encola un aviso (sección 7). |
-| `await invoke(module, action, params, quiet=True)` | Ejecuta otra acción por la interfaz común, con `run_task`, como subtarea. Con `quiet`, la respuesta de voz solo se dice si es un error. Solo la usa Protocolos. |
+| `await invoke(module, action, params, quiet=True, subtask=None, description=None, resolve=False)` | Ejecuta otra acción por la interfaz común, con `run_task` y `origin="protocolo"`, como subtarea (la ya creada con `subtask`, o una nueva). Con `quiet`, la respuesta de voz solo se dice si es un error. Con `resolve`, los parámetros llegan como texto y se resuelven en ese momento con `IntentRouter.resolve_params`; una entidad que no se resuelve deja la subtarea en `error` con su frase. Lo que la tarea llevaba dicho se dice antes. Solo la usa Protocolos. |
 
 Reglas del contrato:
 

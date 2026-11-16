@@ -3,6 +3,7 @@
 Son valores inmutables: cada evento de contenido lleva la lista completa de su panel.
 """
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 
@@ -54,3 +55,31 @@ class SearchResult:
     is_dir: bool
     folder: str
     path: str
+
+
+ReminderStatus = Literal["activo", "vencido"]
+
+
+@dataclass(frozen=True)
+class ReminderItem:
+    """Recordatorio del panel. `index`: lo que el usuario escribe (RN-50). `highlighted`: el
+    notificado o leído."""
+
+    index: int
+    id: int
+    content: str
+    status: ReminderStatus
+    next_trigger: datetime | None
+    deadline: datetime | None
+    highlighted: bool = False
+
+
+@dataclass(frozen=True)
+class ProtocolRow:
+    """Protocolo de la configuración, para el listado. `steps`: la descripción de sus tareas."""
+
+    id: str
+    name: str
+    aliases: tuple[str, ...]
+    important: bool
+    steps: tuple[str, ...]

@@ -23,6 +23,8 @@ from jarvis_assistant.ui.panel_models import (
     HelpModel,
     HistoryModel,
     OpenedModel,
+    ProtocolModel,
+    RemindersModel,
     SearchModel,
 )
 from jarvis_assistant.ui.view_models import (
@@ -94,13 +96,16 @@ class UiApp(QObject):
         self.opened = OpenedModel(publish, self)
         self.search = SearchModel(self, publish)
         self.history = HistoryModel(self, publish)
+        self.reminders = RemindersModel(self, publish)
+        self.protocols = ProtocolModel(self, publish)
         self.help = HelpModel(self, publish)
         self.workspace = WorkspaceModel(
             store=None if layout_path is None else LayoutStore(layout_path), parent=self
         )
         self._models = (
             self.assistant, self.tasks, self.dialogue, self.hud, self.workspace,
-            self.commands, self.opened, self.search, self.history, self.help,
+            self.commands, self.opened, self.search, self.history, self.reminders,
+            self.protocols, self.help,
         )  # fmt: skip
         self.controller = wc.WindowController()
         self._collapse_timer = self._single_shot(self.hud.collapse)
@@ -121,6 +126,8 @@ class UiApp(QObject):
             ("opened", self.opened),
             ("search", self.search),
             ("history", self.history),
+            ("reminders", self.reminders),
+            ("protocols", self.protocols),
             ("help", self.help),
             ("workspace", self.workspace),
             ("ui", self.options),

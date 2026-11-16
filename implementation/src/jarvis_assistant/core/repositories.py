@@ -1,4 +1,4 @@
-"""Repositorios de sesiones y actividades (persistencia.md).
+"""Repositorios de sesiones, actividades y recordatorios (persistencia.md).
 
 Los módulos no escriben SQL: usan estos repositorios. Cada operación es una transacción;
 varias operaciones relacionadas se agrupan con `Database.transaction()`. Los repositorios no
@@ -6,6 +6,7 @@ aplican reglas de negocio (límite de importantes, prioridad del usuario): eso e
 Sesión.
 """
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -253,3 +254,145 @@ class ActivityRepository:
             "SELECT * FROM session_activities WHERE session_id = ? ORDER BY id", (session_id,)
         )
         return [_activity(row) for row in rows]
+
+
+@dataclass(frozen=True)
+class TriggerRow:
+    id: int
+    reminder_id: int
+    at: datetime
+    is_fired: bool
+
+
+@dataclass(frozen=True)
+class ReminderRow:
+    id: int
+    content: str
+    created_at: datetime
+    deadline: datetime | None
+    status: str  # 'activo', 'vencido' o 'eliminado'
+    triggers: tuple[TriggerRow, ...]  # por fecha
+
+    @property
+    def pending(self) -> tuple[TriggerRow, ...]:
+        """Avisos que aún no se han dado."""
+        return tuple(trigger for trigger in self.triggers if not trigger.is_fired)
+
+    @property
+    def next_trigger(self) -> datetime | None:
+        return min((trigger.at for trigger in self.pending), default=None)
+
+    @property
+    def last_fired(self) -> TriggerRow | None:
+        """El último aviso ya dado: el que se pospone (RN-27)."""
+        fired = [trigger for trigger in self.triggers if trigger.is_fired]
+        return max(fired, key=lambda trigger: (trigger.at, trigger.id), default=None)
+
+
+def _trigger(row: sqlite3.Row) -> TriggerRow:
+    return TriggerRow(
+        id=row["id"],
+        reminder_id=row["reminder_id"],
+        at=from_db(row["trigger_at"]),
+        is_fired=bool(row["is_fired"]),
+    )
+
+
+class ReminderRepository:
+    """Tablas `reminders` y `reminder_triggers`. Lo usa Recordatorio. Eliminar es cambiar el
+    estado a `eliminado`: los avisos no se tocan (RN-13)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def create(
+        self, content: str, triggers: Sequence[datetime], deadline: datetime | None, at: datetime
+    ) -> int:
+        """El recordatorio y sus avisos, en una transacción."""
+        with self._db.transaction() as conn:
+            cursor = conn.execute(
+                "INSERT INTO reminders (content, created_at, deadline_at) VALUES (?, ?, ?)",
+                (content, to_db(at), None if deadline is None else to_db(deadline)),
+            )
+            reminder_id = cursor.lastrowid
+            conn.executemany(
+                "INSERT INTO reminder_triggers (reminder_id, trigger_at) VALUES (?, ?)",
+                [(reminder_id, to_db(moment)) for moment in triggers],
+            )
+            return reminder_id
+
+    def get(self, reminder_id: int) -> ReminderRow | None:
+        row = self._db.conn.execute(
+            "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+        ).fetchone()
+        return None if row is None else self._reminder(row)
+
+    def listable(self) -> list[ReminderRow]:
+        """Activos y vencidos, por identificador: el orden del panel (RN-50)."""
+        rows = self._db.conn.execute(
+            "SELECT * FROM reminders WHERE status IN ('activo', 'vencido') ORDER BY id"
+        ).fetchall()
+        return [self._reminder(row) for row in rows]
+
+    def due_triggers(self, now: datetime) -> list[TriggerRow]:
+        """Avisos no dados de recordatorios activos cuya fecha ya ha llegado (RN-22)."""
+        return self._triggers("t.trigger_at <= ?", now)
+
+    def future_triggers(self, now: datetime) -> list[TriggerRow]:
+        """Avisos no dados de recordatorios activos con fecha futura."""
+        return self._triggers("t.trigger_at > ?", now)
+
+    def overdue(self, now: datetime) -> list[ReminderRow]:
+        """Activos cuya fecha límite ya ha llegado sin avisar de ella (RN-31)."""
+        rows = self._db.conn.execute(
+            "SELECT * FROM reminders WHERE status = 'activo' AND deadline_at IS NOT NULL"
+            " AND deadline_at <= ? ORDER BY id",
+            (to_db(now),),
+        ).fetchall()
+        return [self._reminder(row) for row in rows]
+
+    def mark_fired(self, trigger_id: int) -> None:
+        with self._db.transaction() as conn:
+            conn.execute("UPDATE reminder_triggers SET is_fired = 1 WHERE id = ?", (trigger_id,))
+
+    def reschedule_trigger(self, trigger_id: int, new_at: datetime) -> None:
+        """Nueva fecha de un aviso, otra vez pendiente (RN-27)."""
+        with self._db.transaction() as conn:
+            conn.execute(
+                "UPDATE reminder_triggers SET trigger_at = ?, is_fired = 0 WHERE id = ?",
+                (to_db(new_at), trigger_id),
+            )
+
+    def set_deadline(self, reminder_id: int, deadline: datetime) -> None:
+        with self._db.transaction() as conn:
+            conn.execute(
+                "UPDATE reminders SET deadline_at = ? WHERE id = ?", (to_db(deadline), reminder_id)
+            )
+
+    def set_status(self, reminder_id: int, status: str) -> None:
+        with self._db.transaction() as conn:
+            conn.execute("UPDATE reminders SET status = ? WHERE id = ?", (status, reminder_id))
+
+    def _triggers(self, condition: str, now: datetime) -> list[TriggerRow]:
+        # Las fechas se guardan en UTC con el mismo formato: se comparan como texto.
+        rows = self._db.conn.execute(
+            "SELECT t.* FROM reminder_triggers t JOIN reminders r ON r.id = t.reminder_id"
+            f" WHERE r.status = 'activo' AND t.is_fired = 0 AND {condition}"
+            " ORDER BY t.trigger_at, t.id",
+            (to_db(now),),
+        ).fetchall()
+        return [_trigger(row) for row in rows]
+
+    def _reminder(self, row: sqlite3.Row) -> ReminderRow:
+        triggers = self._db.conn.execute(
+            "SELECT * FROM reminder_triggers WHERE reminder_id = ? ORDER BY trigger_at, id",
+            (row["id"],),
+        ).fetchall()
+        return ReminderRow(
+            id=row["id"],
+            content=row["content"],
+            created_at=from_db(row["created_at"]),
+            deadline=_optional_date(row["deadline_at"]),
+            status=row["status"],
+            triggers=tuple(_trigger(trigger) for trigger in triggers),
+        )

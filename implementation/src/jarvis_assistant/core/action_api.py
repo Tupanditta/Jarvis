@@ -1,10 +1,11 @@
 """Interfaz común de los módulos de acción (arquitectura.md, sección 5; RNF-18, RNF-19).
 
-Es lo único que un módulo conoce del resto del sistema. Las subtareas e `invoke` llegan con
-los protocolos.
+Es lo único que un módulo conoce del resto del sistema. Las subtareas e `invoke` son para el
+módulo Protocolos.
 """
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -26,6 +27,8 @@ WORKDIR = "workdir"
 
 # Motivo de una tarea que termina sin hacer nada porque el usuario la ha cancelado (RN-52).
 CANCELLED_REASON = "cancelada"
+# Motivo de una tarea que no llega a ejecutarse porque la sesión se cierra (RN-46).
+CLOSED_REASON = "sesión cerrada"
 
 
 class SlotType(Enum):
@@ -57,6 +60,8 @@ class IntentSpec:
     example: str = ""  # para la ayuda
     panel: str | None = None  # panel que se activa al ejecutarla
     in_protocols: bool = True  # invocable como tarea de protocolo
+    # Ocupa el turno: mientras se ejecuta, ninguna otra orden empieza (un protocolo, RN-55).
+    exclusive: bool = False
     # Parámetros que fija el propio patrón («busca el archivo…» fija el tipo).
     fixed: Mapping[str, object] = field(default_factory=dict)
     # Recursos compartidos que la acción lee y que cambia, además de los que se deducen de
@@ -94,6 +99,9 @@ class ActionResult:
     background: bool = False  # la tarea sigue pendiente (arquitectura.md, sección 4, regla 4)
     # Motivo que se muestra bajo la tarea en `error`; sin él, el texto de `speech`.
     detail: str | None = None
+    # Se llama cuando el asistente termina de decir la respuesta, también si se ha cortado;
+    # si no hay nada que decir, al terminar la tarea. Recordatorio: el plazo de RN-29.
+    on_spoken: Callable[[], None] | None = field(default=None, compare=False)
 
     @classmethod
     def cancelled(
@@ -113,13 +121,49 @@ class ExpectedType(Enum):
 
 
 @dataclass(frozen=True)
+class ReminderAction:
+    """Respuesta a `REMINDER_ACTION` distinta de «no»: «otro aviso {fecha}» (`aviso`) o
+    «fecha límite {fecha}» (`limite`). La fecha aún no se ha comprobado que sea futura."""
+
+    kind: Literal["aviso", "limite"]
+    when: datetime
+
+
+@dataclass(frozen=True)
 class DialogueAnswer:
     """Respuesta a `ctx.ask`. `cancelled`: «cancelar», tiempo agotado o respuesta no válida
     dos veces. Si no, `value` ya está validado: `bool` para `BOOLEAN`, `str` para
-    `NEW_FILENAME`. Una negación es `value=False`, no una cancelación."""
+    `NEW_FILENAME`, `datetime` para `DATETIME` (sin comprobar que sea futura),
+    `ReminderAction` o `False` para `REMINDER_ACTION`. Una negación es `value=False`, no una
+    cancelación."""
 
     cancelled: bool
     value: object | None = None
+
+
+@dataclass(frozen=True)
+class Subtask:
+    """Tarea hija creada con `ctx.subtask`: queda en `pendiente` hasta que se ejecuta con
+    `ctx.invoke(..., subtask=...)` o hasta que `fail(motivo)` la deja en `error`."""
+
+    id: int
+    fail: Callable[[str], None] = field(compare=False)
+
+
+# Ejecuta otra acción por la interfaz común, con `run_task`, como subtarea de la tarea actual.
+# `invoke(module, action, params, *, quiet=True, subtask=None, description=None,
+# resolve=False)`. Con `quiet`, la respuesta de voz solo se dice si es un error; con
+# `resolve`, los parámetros llegan como texto y se resuelven en este momento, como las
+# entidades de una orden escrita (`IntentRouter.resolve_params`).
+Invoke = Callable[..., Awaitable[ActionResult]]
+
+
+def _no_subtasks(*_args: object, **_kwargs: object) -> Subtask:
+    raise RuntimeError("Este contexto no admite subtareas")
+
+
+async def _no_invoke(*_args: object, **_kwargs: object) -> ActionResult:
+    raise RuntimeError("Este contexto no puede invocar otras acciones")
 
 
 # Pregunta al usuario y espera su respuesta sin bloquear (RES-21, RES-22).
@@ -204,8 +248,14 @@ class ActionContext:
     # de la tarea y su frase se entrega como aviso (RN-39).
     background: Callable[[Coroutine[Any, Any, ActionResult]], None]
     task_id: int | None = None
-    scheduler: Any = None
+    scheduler: Any = None  # `core/scheduler.py`: trabajos a una fecha
     ask: Ask = _no_dialogue
+    # El panel destacado de la interfaz: el último `PanelActivated` (RN-25).
+    active_panel: str | None = None
+    # Solo los usa el módulo Protocolos. `subtask(module, description)` crea una tarea hija en
+    # `pendiente`; `invoke` ejecuta una acción como subtarea (ver `Invoke`).
+    subtask: Callable[[str, str], Subtask] = _no_subtasks
+    invoke: Invoke = _no_invoke
 
 
 class ActionModule(Protocol):

@@ -13,6 +13,7 @@ cuando le llega el turno: «ve a proyectos -- ve a jarvis» resuelve «jarvis» 
 """
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 
 from rapidfuzz import fuzz
@@ -41,7 +42,15 @@ from jarvis_assistant.core.state_machine import (
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router import answers, patterns
 from jarvis_assistant.intent_router.normalizer import Tokens, normalize, tokenize
-from jarvis_assistant.intent_router.slots import catalogs, command_line, names, numbers, paths
+from jarvis_assistant.intent_router.slots import (
+    catalogs,
+    command_line,
+    datetimes,
+    durations,
+    names,
+    numbers,
+    paths,
+)
 
 CLOSING_PHRASE = "buenas noches jarvis"
 
@@ -66,8 +75,6 @@ REPEAT = Intent(CORE_MODULE, "repetir")
 
 SAME_SCORE_MARGIN = 3  # puntos por debajo de los cuales dos candidatos empatan
 _TEXT_EDGES = " .,;:!?¿¡\"'«»"
-
-_UNSUPPORTED = (SlotType.DURATION, SlotType.DATETIME)  # llegan con Recordatorios
 
 _ATTENDING = (
     AssistantState.LISTENING_COMMAND,
@@ -161,8 +168,14 @@ class IntentRouter:
         binaries: Sequence[Binary] = DEFAULT_BINARIES,
         places: Mapping[str, Path] | None = None,
         workdir: Workdir | None = None,
+        now: Callable[[], datetime] | None = None,
+        local_tz: tzinfo | None = None,
     ) -> None:
+        """`now`: el reloj del núcleo, para las fechas (`DATETIME`). `local_tz`: la zona
+        horaria en la que se interpretan; None, la del sistema."""
         self._workdir = workdir or Workdir(Path.home())
+        self._now = now or (lambda: datetime.now(UTC))
+        self._tz = local_tz
         self._patterns: list[_Registered] = []
         self._keys: dict[str, str] = {}
         self._specs: dict[tuple[str, str], list[IntentSpec]] = {}
@@ -200,8 +213,6 @@ class IntentRouter:
             intent = f"{name}.{spec.action}"
             slots = {slot.name: slot for slot in spec.slots}
             for slot in spec.slots:
-                if slot.type in _UNSUPPORTED:
-                    raise RegistrationError(f"{intent}: el tipo {slot.type.name} no se admite")
                 if slot.type is SlotType.CATALOG and slot.catalog not in self._catalogs:
                     raise RegistrationError(f"{intent}: catálogo desconocido «{slot.catalog}»")
             if not spec.patterns:
@@ -278,8 +289,9 @@ class IntentRouter:
                 if not isinstance(expected, ExpectedType):
                     return answers.INVALID
                 return answers.validate(
-                    text, normalized, expected, self._settings.control_threshold
-                )
+                    text, normalized, expected, self._settings.control_threshold,
+                    now=self._now(), default_hour=self._settings.default_hour, tz=self._tz,
+                )  # fmt: skip
             return self._classify(text, resolve) or NoMatch(text)
         if self._is_wake(normalized):
             return WakeWord()
@@ -415,6 +427,21 @@ class IntentRouter:
                 if number is None:
                     raise ParamError(Phrase("entidad.numero"))
                 return number
+            case SlotType.DURATION:
+                duration = durations.parse(spoken)
+                if duration is None:
+                    raise ParamError(Phrase("entidad.duracion"))
+                return duration
+            case SlotType.DATETIME:
+                now = self._now()
+                moment = datetimes.parse(
+                    spoken.split(), now, self._settings.default_hour, self._tz
+                )
+                if moment is None:
+                    raise ParamError(Phrase("entidad.fecha"))
+                if moment <= now:
+                    raise ParamError(Phrase("entidad.fecha_pasada"))
+                return moment
             case SlotType.DIR_PATH:
                 try:
                     return paths.resolve(

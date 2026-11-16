@@ -72,7 +72,7 @@ class EventBus:
 | `OpenedItemsChanged` | `items: tuple[OpenedItem, ...]` (`id`, `title`, `kind`, `status`, `can_focus`) | Apertura |
 | `SearchResultsReady` | `query`, `kind`, `results: tuple[SearchResult, ...]`, `total`, `limited` | Búsqueda |
 | `RemindersChanged` | `items: tuple[ReminderItem, ...]` (`index`, `id`, `content`, `status`, `next_trigger`, `deadline`, `highlighted`) | Recordatorio |
-| `ProtocolStarted` | `task_id`, `name`, `steps: tuple[str, ...]` | Protocolos |
+| `ProtocolStarted` | `task_id`, `name`, `steps: tuple[str, ...]`, `step_ids: tuple[int, ...]` (la subtarea de cada paso) | Protocolos |
 | `ProtocolFinished` | `task_id`, `completed`, `failed` | Protocolos |
 | `ProtocolsListed` | `protocols: tuple[ProtocolRow, ...]` | Protocolos |
 | `HelpShown` | `groups: tuple[HelpGroup, ...]` | Orquestador |

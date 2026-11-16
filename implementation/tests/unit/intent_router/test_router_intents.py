@@ -368,7 +368,6 @@ def test_registrar_dos_intenciones_con_el_mismo_patron_falla(router):
         IntentSpec("a", ("{x} primero",), (Slot("x", SlotType.TEXT),)),
         IntentSpec("a", ("haz {x}",)),
         IntentSpec("a", ("haz {x}",), (Slot("x", SlotType.CATALOG, catalog="no existe"),)),
-        IntentSpec("a", ("haz {x}",), (Slot("x", SlotType.DATETIME),)),
     ],
 )
 def test_intenciones_que_no_se_pueden_registrar(router, spec):
@@ -385,7 +384,8 @@ def test_un_modulo_no_se_registra_dos_veces(router):
 def test_la_ayuda_sale_del_registro(router):
     groups = router.help()
     assert [group.module for group in groups] == [
-        "comandos", "apertura", "busqueda", "creacion", "historial", "nucleo",
+        "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
+        "protocolos", "nucleo",
     ]  # fmt: skip
     assert groups[0].title == "Comandos"
     for group in groups:

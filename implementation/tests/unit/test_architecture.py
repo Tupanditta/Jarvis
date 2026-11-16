@@ -143,7 +143,7 @@ def test_cada_accion_declarada_la_atiende_su_modulo(modules):
 
 
 def test_las_entidades_de_cada_intencion_tienen_un_tipo_que_el_enrutador_resuelve(modules):
-    supported = set(SlotType) - {SlotType.DURATION, SlotType.DATETIME}
+    supported = set(SlotType)
     for module in modules:
         for spec in module.intents():
             assert all(slot.type in supported for slot in spec.slots)

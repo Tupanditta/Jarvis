@@ -18,3 +18,18 @@ discover_installed_apps = true
 name = "GitHub"
 aliases = ["git hub", "github", "Github"]
 url = "https://github.com"
+
+[[pages]]
+name = "ChatGPT"
+aliases = ["chat gpt", "chat"]
+url = "https://chatgpt.com/"
+
+[[pages]]
+name = "Gmail"
+aliases = ["correo", "mail"]
+url = "https://mail.google.com/mail/u/0/?hl=es#inbox"
+
+[[pages]]
+name = "MiAulario"
+aliases = ["mi aulario", "aulario"]
+url = "https://sso.unavarra.es/SAML2/SSOService.php"

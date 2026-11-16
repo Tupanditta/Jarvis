@@ -74,6 +74,10 @@ WINDOWS: tuple[WindowSpec, ...] = (
                0.24, 0.03, 0.17, 0.42, style="cut"),
     WindowSpec("ayuda", "Ayuda", "ayuda", "HelpPanel.qml",
                0.59, 0.03, 0.16, 0.42, style="bracket"),
+    WindowSpec("recordatorios", "Recordatorios", "recordatorio", "RemindersPanel.qml",
+               0.24, 0.60, 0.19, 0.38),
+    WindowSpec("protocolo", "Protocolo", "protocolo", "ProtocolPanel.qml",
+               0.57, 0.60, 0.18, 0.38, style="cut"),
 )  # fmt: skip
 
 

@@ -8,7 +8,7 @@ no reconocida.
 import math
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer
 
@@ -18,6 +18,8 @@ from jarvis_assistant.core.content import (
     Entry,
     LaunchTarget,
     OpenedItem,
+    ProtocolRow,
+    ReminderItem,
     SearchResult,
     TreeNode,
 )
@@ -64,11 +66,26 @@ def _session(session_id: int, name: str, important: bool = False) -> SessionRow:
                       False, None, False)
 
 
+_PROTOCOL_STEPS = (
+    ("comandos", "cd proyectos barra jarvis"),
+    ("apertura", "abrir Visual Studio Code"),
+    ("comandos", "ejecutar git status"),
+)
+
+
 def panel_tour() -> list[Step]:
     """Contenido de ejemplo de los paneles de los módulos: comandos (listado, árbol y salida
-    de un binario), aperturas, búsqueda, historial y ayuda."""
+    de un binario), aperturas, búsqueda, recordatorios, protocolo, historial y ayuda."""
     home = "C:/Users/usuario"
     current = _session(12, "prácticas de redes", important=True)
+    now = datetime.now().astimezone()
+    reminders = (
+        ReminderItem(1, 3, "Tienes que llamar a Ana", "activo", now + timedelta(hours=18),
+                     None),
+        ReminderItem(2, 5, "Entregar la práctica", "activo", None, now + timedelta(days=2),
+                     highlighted=True),
+        ReminderItem(3, 7, "Pagar la matrícula", "vencido", None, now - timedelta(hours=3)),
+    )
     return [
         Step(0.6, events.PanelActivated("comandos")),
         Step(0.0, events.WorkdirChanged(home + "/Proyectos")),
@@ -99,6 +116,28 @@ def panel_tour() -> list[Step]:
             SearchResult(1, "informe.txt", False, home + "/Documentos", ""),
             SearchResult(2, "informes", True, home + "/Documentos", ""),
         ), 14, True)),
+        Step(1.2, events.PanelActivated("recordatorios")),
+        Step(0.0, events.RemindersChanged(reminders)),
+        # Un protocolo: sus tareas cambian de estado una a una; después, el listado.
+        Step(1.2, events.PanelActivated("protocolo")),
+        Step(0.0, _task(20, "pendiente", "protocolo modo trabajo", module="protocolos")),
+        *[Step(0.0, _task(21 + i, "pendiente", step, module=module, parent=20))
+          for i, (module, step) in enumerate(_PROTOCOL_STEPS)],
+        Step(0.0, events.ProtocolStarted(20, "modo trabajo",
+                                         tuple(step for _m, step in _PROTOCOL_STEPS),
+                                         (21, 22, 23))),
+        Step(0.6, _task(21, "completado", "cd Jarvis", parent=20)),
+        Step(0.6, _task(22, "completado", "abrir Visual Studio Code", module="apertura",
+                        parent=20)),
+        Step(0.6, _task(23, "error", "git status", parent=20, detail="git ha terminado con 1")),
+        Step(0.0, events.ProtocolFinished(20, 2, 1)),
+        Step(0.0, _task(20, "error", "protocolo modo trabajo", module="protocolos",
+                        detail="1 error")),
+        Step(1.2, events.ProtocolsListed((
+            ProtocolRow("modo-trabajo", "modo trabajo", ("a trabajar",), True,
+                        tuple(step for _m, step in _PROTOCOL_STEPS)),
+            ProtocolRow("estudio", "estudio", (), False, ("abrir apuntes",)),
+        ))),
         Step(1.2, events.PanelActivated("historial")),
         Step(0.0, events.HistoryShown((current, _session(11, "2026-11-14")), 12)),
         Step(1.2, events.SessionActivitiesShown(current, (

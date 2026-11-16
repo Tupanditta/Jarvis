@@ -18,6 +18,8 @@ from jarvis_assistant.core.content import (
     Entry,
     LaunchTarget,
     OpenedItem,
+    ProtocolRow,
+    ReminderItem,
     SearchResult,
     TreeNode,
 )
@@ -264,6 +266,40 @@ class SearchResultsReady(Event):
     results: tuple[SearchResult, ...]
     total: int
     limited: bool
+
+
+@dataclass(frozen=True)
+class RemindersChanged(Event):
+    """Lista completa del panel de recordatorios, numerada (RN-50), tras cada cambio."""
+
+    items: tuple[ReminderItem, ...]
+
+
+@dataclass(frozen=True)
+class ProtocolStarted(Event):
+    """Empieza un protocolo: `task_id` es su tarea; `steps` y `step_ids`, la descripción y la
+    subtarea de cada una de sus tareas, en orden, todas en `pendiente` (RF-53)."""
+
+    task_id: int
+    name: str
+    steps: tuple[str, ...]
+    step_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ProtocolFinished(Event):
+    """El protocolo ha terminado (o se ha detenido): tareas completadas y fallidas."""
+
+    task_id: int
+    completed: int
+    failed: int
+
+
+@dataclass(frozen=True)
+class ProtocolsListed(Event):
+    """Protocolos de la configuración (RF-99)."""
+
+    protocols: tuple[ProtocolRow, ...]
 
 
 @dataclass(frozen=True)

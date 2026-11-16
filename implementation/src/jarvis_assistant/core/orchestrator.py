@@ -11,7 +11,8 @@ en su orden. Cada orden se ejecuta en su propia tarea `asyncio`: así las frases
 atienden aunque haya órdenes en curso (RN-52). Las respuestas no se dicen dentro de la orden:
 van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en que terminan.
 
-`run_task` es la única función que ejecuta acciones (AD-13).
+`run_task` es la única función que ejecuta acciones (AD-13). Un protocolo ejecuta sus tareas
+con `ctx.invoke`, que también pasa por `run_task`, como subtareas de la suya.
 
 Diálogo: un módulo pregunta con `ctx.ask`. La pregunta entra como `DialogueRequested` y la
 FSM pasa a `AWAITING_*`; lo que se escribe entonces es la respuesta, y la corrutina del módulo
@@ -19,17 +20,19 @@ sigue cuando la FSM la resuelve. Como varias órdenes pueden ir a la vez, las pr
 de una en una: la segunda espera a que se resuelva la primera.
 """
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from jarvis_assistant.config import Config, ConfigError
+from jarvis_assistant.config import Config, ConfigError, validate_protocols
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import (
     CANCELLED_REASON,
+    CLOSED_REASON,
     ActionContext,
     ActionResult,
     DialogueAnswer,
@@ -37,6 +40,7 @@ from jarvis_assistant.core.action_api import (
     Intent,
     IntentSpec,
     Phrase,
+    Subtask,
 )
 from jarvis_assistant.core.announcer import Announcement, Announcer
 from jarvis_assistant.core.clock import Clock, TimerHandle
@@ -57,6 +61,7 @@ from jarvis_assistant.intent_router.router import (
     SHOW_SCREEN,
     IntentRouter,
     Order,
+    ParamError,
 )
 from jarvis_assistant.speaker.phrases import render
 from jarvis_assistant.speaker.speaker import Speaker
@@ -64,7 +69,6 @@ from jarvis_assistant.speaker.speaker import Speaker
 logger = logging.getLogger(__name__)
 
 LEVEL_INTERVAL_SECONDS = 0.05  # 20 Hz (AD-14)
-CLOSED_REASON = "sesión cerrada"  # RN-46
 HELP_PANEL = "ayuda"
 
 _ACTIVITY_OF_STATE = {
@@ -165,7 +169,9 @@ class Orchestrator:
         modules: Sequence[Any] = (),
         reload_config: Reload | None = None,
         on_exit: Callable[[], None] = lambda: None,
+        scheduler: Any = None,
     ) -> None:
+        """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos."""
         self._machine = machine
         self._bus = bus
         self._clock = clock
@@ -178,7 +184,9 @@ class Orchestrator:
         self._workdir = workdir
         self._reload_config = reload_config
         self._on_exit = on_exit
+        self._scheduler = scheduler
         self._activities = ActivityRepository(database)
+        self._active_panel: str | None = None  # el último `PanelActivated`
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -199,6 +207,9 @@ class Orchestrator:
         self._executing = 0  # acciones en ejecución: la actividad es «procesando»
         self._notices = NoticeQueue()
         self._background: dict[asyncio.Task, _Task] = {}
+        self._unrun: dict[int, _Task] = {}  # subtareas creadas que aún no se han ejecutado
+        # Motivo de las tareas que se cancelan: «cancelada», o «sesión cerrada» al cerrar.
+        self._cancel_reason = CANCELLED_REASON
         self._places: dict[str, Path] = {}
         # Diálogo: la pregunta abierta, el turno para preguntar y su tiempo de espera, que
         # empieza a correr (`armed`) cuando termina de decirse la pregunta.
@@ -210,7 +221,8 @@ class Orchestrator:
 
         for module in modules:
             self._register(module)
-        self._apply_config(config)
+        for error in self._apply_config(config):
+            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
 
         bus.subscribe(
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
@@ -224,6 +236,7 @@ class Orchestrator:
         )
         # El botón de silencio calla la respuesta en curso y las que esperaban su turno.
         bus.subscribe(events.SilenceRequested, lambda _e: self._announcer.clear())
+        bus.subscribe(events.PanelActivated, self._panel_activated)
         bus.subscribe(events.SpeechStarted, lambda _e: self._refresh())
         bus.subscribe(events.SpeechFinished, lambda _e: self._refresh())
 
@@ -234,6 +247,9 @@ class Orchestrator:
     @property
     def modules(self) -> Mapping[str, Any]:
         return self._modules
+
+    def _panel_activated(self, event: events.PanelActivated) -> None:
+        self._active_panel = event.panel
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -288,12 +304,18 @@ class Orchestrator:
                 ),
             )
 
-    def _apply_config(self, config: Config) -> None:
+    def _apply_config(self, config: Config) -> list[ConfigError]:
+        """Aplica la configuración. Los protocolos se validan contra el registro de
+        intenciones: uno no válido se descarta con un error y los demás se cargan."""
+        protocols, errors = validate_protocols(config.protocols, self._router.specs_of)
+        if len(protocols) != len(config.protocols):
+            config = dataclasses.replace(config, protocols=protocols)
         self._config = config
         self._places = {**self._platform.default_places(), **config.places}
         self._router.configure(
             config.settings.router, config.aliases, binaries=config.binaries, places=self._places
         )
+        return errors
 
     # --- Entradas ----------------------------------------------------------------------------
 
@@ -439,8 +461,15 @@ class Orchestrator:
             case fsm.ResolveDialogue(value=value):
                 self._close_dialogue(DialogueAnswer(cancelled=False, value=value), "answered")
             case fsm.CancelDialogue(announce=announce):
+                dialogue = self._dialogue
                 self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
-                if announce:
+                # «¿Quiere añadir otro aviso…?» cancelada no cancela nada: el recordatorio se
+                # guarda con lo que tiene (recordatorio.md, «Creación con una orden»).
+                keeps = (
+                    dialogue is not None
+                    and dialogue.expected_type is ExpectedType.REMINDER_ACTION
+                )
+                if announce and not keeps:
                     self._announce(Phrase("general.operacion_cancelada"))
 
     async def _say_lifecycle(self, phrase_id: str, transition: Transition) -> None:
@@ -487,7 +516,7 @@ class Orchestrator:
         except Exception:
             logger.exception("No se ha podido recargar la configuración")
             return
-        self._apply_config(config)
+        errors = [*errors, *self._apply_config(config)]
         reported: set[str] = set()
         for error in errors:
             if error.warning:
@@ -504,8 +533,12 @@ class Orchestrator:
     async def _close_session(self, reason: str, silent: bool) -> None:
         self._cancel_silence_timer()
         self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
-        await self._cancel_orders()
-        await self._cancel_background(CLOSED_REASON)  # RN-46
+        self._cancel_reason = CLOSED_REASON  # RN-46: también el protocolo en curso
+        try:
+            await self._cancel_orders()
+        finally:
+            self._cancel_reason = CANCELLED_REASON
+        await self._cancel_background(CLOSED_REASON)
         self._speaker.stop()
         await self._session_hook("on_session_closed")
         self._notices.clear()
@@ -546,14 +579,16 @@ class Orchestrator:
         else:
             logger.warning("Orden desconocida: %r", request)
 
-    @staticmethod
-    def _claim(specs: Iterable[tuple[str, IntentSpec]]) -> Claim:
-        """Lo que ocupa una orden que puede acabar siendo cualquiera de `specs`."""
+    def _claim(self, specs: Iterable[tuple[str, IntentSpec]]) -> Claim:
+        """Lo que ocupa una orden que puede acabar siendo cualquiera de `specs`. Una acción
+        `exclusive` ocupa todos los módulos: ninguna otra orden se ejecuta a la vez."""
         lanes: set[str] = set()
         reads: set[str] = set()
         writes: set[str] = set()
         for module, spec in specs:
             lanes.add(module)
+            if spec.exclusive:
+                lanes |= {CORE_MODULE, *self._modules}
             reads |= spec.resources_read
             writes |= spec.writes
         return Claim(frozenset(lanes), frozenset(reads), frozenset(writes))
@@ -708,9 +743,15 @@ class Orchestrator:
         self._speak_question(dialogue.question)
 
     def _ask_again(self) -> None:
-        """Respuesta no válida, primera vez: «No le he entendido.» y la pregunta otra vez."""
+        """Respuesta no válida, primera vez: «No le he entendido.» (o «No he entendido la
+        fecha.» si se esperaba una) y la pregunta otra vez."""
         if self._dialogue is not None:
-            self._speak_question(Phrase("general.no_entendido"), self._dialogue.question)
+            reason = (
+                Phrase("entidad.fecha")
+                if self._dialogue.expected_type is ExpectedType.DATETIME
+                else Phrase("general.no_entendido")
+            )
+            self._speak_question(reason, self._dialogue.question)
 
     def _speak_question(self, *phrases: Phrase) -> None:
         self._cancel_dialogue_timer()
@@ -749,10 +790,13 @@ class Orchestrator:
 
     # --- Voz ---------------------------------------------------------------------------------
 
-    def _announce(self, *phrases: Phrase) -> None:
-        """Pone una respuesta en la cola de voz."""
+    def _announce(self, *phrases: Phrase, on_delivered: Callable[[], None] | None = None) -> None:
+        """Pone una respuesta en la cola de voz. `on_delivered`: al terminar de decirla; sin
+        nada que decir, en el acto."""
         if phrases:
-            self._announcer.submit(Announcement(phrases))
+            self._announcer.submit(Announcement(phrases, on_delivered=on_delivered))
+        elif on_delivered is not None:
+            on_delivered()
 
     def _deliver(self, notice: Notice) -> None:
         """Entrega un aviso: activa su panel al empezar a decirlo."""
@@ -793,24 +837,22 @@ class Orchestrator:
         description: str | None = None,
         error: Phrase | None = None,
         quiet: bool = False,
+        task: "_Task | None" = None,
     ) -> ActionResult:
         """Ejecuta una acción como tarea: la registra en `pendiente`, llama al módulo, captura
         cualquier excepción (RNF-23), fija el estado final y deja la respuesta en la cola de
         voz, que la dice cuando le llega el turno.
 
         `error`: una entidad no se pudo resolver; la tarea se crea ya en `error` con esa frase.
-        Con `quiet`, la respuesta solo se dice si es un error.
+        Con `quiet`, la respuesta solo se dice si es un error. `task`: una subtarea ya creada
+        con `ctx.subtask`, que es la que se ejecuta.
         """
-        session = self._session
-        if session is None:
+        if self._session is None:
             raise RuntimeError("No hay sesión abierta")
-        task = _Task(
-            self._activities.add(
-                session.id, module, description or f"{module} {action}", self._clock.now(), parent
-            ),
-            parent, module, description or f"{module} {action}",
-        )  # fmt: skip
-        self._publish_task(task, "pendiente")
+        if task is None:
+            task = self._new_task(module, description or f"{module} {action}", parent)
+        else:
+            self._publish_task(task, "pendiente")
         panel = self._panels.get((module, action))
         if panel is not None:
             self._bus.publish(events.PanelActivated(panel))
@@ -824,7 +866,8 @@ class Orchestrator:
                 ctx = self._context(origin, task, speech)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
-            self._finish_task(task, "error", CANCELLED_REASON)
+            self._finish_task(task, "error", self._cancel_reason)
+            self._fail_unrun(task, self._cancel_reason)
             raise
         except Exception:
             logger.exception("La acción %s.%s ha fallado", module, action)
@@ -832,6 +875,7 @@ class Orchestrator:
         finally:
             self._executing -= 1
             self._refresh()
+        self._fail_unrun(task, CANCELLED_REASON)  # subtareas que el módulo no ha ejecutado
         if result.description:
             task.description = result.description
         if result.background and result.status == "completado":
@@ -840,9 +884,79 @@ class Orchestrator:
             self._finish_task(task, result.status, self._detail(result))
         if result.speech is not None:
             speech.append(result.speech)
-        if not (quiet and result.status == "completado"):
-            self._announce(*speech)
+        if quiet and result.status == "completado":
+            speech = []
+        self._announce(*speech, on_delivered=result.on_spoken)
         return result
+
+    def _new_task(self, module: str, description: str, parent: int | None) -> _Task:
+        """Registra una tarea en `pendiente` como actividad de la sesión y la publica."""
+        assert self._session is not None
+        task = _Task(
+            self._activities.add(self._session.id, module, description, self._clock.now(), parent),
+            parent, module, description,
+        )  # fmt: skip
+        self._publish_task(task, "pendiente")
+        return task
+
+    def _fail_unrun(self, parent: _Task, reason: str) -> None:
+        """Las subtareas de `parent` que no han llegado a ejecutarse quedan en `error`."""
+        for task_id, task in list(self._unrun.items()):
+            if task.parent == parent.id:
+                del self._unrun[task_id]
+                self._finish_task(task, "error", reason)
+
+    def _subtask(self, parent: _Task | None, module: str, description: str) -> Subtask:
+        """`ctx.subtask`: una tarea hija en `pendiente`, que se ejecuta después con `invoke`."""
+        if parent is None:
+            raise RuntimeError("Solo una tarea puede tener subtareas")
+        task = self._new_task(module, description, parent.id)
+        self._unrun[task.id] = task
+
+        def fail(reason: str) -> None:
+            if self._unrun.pop(task.id, None) is not None:
+                self._finish_task(task, "error", reason)
+
+        return Subtask(task.id, fail)
+
+    async def _invoke(
+        self,
+        parent: _Task | None,
+        speech: list[Phrase] | None,
+        module: str,
+        action: str,
+        params: Mapping[str, object],
+        *,
+        quiet: bool = True,
+        subtask: Subtask | None = None,
+        description: str | None = None,
+        resolve: bool = False,
+    ) -> ActionResult:
+        """`ctx.invoke`: ejecuta una acción como subtarea de `parent`, por la misma interfaz y
+        con el mismo `run_task` que una orden del usuario. Lo que la tarea llevaba dicho se
+        dice antes (como antes de una pregunta): así el protocolo anuncia que empieza."""
+        if parent is None:
+            raise RuntimeError("Solo una tarea puede invocar otras acciones")
+        if speech:
+            self._announce(*speech)
+            speech.clear()
+        task = None
+        if subtask is not None:
+            task = self._unrun.pop(subtask.id, None)
+            if task is None:
+                raise RuntimeError(f"La subtarea {subtask.id} ya no está pendiente")
+        error = None
+        if resolve:
+            try:
+                params = self._router.resolve_params(module, action, params)
+            except ParamError as unresolved:
+                error = unresolved.phrase
+            except KeyError:
+                error = Phrase("general.error")
+        return await self.run_task(
+            module, action, params, origin="protocolo", parent=parent.id,
+            description=description, error=error, quiet=quiet, task=task,
+        )  # fmt: skip
 
     def _context(
         self, origin: Origin, task: _Task | None, speech: list[Phrase] | None = None
@@ -872,6 +986,11 @@ class Orchestrator:
                 raise RuntimeError("Solo una tarea puede seguir en segundo plano")
             self._spawn_background(task, work)
 
+        async def invoke(
+            module: str, action: str, params: Mapping[str, object], **options: Any
+        ) -> ActionResult:
+            return await self._invoke(task, speech, module, action, params, **options)
+
         return ActionContext(
             session=self._session,
             origin=origin,
@@ -886,7 +1005,11 @@ class Orchestrator:
             notify=self._notify,
             background=background,
             task_id=None if task is None else task.id,
+            scheduler=self._scheduler,
             ask=ask,
+            active_panel=self._active_panel,
+            subtask=lambda module, description: self._subtask(task, module, description),
+            invoke=invoke,
         )
 
     @staticmethod

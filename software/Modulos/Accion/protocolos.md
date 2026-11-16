@@ -52,7 +52,7 @@ important = true
 - `id` único. `name` y `aliases` son el catálogo con el que se reconoce el protocolo escrito.
 - Cada tarea: `module` (nombre de módulo), `action`, `params` y, opcionalmente, `stop_on_error` y `description` (texto que se muestra; si falta, se genera).
 - Los parámetros se escriben como se escribirían en una orden y se resuelven con la misma lógica que las entidades (`IntentRouter.resolve_params`), **en el momento de ejecutar cada tarea**, no al cargar: así una ruta relativa usa el directorio de trabajo que dejó la tarea anterior.
-- **Validación al cargar** ([configuracion.md](../Infraestructura/configuracion.md)): módulo y acción existentes y admitidos en protocolos, parámetros obligatorios presentes, `id` y nombres sin repetir. Un protocolo no válido se descarta con un error de configuración; los demás se cargan.
+- **Validación al cargar** ([configuracion.md](../Infraestructura/configuracion.md)): módulo y acción existentes y admitidos en protocolos, parámetros obligatorios presentes, `id` y nombres sin repetir. Un protocolo no válido se descarta con un error de configuración; los demás se cargan. La estructura se comprueba al leer el archivo; la parte que depende del registro (`config.validate_protocols`) la aplica el orquestador cada vez que aplica la configuración, al arrancar y al abrir cada sesión.
 
 El archivo predeterminado incluye un protocolo de ejemplo, comentado, para que el usuario lo adapte.
 
@@ -70,7 +70,8 @@ El archivo predeterminado incluye un protocolo de ejemplo, comentado, para que e
 
 ### Otras reglas
 
-- **Uno a la vez (RN-55):** el protocolo ocupa el turno; no se puede iniciar otro hasta que termine.
+- **Uno a la vez (RN-55):** el protocolo ocupa el turno (`IntentSpec.exclusive`): no se puede iniciar otro hasta que termine, y las órdenes escritas mientras tanto esperan en la cola. Las frases de control y las respuestas a un diálogo se atienden igualmente.
+- **Panel:** `protocolo`. Muestra el protocolo en curso o el último, con su progreso, o el listado de `listar`.
 - **Cancelación:** «cancelar» detiene el protocolo tras la tarea en curso, que se cancela; las restantes quedan en `error` con el motivo «cancelada» (RN-52). El cierre de sesión hace lo mismo (RN-46).
 - **Historial:** el protocolo y cada una de sus tareas se registran como actividades de la sesión.
 

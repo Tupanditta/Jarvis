@@ -165,10 +165,10 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | Identificador | Texto |
 |---|---|
 | `comandos.cd` | Directorio cambiado a {carpeta}. |
-| `comandos.ls` | Hay {carpetas} y {archivos}. |
+| `comandos.ls` | En {carpeta} hay {carpetas} y {archivos}. |
 | `comandos.pwd` | Está en {ruta}. |
-| `comandos.arbol` | {carpetas} y {archivos}. |
-| `comandos.arbol_recortado` | {carpetas} y {archivos}. Se muestra solo una parte. |
+| `comandos.arbol` | El árbol de {carpeta} tiene {carpetas} y {archivos}. |
+| `comandos.arbol_recortado` | El árbol de {carpeta} tiene {carpetas} y {archivos}. Se muestra solo una parte. |
 | `comandos.limpio` | *(sin voz)* |
 | `comandos.ejecutando` | Ejecutando {comando}. |
 | `comandos.ok` | {comando} ha terminado correctamente. |
@@ -188,8 +188,8 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `apertura.sin_edge` | Microsoft Edge no está instalado. |
 | `apertura.ventana_cerrada` | Esa ventana ya no está abierta. |
 | `busqueda.ninguno` | No he encontrado nada para {consulta}. |
-| `busqueda.uno` | He encontrado {nombre} en {carpeta}. |
-| `busqueda.varios` | He encontrado {n} resultados. El primero es {nombre}, en {carpeta}. |
+| `busqueda.uno` | He buscado {consulta} y he encontrado {nombre} en {carpeta}. |
+| `busqueda.varios` | La búsqueda de {consulta} ha dado {n} resultados. El primero es {nombre}, en {carpeta}. |
 | `busqueda.limitada` | Búsqueda limitada a sus carpetas. |
 | `busqueda.instalar` | Instale Everything para buscar en todo el disco. |
 | `busqueda.no_existe` | Ese archivo ya no existe. |
@@ -235,8 +235,9 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 |---|---|
 | `protocolos.inicio` | Iniciando el protocolo {nombre}. |
 | `protocolos.completado` | Protocolo {nombre} completado. |
-| `protocolos.con_errores` | Protocolo {nombre} terminado con {n} errores. |
-| `protocolos.lista` | Hay {n} protocolos. |
+| `protocolos.con_errores` | Protocolo {nombre} terminado con {n}. ({n} es el recuento: «1 error», «3 errores».) |
+| `protocolos.lista` | Hay {n}. ({n}: «1 protocolo», «2 protocolos».) |
+| `protocolos.ninguno` | No hay ningún protocolo definido. |
 
 ## 6. Juego de frases de prueba
 

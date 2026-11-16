@@ -401,6 +401,161 @@ class HistoryModel(QObject):
         return self._activities
 
 
+class RemindersModel(QObject):
+    """Panel de recordatorios: la lista numerada (activos y vencidos), con el próximo aviso, la
+    fecha límite y el notificado o leído destacado."""
+
+    changed = Signal()
+
+    MODULE = "recordatorio"
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._items: list[dict[str, Any]] = []
+
+    def apply(self, event: object) -> None:
+        if not isinstance(event, events.RemindersChanged):
+            return
+        self._items = [
+            {"index": r.index, "id": r.id, "content": r.content,
+             "overdue": r.status == "vencido",
+             "next": "" if r.next_trigger is None else _local(r.next_trigger, "%d/%m %H:%M"),
+             "deadline": "" if r.deadline is None else _local(r.deadline, "%d/%m %H:%M"),
+             "highlighted": r.highlighted}
+            for r in event.items
+        ]  # fmt: skip
+        self.changed.emit()
+
+    @Slot()
+    def refresh(self) -> None:
+        """Muestra los recordatorios."""
+        self._publish(events.ActionRequested(self.MODULE, "mostrar"))
+
+    @Property("QVariantList", notify=changed)
+    def items(self) -> list:
+        return self._items
+
+    @Property(int, notify=changed)
+    def overdueCount(self) -> int:
+        return sum(item["overdue"] for item in self._items)
+
+
+class ProtocolModel(QObject):
+    """Panel de protocolo: el protocolo en curso o el último, con sus tareas y su progreso
+    (tareas terminadas / total), que cambian en cuanto cambia el estado de cada una (RF-57,
+    RNF-14); o bien el listado de los protocolos de la configuración (RF-99)."""
+
+    changed = Signal()
+
+    MODULE = "protocolos"
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._reset()
+
+    def _reset(self) -> None:
+        self._mode = ""  # "", "run" o "list"
+        self._task_id: int | None = None
+        self._name = ""
+        self._running = False
+        self._steps: list[dict[str, Any]] = []
+        self._positions: dict[int, int] = {}  # id de subtarea → posición en `_steps`
+        self._protocols: list[dict[str, Any]] = []
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.ProtocolStarted):
+            self._mode, self._task_id, self._name = "run", event.task_id, event.name
+            self._running = True
+            self._steps = [
+                {"id": step_id, "module": "", "description": step, "status": "pendiente",
+                 "detail": "", "time": ""}
+                for step, step_id in zip(event.steps, event.step_ids, strict=True)
+            ]  # fmt: skip
+            self._positions = {step_id: index for index, step_id in enumerate(event.step_ids)}
+        elif isinstance(event, events.TaskUpdated) and event.task_id in self._positions:
+            index = self._positions[event.task_id]
+            self._steps[index] = {
+                **self._steps[index], "module": event.module, "description": event.description,
+                "status": event.status, "detail": event.detail or "",
+                "time": _local(event.at, "%H:%M"),
+            }  # fmt: skip
+            self._steps = list(self._steps)  # una lista nueva: QML ve el cambio
+        elif isinstance(event, events.ProtocolFinished) and event.task_id == self._task_id:
+            self._running = False
+        elif isinstance(event, events.ProtocolsListed):
+            self._mode = "list"
+            self._protocols = [
+                {"name": p.name, "aliases": ", ".join(p.aliases), "important": p.important,
+                 "steps": len(p.steps), "summary": " · ".join(p.steps)}
+                for p in event.protocols
+            ]  # fmt: skip
+        elif isinstance(event, events.SessionOpened):
+            self._reset()
+        else:
+            return
+        self.changed.emit()
+
+    @Slot()
+    def refresh(self) -> None:
+        """Muestra los protocolos disponibles."""
+        self._publish(events.ActionRequested(self.MODULE, "listar"))
+
+    @Slot(str)
+    def run(self, name: str) -> None:
+        """Ejecuta el protocolo `name`: lo mismo que escribir «protocolo {name}»."""
+        self._publish(events.ActionRequested(self.MODULE, "ejecutar", {"protocolo": name}))
+
+    @Slot()
+    def showRun(self) -> None:
+        """Vuelve del listado al protocolo en curso o al último."""
+        if self._task_id is not None:
+            self._mode = "run"
+            self.changed.emit()
+
+    @Property(str, notify=changed)
+    def mode(self) -> str:
+        return self._mode
+
+    @Property(str, notify=changed)
+    def name(self) -> str:
+        return self._name
+
+    @Property(bool, notify=changed)
+    def running(self) -> bool:
+        return self._running
+
+    @Property(bool, notify=changed)
+    def hasRun(self) -> bool:
+        return self._task_id is not None
+
+    @Property("QVariantList", notify=changed)
+    def steps(self) -> list:
+        return self._steps
+
+    @Property(int, notify=changed)
+    def doneCount(self) -> int:
+        """Tareas terminadas, en `completado` o en `error`."""
+        return sum(step["status"] != "pendiente" for step in self._steps)
+
+    @Property(int, notify=changed)
+    def errorCount(self) -> int:
+        return sum(step["status"] == "error" for step in self._steps)
+
+    @Property(float, notify=changed)
+    def progress(self) -> float:
+        return self.doneCount / len(self._steps) if self._steps else 0.0
+
+    @Property("QVariantList", notify=changed)
+    def protocols(self) -> list:
+        return self._protocols
+
+
 class HelpModel(QObject):
     """Panel de ayuda: las órdenes disponibles, agrupadas por módulo, con un ejemplo."""
 

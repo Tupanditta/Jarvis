@@ -20,6 +20,8 @@ from jarvis_assistant import config as config_module
 from jarvis_assistant.action_modules.app_launcher import AppLauncher
 from jarvis_assistant.action_modules.command_runner import CommandRunner
 from jarvis_assistant.action_modules.file_manager import FileCreation, FileSearch
+from jarvis_assistant.action_modules.protocol_runner import ProtocolRunner
+from jarvis_assistant.action_modules.reminder_manager import ReminderManager
 from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
@@ -28,6 +30,7 @@ from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.orchestrator import Orchestrator, Reload
+from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Scheduler
 from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
@@ -53,7 +56,8 @@ _MISSING_MODELS_NOTICE_MS = 6000
 # una instancia por aplicación. El orden es el de desempate entre patrones. El módulo Sesión
 # va aparte, antes que todos: también lo usa el orquestador para abrir y cerrar la sesión.
 ACTION_MODULES: list[Callable[[], Any]] = [
-    CommandRunner, AppLauncher, FileSearch, FileCreation, History,
+    CommandRunner, AppLauncher, FileSearch, FileCreation, History, ReminderManager,
+    ProtocolRunner,
 ]
 
 
@@ -66,6 +70,8 @@ class Adapters:
     database: Database
     synthesizer: Synthesizer
     player: AudioPlayer
+    # Trabajos a una fecha. Sin él, uno sobre `clock`: el de las pruebas, con reloj falso.
+    scheduler: Scheduler | None = None
 
 
 @dataclass
@@ -106,7 +112,9 @@ def build_app(
         settings=settings.tts,
     )
     workdir = Workdir(home or Path.home())
-    router = IntentRouter(settings.router, config.aliases, workdir=workdir)
+    router = IntentRouter(
+        settings.router, config.aliases, workdir=workdir, now=adapters.clock.now
+    )
     sessions = SessionManager(adapters.database, adapters.clock, bus)
     orchestrator = Orchestrator(
         machine=machine,
@@ -122,6 +130,7 @@ def build_app(
         modules=[sessions, *(create() for create in ACTION_MODULES)],
         reload_config=reload_config,
         on_exit=on_exit,
+        scheduler=adapters.scheduler or ClockScheduler(adapters.clock),
     )
     return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters, workdir)
 
@@ -162,6 +171,7 @@ def real_adapters(config: Config, platform: Any, paths: AppPaths, clock: Clock) 
         database=database,
         synthesizer=PiperSynthesizer(paths.models_dir, settings.tts.voice),
         player=Player(clock),
+        scheduler=ApsScheduler(),
     )
 
 

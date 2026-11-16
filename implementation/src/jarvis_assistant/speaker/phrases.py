@@ -372,6 +372,113 @@ PHRASES: dict[str, list[str]] = {
         "Ese archivo ya no está disponible, señor.",
         "No he podido localizar el archivo; parece que fue eliminado, señor.",
     ],
+    # --- Recordatorio ------------------------------------------------------------------------
+    "recordatorio.cuando": [
+        "¿Cuándo quiere que se lo recuerde, señor?",
+        "¿Para cuándo se lo recuerdo, señor?",
+    ],
+    "recordatorio.mas": [
+        "¿Quiere añadir otro aviso o una fecha límite, señor?",
+        "¿Desea otro aviso o una fecha límite, señor?",
+    ],
+    "recordatorio.creado": [
+        "Recordatorio creado para {fecha}, señor.",
+        "Hecho, señor. Se lo recordaré {fecha}.",
+    ],
+    "recordatorio.vacio": [
+        "No he entendido qué quiere que le recuerde, señor.",
+        "Disculpe, señor. ¿Qué es lo que quiere que le recuerde?",
+    ],
+    "recordatorio.limite_anterior": [
+        "La fecha límite no puede ser anterior a un aviso, señor.",
+        "Esa fecha límite queda antes de uno de los avisos, señor.",
+    ],
+    "recordatorio.max_avisos": [
+        "No se pueden añadir más avisos, señor.",
+        "Ese recordatorio ya tiene todos los avisos posibles, señor.",
+    ],
+    "recordatorio.aviso_uno": [
+        "Tiene un recordatorio, señor.",
+        "Señor, tiene un recordatorio pendiente.",
+    ],
+    "recordatorio.aviso_varios": [
+        "Tiene {n} recordatorios, señor.",
+        "Señor, tiene {n} recordatorios pendientes.",
+    ],
+    "recordatorio.vencido": [
+        "El recordatorio {n} ha vencido, señor. Su fecha límite era {fecha}.",
+        "Señor, el recordatorio {n} ha vencido. La fecha límite era {fecha}.",
+    ],
+    "recordatorio.lista": [
+        "Tiene {recordatorios}, señor.",
+        "Aquí tiene sus recordatorios, señor: {recordatorios}.",
+    ],
+    "recordatorio.ninguno": [
+        "No tiene recordatorios, señor.",
+        "No hay ningún recordatorio, señor.",
+    ],
+    "recordatorio.lectura": [
+        "{texto}",
+    ],
+    "recordatorio.lectura_vencido": [
+        "{texto} Venció {fecha}.",
+    ],
+    "recordatorio.activar": [
+        "Escriba confirmar recordatorios y el número, señor.",
+        "Para confirmarlo, escriba confirmar recordatorios y el número, señor.",
+    ],
+    "recordatorio.confirmado": [
+        "Recordatorio {n} confirmado, señor.",
+        "He confirmado el recordatorio {n}, señor.",
+    ],
+    "recordatorio.pospuesto": [
+        "Pospuesto, señor. Le avisaré dentro de {duracion}.",
+        "De acuerdo, señor. Se lo recuerdo dentro de {duracion}.",
+    ],
+    "recordatorio.sin_aviso": [
+        "Ese recordatorio aún no ha avisado, señor.",
+        "Ese recordatorio todavía no le ha avisado, señor.",
+    ],
+    "recordatorio.limite_pospuesto": [
+        "Fecha límite cambiada a {fecha}, señor.",
+        "He movido la fecha límite a {fecha}, señor.",
+    ],
+    "recordatorio.limite_vencido": [
+        "La fecha límite ya ha vencido y no se puede posponer, señor.",
+        "Ese recordatorio ya ha vencido, señor. No se puede posponer.",
+    ],
+    "recordatorio.sin_limite": [
+        "Ese recordatorio no tiene fecha límite, señor.",
+    ],
+    "recordatorio.confirmar_eliminar": [
+        "¿Elimino el recordatorio {n}, señor?",
+        "¿Quiere que elimine el recordatorio {n}, señor?",
+    ],
+    "recordatorio.eliminado": [
+        "Recordatorio {n} eliminado, señor.",
+        "He eliminado el recordatorio {n}, señor.",
+    ],
+    # {n} de `protocolos.con_errores` y `protocolos.lista` ya es un recuento: «1 error».
+    "protocolos.inicio": [
+        "Iniciando el protocolo {nombre}, señor.",
+        "Muy bien, señor. Inicio el protocolo {nombre}.",
+    ],
+    "protocolos.completado": [
+        "Protocolo {nombre} completado, señor.",
+        "El protocolo {nombre} ha terminado sin errores, señor.",
+    ],
+    "protocolos.con_errores": [
+        "Protocolo {nombre} terminado con {n}, señor.",
+        "El protocolo {nombre} ha terminado con {n}, señor.",
+    ],
+    "protocolos.lista": [
+        "Hay {n}, señor.",
+        "Tiene {n} disponibles, señor.",
+    ],
+    "protocolos.ninguno": [
+        "No hay ningún protocolo definido, señor.",
+        "Todavía no tiene protocolos, señor. Puede definirlos en la configuración.",
+    ],
 }
 
 LIFECYCLE_IDS = ("ciclo.apertura", "ciclo.escucha", "ciclo.reposo", "ciclo.cierre")

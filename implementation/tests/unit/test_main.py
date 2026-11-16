@@ -44,10 +44,12 @@ def test_build_app_construye_el_grafo_completo_sin_hilos_ni_dispositivos(tmp_pat
     assert not adapters.player.is_open
     assert app.sessions.current is None
     assert [module.name for module in ACTION_MODULES] == [
-        "comandos", "apertura", "busqueda", "creacion", "historial",
+        "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
+        "protocolos",
     ]  # fmt: skip
     assert set(app.orchestrator.modules) == {
-        "sesion", "comandos", "apertura", "busqueda", "creacion", "historial",
+        "sesion", "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
+        "protocolos",
     }  # fmt: skip
     assert app.orchestrator.modules["sesion"] is app.sessions
     app.speaker.close()
@@ -65,7 +67,7 @@ def test_build_app_usa_el_bus_que_se_le_pasa(tmp_path):
 
 def test_el_proceso_no_tiene_entrada_por_voz(tmp_path):
     fields = {field.name for field in dataclasses.fields(main_module.Adapters)}
-    assert fields == {"platform", "clock", "database", "synthesizer", "player"}
+    assert fields == {"platform", "clock", "database", "synthesizer", "player", "scheduler"}
     assert not hasattr(main_module.App, "capture")
 
 

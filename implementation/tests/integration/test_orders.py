@@ -404,8 +404,8 @@ async def test_ayuda_muestra_las_ordenes_del_registro(rig):
     await rig.order("ayuda")
     (shown,) = rig.of(events.HelpShown)
     assert [group.module for group in shown.groups] == [
-        "sesion", "comandos", "apertura", "busqueda", "creacion", "historial", "prueba",
-        "nucleo",
+        "sesion", "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
+        "protocolos", "prueba", "nucleo",
     ]  # fmt: skip
     assert shown.groups == rig.app.router.help()
     assert rig.of(events.PanelActivated) == [events.PanelActivated("ayuda")]

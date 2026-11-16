@@ -8,6 +8,8 @@ from jarvis_assistant.core.content import (
     Entry,
     LaunchTarget,
     OpenedItem,
+    ProtocolRow,
+    ReminderItem,
     SearchResult,
     TreeNode,
 )
@@ -18,6 +20,8 @@ from jarvis_assistant.ui.panel_models import (
     HelpModel,
     HistoryModel,
     OpenedModel,
+    ProtocolModel,
+    RemindersModel,
     SearchModel,
 )
 
@@ -291,3 +295,71 @@ def test_el_puente_entrega_los_eventos_de_contenido_de_los_paneles():
         events.SearchResultsReady, events.HistoryShown, events.SessionActivitiesShown,
         events.HelpShown, events.LaunchTargetsChanged, events.OrderQueueChanged,
     } <= set(UI_EVENTS)  # fmt: skip
+
+
+def test_recordatorios_lista_numerada_con_vencidos_y_destacado():
+    published: list[events.Event] = []
+    model = RemindersModel(publish=published.append)
+    assert model.items == []
+    model.apply(events.RemindersChanged((
+        ReminderItem(1, 4, "Llamar a Ana", "activo", WHEN, None, highlighted=True),
+        ReminderItem(2, 9, "Pagar", "vencido", None, WHEN),
+    )))  # fmt: skip
+    first, second = model.items
+    assert (first["index"], first["content"], first["highlighted"]) == (1, "Llamar a Ana", True)
+    assert first["next"] == WHEN.astimezone().strftime("%d/%m %H:%M")
+    assert (first["deadline"], first["overdue"]) == ("", False)
+    assert (second["next"], second["overdue"]) == ("", True)
+    assert model.overdueCount == 1
+    model.refresh()
+    assert published == [events.ActionRequested("recordatorio", "mostrar")]
+    assert events.RemindersChanged in UI_EVENTS
+
+
+def _step(task_id: int, status: str, description: str, detail: str | None = None):
+    return events.TaskUpdated(task_id, 5, "comandos", description, status, detail, WHEN)
+
+
+def test_protocolo_tareas_y_progreso_en_tiempo_real():
+    """RF-53, RF-57: todas en `pendiente` al empezar; cada una cambia en cuanto cambia."""
+    model = ProtocolModel()
+    assert (model.mode, model.hasRun, model.steps) == ("", False, [])
+    model.apply(events.ProtocolStarted(5, "modo trabajo", ("cd jarvis", "ejecutar git status"),
+                                       (6, 7)))
+    assert (model.mode, model.name, model.running) == ("run", "modo trabajo", True)
+    assert [s["status"] for s in model.steps] == ["pendiente", "pendiente"]
+    assert (model.doneCount, model.progress) == (0, 0.0)
+    model.apply(_step(6, "completado", "cd Jarvis"))
+    assert model.steps[0]["description"] == "cd Jarvis"
+    assert (model.doneCount, model.progress) == (1, 0.5)
+    model.apply(_step(99, "error", "otra tarea"))  # no es del protocolo
+    model.apply(_step(7, "error", "git status", "git ha terminado con 1"))
+    assert model.steps[1]["detail"] == "git ha terminado con 1"
+    assert (model.doneCount, model.errorCount, model.progress) == (2, 1, 1.0)
+    model.apply(events.ProtocolFinished(5, 1, 1))
+    assert not model.running
+    model.apply(events.SessionOpened(2, "otra"))
+    assert (model.mode, model.hasRun) == ("", False)
+
+
+def test_protocolo_listado_y_acciones_de_la_ventana():
+    published: list[events.Event] = []
+    model = ProtocolModel(publish=published.append)
+    model.apply(events.ProtocolStarted(5, "modo trabajo", ("cd jarvis",), (6,)))
+    model.apply(events.ProtocolsListed((
+        ProtocolRow("modo-trabajo", "modo trabajo", ("a trabajar",), True, ("cd jarvis",)),
+    )))  # fmt: skip
+    assert model.mode == "list"
+    assert model.protocols == [{"name": "modo trabajo", "aliases": "a trabajar",
+                                "important": True, "steps": 1, "summary": "cd jarvis"}]
+    model.showRun()
+    assert model.mode == "run"
+    model.refresh()
+    model.run("modo trabajo")
+    assert published == [
+        events.ActionRequested("protocolos", "listar"),
+        events.ActionRequested("protocolos", "ejecutar", {"protocolo": "modo trabajo"}),
+    ]
+    assert {events.ProtocolStarted, events.ProtocolFinished, events.ProtocolsListed} <= set(
+        UI_EVENTS
+    )

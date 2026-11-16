@@ -16,6 +16,8 @@ Item {
     readonly property var moduleIcons: ["comandos", "apertura", "busqueda", "creacion",
                                         "recordatorio", "protocolo", "historial", "sesion",
                                         "nucleo"]
+    // El módulo se llama `protocolos`; su icono, `protocolo`.
+    readonly property string iconName: module === "protocolos" ? "protocolo" : module
     readonly property bool failed: status === "error" && detail.length > 0
 
     implicitHeight: row.height + (failed ? reason.implicitHeight + Theme.space4 : 0)
@@ -39,7 +41,8 @@ Item {
             height: 16
             sourceSize.width: 32
             sourceSize.height: 32
-            source: Theme.icon(card.moduleIcons.indexOf(card.module) >= 0 ? card.module : "tarea")
+            source: Theme.icon(card.moduleIcons.indexOf(card.iconName) >= 0 ? card.iconName
+                                                                              : "tarea")
             anchors.verticalCenter: parent.verticalCenter
         }
 

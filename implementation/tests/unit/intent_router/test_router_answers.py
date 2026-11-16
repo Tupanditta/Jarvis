@@ -76,13 +76,6 @@ def test_un_nombre_no_valido_no_es_una_respuesta(router, text):
     assert entry == Answer(valid=False)
 
 
-@pytest.mark.parametrize("expected", [ExpectedType.DATETIME, ExpectedType.REMINDER_ACTION])
-def test_los_tipos_de_recordatorio_aun_no_tienen_respuestas_validas(router, expected):
-    assert router.route("mañana a las nueve", S.AWAITING_PARAMETER, dialogue(expected)) == (
-        Answer(valid=False)
-    )
-
-
 @pytest.mark.parametrize("expected", list(ExpectedType))
 def test_las_frases_de_control_y_la_de_activacion_valen_en_cualquier_dialogo(router, expected):
     state = S.AWAITING_CONFIRMATION if expected is ExpectedType.BOOLEAN else S.AWAITING_PARAMETER
