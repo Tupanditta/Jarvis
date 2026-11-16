@@ -2,7 +2,7 @@
 
 Asistente personal local para Windows. El usuario escribe sus órdenes en una caja de texto y el asistente responde con voz. Todo funciona sin conexión; la única operación que usa la red es la descarga de la voz durante la instalación.
 
-La especificación completa está en [`../software/`](../software/README.md).
+La especificación completa está en [`../software/`](../software/README.md). Para instalar con un agente de IA, o con un procedimiento comprobado paso a paso, use [`../INSTALAR.md`](../INSTALAR.md).
 
 ## Requisitos
 

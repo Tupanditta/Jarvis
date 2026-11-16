@@ -1,139 +1,87 @@
 # Manual de uso de Jarvis
 
-Este manual explica cómo usar Jarvis en el día a día: cómo despertarlo, qué órdenes entiende, cómo responder a sus preguntas y cómo adaptarlo con los archivos de configuración.
+Cómo usar Jarvis en el día a día. Para instalarlo, vea [INSTALAR.md](INSTALAR.md); para añadir sus aplicaciones, páginas o protocolos, [PERSONALIZAR.md](PERSONALIZAR.md).
 
-Para instalarlo, consulte [implementation/README.md](implementation/README.md). Para adaptarlo a su equipo (aplicaciones, páginas, carpetas, protocolos), consulte [PERSONALIZAR.md](PERSONALIZAR.md). La lista completa de frases está en el [catálogo de intenciones](software/catalogo-intenciones.md).
+## Lo esencial
+
+1. Escriba **«Hey Jarvis»** en la caja de texto y pulse Enter. Jarvis responde «Sesión iniciada. Le escucho.»
+2. Escriba una orden, por ejemplo **«ayuda»**, que muestra todas las órdenes con un ejemplo.
+3. Si Jarvis le pregunta algo, responda en la caja. **«Cancelar»** detiene lo que esté haciendo.
+4. **«Gracias Jarvis»** lo deja en reposo. **«Buenas noches Jarvis»** cierra la sesión.
+
+Jarvis responde siempre con voz y con un subtítulo. No escucha el micrófono: todo se escribe.
 
 ## Índice
 
-1. [Primeros pasos](#1-primeros-pasos)
-2. [Estados del asistente](#2-estados-del-asistente)
-3. [Cómo escribir órdenes](#3-cómo-escribir-órdenes)
-4. [Órdenes generales](#4-órdenes-generales)
-5. [Órdenes por módulo](#5-órdenes-por-módulo)
-6. [Preguntas y respuestas](#6-preguntas-y-respuestas)
-7. [La interfaz](#7-la-interfaz)
-8. [Configuración](#8-configuración)
-9. [Problemas frecuentes](#9-problemas-frecuentes)
+1. [Estados y frases de control](#1-estados-y-frases-de-control)
+2. [Cómo escribir órdenes](#2-cómo-escribir-órdenes)
+3. [Órdenes](#3-órdenes)
+4. [Cuando Jarvis pregunta](#4-cuando-jarvis-pregunta)
+5. [La interfaz](#5-la-interfaz)
+6. [Problemas frecuentes](#6-problemas-frecuentes)
 
-## 1. Primeros pasos
-
-1. Arranque el asistente con `.\scripts\start_jarvis.ps1` desde la carpeta `implementation\`, o déjelo en el inicio automático de Windows con `.\scripts\install_startup.ps1`.
-2. Aparece un icono en la bandeja del sistema y la pantalla de sesión con una caja de texto. El asistente está **dormido**.
-3. Escriba «Hey Jarvis» en la caja y pulse Enter. Jarvis responde «Sesión iniciada. Le escucho.»
-4. Escriba una orden, por ejemplo «ayuda», y pulse Enter.
-5. Cuando termine, escriba «Buenas noches Jarvis» para cerrar la sesión.
-
-Jarvis responde siempre con voz y con un subtítulo en pantalla. No escucha el micrófono: todas las órdenes se escriben.
-
-## 2. Estados del asistente
+## 1. Estados y frases de control
 
 | Estado | Qué significa | Qué atiende |
 |---|---|---|
-| Dormido | No hay sesión abierta. Es el estado al arrancar y tras cerrar una sesión. | Solo «Hey Jarvis». Lo que se escribe se oculta con asteriscos. |
-| Escuchando | Sesión abierta, atendiendo órdenes. | Todas las órdenes. |
-| Esperando | Jarvis ha hecho una pregunta y espera la respuesta. | La respuesta y las frases de control. |
-| Reposo | Sesión abierta, pero sin atender órdenes. | Solo «Hey Jarvis» y «Buenas noches Jarvis». |
-
-### Frases de control
+| Dormido | Sin sesión. Es el estado al arrancar. | Solo «Hey Jarvis». Lo que se escribe se oculta con asteriscos. |
+| Escuchando | Sesión abierta. | Todas las órdenes. |
+| Esperando | Jarvis ha preguntado algo. | La respuesta y las frases de control. |
+| Reposo | Sesión abierta, en pausa. | Solo «Hey Jarvis» y «Buenas noches Jarvis». |
 
 | Frase | Efecto |
 |---|---|
-| «Hey Jarvis» o «Jarvis» | Dormido: abre una sesión. Reposo: vuelve a escuchar. Mientras Jarvis habla: lo hace callar. |
-| «Gracias Jarvis» | Pasa a reposo sin cerrar la sesión. Si había una pregunta pendiente, la cancela. |
-| «Buenas noches Jarvis» | Cierra la sesión y vuelve a dormido. El proceso sigue en marcha. |
-| «Cancelar», «Cancela», «Olvídalo» o «Déjalo» | Detiene la orden o la pregunta en curso. |
+| «Hey Jarvis» o «Jarvis» | Dormido: abre una sesión. Reposo: vuelve a escuchar. Mientras habla: lo hace callar. |
+| «Gracias Jarvis» | Pasa a reposo. Cancela la pregunta pendiente, si la hay. |
+| «Buenas noches Jarvis» | Cierra la sesión. El programa sigue abierto en la bandeja. |
+| «Cancelar» · «Olvídalo» · «Déjalo» | Detiene la orden o la pregunta en curso. |
 
-Tras 120 segundos sin escribir, Jarvis pasa a reposo solo. Al cerrar la sesión, se cancelan las preguntas pendientes, se detienen los protocolos y se terminan los programas en ejecución.
+- Tras **120 segundos** sin escribir, Jarvis pasa a reposo.
+- Cerrar la sesión cancela las preguntas pendientes, detiene los protocolos y termina los programas en ejecución.
+- Para salir del todo, use **«Salir»** en el icono de la bandeja.
 
-Para salir del todo, use «Salir» en el menú del icono de la bandeja. Así la sesión se cierra de forma ordenada.
+## 2. Cómo escribir órdenes
 
-## 3. Cómo escribir órdenes
+- **Siga el patrón.** Cada orden tiene una forma fija con huecos: «abre {objetivo}», «crea la carpeta {nombre}». «Ayuda» las muestra todas.
+- **Se admiten erratas** leves, mayúsculas, signos y tildes ausentes: «avre la carpeta descargas» funciona.
+- **Números** en letra o en cifra: «sesión doce» o «sesión 12».
+- **Rutas como se dicen:** «barra» separa carpetas y «punto», la extensión: «proyectos barra web», «notas punto txt».
+- **Una frase que no encaja se ignora**, sin voz. El subtítulo la marca como «no reconocido».
+- **Una orden cada vez.** Puede seguir escribiendo mientras Jarvis trabaja: se guarda una orden en espera y las demás se descartan.
 
-- **Frases fijas con huecos.** Jarvis no entiende frases libres. Cada orden sigue un patrón, como «abre {objetivo}» o «crea la carpeta {nombre}».
-- **Tolerancia a erratas.** Admite mayúsculas, signos de puntuación, tildes ausentes y erratas leves: «avre la carpeta descargas» funciona.
-- **Números en letra o en cifra.** «Elimina la sesión doce» y «elimina la sesión 12» son lo mismo.
-- **Rutas escritas como se dicen.** «barra» separa carpetas y «punto» separa la extensión: «proyectos barra web» y «notas punto txt».
-- **Órdenes no reconocidas.** Si una frase no encaja con ninguna orden, Jarvis no responde. El subtítulo la marca como «no reconocido».
-- **Una orden cada vez.** Puede seguir escribiendo mientras Jarvis trabaja. Se guarda como máximo una orden en espera; las demás se descartan.
+## 3. Órdenes
 
-## 4. Órdenes generales
+Los ejemplos usan nombres inventados. La lista completa de frases está en el [catálogo de intenciones](software/catalogo-intenciones.md).
+
+### Generales
 
 | Orden | Efecto |
 |---|---|
-| «Ayuda» · «Qué puedes hacer» | Muestra el panel de ayuda con todas las órdenes y un ejemplo de cada una. |
-| «Repite» · «Puedes repetir» | Repite la última respuesta. |
-| «Preséntate» · «Quién eres» | Jarvis se presenta y enumera sus módulos. |
-| «Muestra la pantalla» · «Pantalla completa» | Trae al frente la pantalla de sesión. |
-| «Oculta la pantalla» · «Minimiza la pantalla» | Minimiza la pantalla de sesión. |
-| «Aparta {ventana}» · «Aparta módulos» | Aparta a un borde la ventana de ese módulo, o todas las abiertas. |
-| «Desaparta {ventana}» · «Desaparta módulos» | Devuelve a su sitio la ventana apartada, o todas. |
-
-## 5. Órdenes por módulo
-
-Los ejemplos usan nombres inventados. Sustitúyalos por los suyos.
-
-### Sesión
-
-Cada sesión se llama por defecto como su fecha de apertura (`AAAA-MM-DD`).
-
-| Orden | Ejemplo |
-|---|---|
-| Nombrar la sesión | «Llama a la sesión práctica de redes» |
-| Marcarla como importante | «Marca la sesión como importante» |
-| Quitar la importancia | «La sesión no es importante» |
-
-Puede haber como máximo 10 sesiones importantes. Si marca una undécima, Jarvis le avisa de cuál deja de ser importante. Esa sesión se elimina al cerrar la sesión actual.
-
-### Historial
-
-| Orden | Ejemplo |
-|---|---|
-| Ver las sesiones recientes | «Muestra el historial» |
-| Ver lo que se hizo en una sesión | «Actividades de la sesión doce» · «Qué he hecho» |
-| Eliminar una sesión | «Elimina la sesión doce» |
-
-El historial muestra hasta 10 sesiones: primero las importantes. El número de cada sesión aparece en el panel. Jarvis pide confirmación antes de eliminar, y no permite eliminar la sesión actual.
-
-### Comandos
-
-Jarvis tiene un directorio de trabajo propio. Empieza en su carpeta personal en cada sesión y solo cambia con «ve a».
-
-| Orden | Ejemplo |
-|---|---|
-| Cambiar de carpeta | «Ve a proyectos barra web» · «Ve atrás» · «cd documentos» |
-| Listar la carpeta | «Qué hay aquí» · «ls» |
-| Saber dónde está | «Dónde estoy» |
-| Ver el árbol | «Árbol» · «Árbol de documentos» |
-| Limpiar la consola | «Limpia la consola» |
-| Ejecutar un programa | «Ejecuta git status» · «Ejecuta gcc main punto c» |
-| Abrir una terminal | «Abre una terminal» |
-
-- Solo se ejecutan los programas de la lista permitida (`commands.toml`). Cualquier otro produce «Ese comando no está permitido».
-- Cada programa tiene 120 segundos como máximo. Solo puede haber uno en ejecución.
-- El árbol muestra 3 niveles y 200 entradas como máximo.
+| «Ayuda» · «Qué puedes hacer» | Muestra todas las órdenes. |
+| «Repite» | Repite la última respuesta. |
+| «Preséntate» · «Quién eres» | Jarvis se presenta. |
+| «Muestra la pantalla» · «Oculta la pantalla» | Trae al frente o minimiza la pantalla de sesión. |
+| «Aparta {ventana}» · «Aparta módulos» | Lleva al borde una ventana, o todas. «Desaparta…» las devuelve. |
 
 ### Apertura
 
 | Orden | Ejemplo |
 |---|---|
-| Abrir una aplicación o una página | «Abre Visual Studio Code» · «Abre GitHub» |
-| Abrir una carpeta en el Explorador | «Abre la carpeta descargas» · «Abre esta carpeta» |
-| Traer al frente algo ya abierto | «Trae al frente GitHub» |
+| Abrir una aplicación o página | «Abre Visual Studio Code» · «Abre GitHub» |
+| Abrir una carpeta | «Abre la carpeta descargas» · «Abre esta carpeta» |
+| Traer al frente algo abierto | «Trae al frente GitHub» |
 
-Jarvis busca el nombre primero en sus aplicaciones configuradas, después en sus páginas y por último en las aplicaciones del menú Inicio. Las páginas se abren siempre en Microsoft Edge y solo si están en `catalog.toml`.
+Jarvis busca el nombre en sus aplicaciones, después en sus páginas y por último en el menú Inicio. Las páginas se abren en Microsoft Edge y solo si están en su catálogo ([PERSONALIZAR.md](PERSONALIZAR.md)).
 
 ### Búsqueda
 
 | Orden | Ejemplo |
 |---|---|
 | Buscar archivos y carpetas | «Busca presupuesto» |
-| Buscar solo archivos | «Busca el archivo factura enero» |
-| Buscar solo carpetas | «Busca la carpeta prácticas» |
-| Abrir un resultado | «Abre el resultado dos» |
-| Abrir la carpeta de un resultado | «Abre la carpeta del resultado dos» |
+| Solo archivos o solo carpetas | «Busca el archivo factura enero» · «Busca la carpeta prácticas» |
+| Abrir un resultado o su carpeta | «Abre el resultado dos» · «Abre la carpeta del resultado dos» |
 
-Con [*Everything*](https://www.voidtools.com/) instalado, la búsqueda recorre todo el disco. Sin él, se limita a sus carpetas personales y se corta a los 5 segundos.
+Con [*Everything*](https://www.voidtools.com/) instalado, busca en todo el disco. Sin él, solo en sus carpetas personales y durante 5 segundos como máximo.
 
 ### Creación
 
@@ -141,112 +89,96 @@ Con [*Everything*](https://www.voidtools.com/) instalado, la búsqueda recorre t
 |---|---|
 | Crear un archivo | «Crea el archivo notas punto txt en documentos» |
 | Crear una carpeta | «Crea la carpeta apuntes» |
-| Crear varias carpetas anidadas | «Crea las carpetas backend barra src barra modelos» |
-| Crear una estructura predefinida | «Crea la estructura proyecto python llamada analizador» |
+| Crear carpetas anidadas | «Crea las carpetas backend barra src barra modelos» |
+| Crear una estructura | «Crea la estructura proyecto python llamada analizador» |
 
-- Sin ubicación, se crea en el directorio de trabajo.
-- Jarvis **nunca sobrescribe**. Si el nombre ya existe, pide otro. Tras 3 nombres repetidos seguidos, cancela.
+Sin ubicación, se crea en la carpeta actual. Jarvis **nunca sobrescribe**: si el nombre existe, pide otro.
+
+### Comandos
+
+Jarvis tiene una carpeta actual propia, que empieza en su carpeta personal en cada sesión.
+
+| Orden | Ejemplo |
+|---|---|
+| Cambiar de carpeta | «Ve a proyectos barra web» · «Ve atrás» |
+| Ver dónde está y qué hay | «Dónde estoy» · «Qué hay aquí» · «Árbol» |
+| Ejecutar un programa | «Ejecuta git status» · «Ejecuta gcc main punto c» |
+| Limpiar o abrir una terminal | «Limpia la consola» · «Abre una terminal» |
+
+Solo se ejecutan los programas permitidos en su configuración, con un máximo de 120 segundos y de uno en uno.
 
 ### Recordatorios
 
 | Orden | Ejemplo |
 |---|---|
-| Crear un recordatorio | «Recuérdame que tengo que llamar al dentista mañana a las nueve» |
-| Ver los recordatorios | «Muestra los recordatorios» |
-| Leer uno | «Lee el recordatorio uno» |
-| Confirmarlo | «Confirmar recordatorios dos» |
+| Crear | «Recuérdame que tengo que llamar al dentista mañana a las nueve» |
+| Ver o leer | «Muestra los recordatorios» · «Lee el recordatorio uno» |
+| Confirmar | «Confirmar recordatorios dos» |
 | Posponer el aviso | «Posponer» · «Posponer media hora» |
 | Posponer la fecha límite | «Pospón la fecha límite del recordatorio uno hasta el viernes a las diez» |
-| Eliminarlo | «Elimina el recordatorio tres» |
+| Eliminar | «Elimina el recordatorio tres» |
 
-Cómo funcionan:
-
-1. Al crear un recordatorio sin fecha, Jarvis pregunta «¿Cuándo quiere que se lo recuerde?».
-2. Después pregunta si quiere añadir otro aviso o una fecha límite. Responda «otro aviso el lunes a las diez», «fecha límite el viernes» o «nada más».
-3. Un recordatorio admite hasta 5 avisos. Todas las fechas deben ser futuras.
-4. Cuando llega un aviso, Jarvis dice «Tiene un recordatorio». Si estaba en reposo, se pone a escuchar.
-5. Leer un recordatorio no lo confirma. Para confirmarlo, el panel de recordatorios debe estar activo: escriba «Confirmar recordatorios» y luego el número.
-6. «Posponer» sin duración lo retrasa 10 minutos.
-7. Si no responde a un último aviso en 5 minutos, el recordatorio se confirma solo.
-
-Los avisos **solo suenan con una sesión abierta**. Los que llegan mientras Jarvis está dormido o apagado suenan al abrir la siguiente sesión.
+- Si no indica la fecha, Jarvis la pregunta. Después ofrece añadir otro aviso (hasta 5) o una fecha límite.
+- **Los avisos solo suenan con una sesión abierta.** Los atrasados suenan al abrir la siguiente.
+- Leer no confirma. Para confirmar, escriba «Confirmar recordatorios» y luego el número.
+- «Posponer» sin duración retrasa el aviso 10 minutos.
+- Si no responde al último aviso en 5 minutos, se confirma solo.
 
 ### Protocolos
 
-Un protocolo ejecuta con una sola orden una lista de tareas de varios módulos. Se definen en `protocols.toml`.
+| Orden | Ejemplo |
+|---|---|
+| Ejecutar | «Protocolo modo trabajo» |
+| Ver los disponibles | «Qué protocolos hay» |
+
+Un protocolo ejecuta varias tareas seguidas. Se definen en su configuración ([PERSONALIZAR.md](PERSONALIZAR.md#7-protocolos-protocolstoml)).
+
+### Sesión e Historial
 
 | Orden | Ejemplo |
 |---|---|
-| Ejecutar un protocolo | «Protocolo modo trabajo» |
-| Ver los protocolos disponibles | «Qué protocolos hay» |
+| Nombrar la sesión | «Llama a la sesión práctica de redes» |
+| Marcar o desmarcar como importante | «Marca la sesión como importante» · «La sesión no es importante» |
+| Ver sesiones anteriores | «Muestra el historial» |
+| Ver lo que hizo en una sesión | «Actividades de la sesión doce» · «Qué he hecho» |
+| Eliminar una sesión | «Elimina la sesión doce» |
 
-Las tareas se ejecutan en orden. Un error no detiene el protocolo, salvo que la tarea lo indique. Un protocolo puede proponer su nombre para la sesión; solo se aplica si usted lo confirma.
+- Cada sesión se llama por defecto como su fecha (`AAAA-MM-DD`).
+- El historial muestra hasta 10 sesiones, primero las importantes.
+- Puede haber 10 sesiones importantes como máximo. Si marca una más, la más antigua deja de serlo y se elimina al cerrar la sesión actual. Jarvis avisa.
+- Para eliminar una sesión, Jarvis pide confirmación. La sesión actual no se puede eliminar.
 
-## 6. Preguntas y respuestas
+## 4. Cuando Jarvis pregunta
 
-Algunas órdenes necesitan un dato o una confirmación. Jarvis pregunta, pasa al estado **esperando** y muestra la pregunta con una barra de tiempo.
+Algunas órdenes necesitan un dato o una confirmación. Jarvis pregunta y muestra una barra con el tiempo que queda.
 
-| Tipo de pregunta | Respuestas válidas |
+| Pregunta | Respuestas válidas |
 |---|---|
-| Sí o no | Sí: «sí», «vale», «de acuerdo», «adelante», «hazlo». No: «no», «mejor no», «no lo hagas». |
-| Nombre nuevo | Cualquier nombre válido: «informe dos punto txt». |
-| Fecha | «mañana a las nueve», «el viernes a las diez». Sin hora, se usan las 9:00. |
-| Más avisos | «otro aviso {fecha}», «fecha límite {fecha}», «nada más», «listo». |
+| Sí o no | «sí», «vale», «adelante», «hazlo» · «no», «mejor no» |
+| Un nombre | «informe dos punto txt» |
+| Una fecha | «mañana a las nueve», «el viernes a las diez» (sin hora: 9:00) |
+| ¿Algo más? | «otro aviso {fecha}», «fecha límite {fecha}», «nada más» |
 
-- No hace falta repetir «Hey Jarvis» para responder.
-- Si la respuesta no es válida, Jarvis repite la pregunta una vez. A la segunda, cancela.
-- Sin respuesta en 20 segundos, la operación se cancela. Jarvis nunca ejecuta nada por defecto.
+- No hace falta repetir «Hey Jarvis».
+- Una respuesta no válida repite la pregunta una vez; la segunda cancela.
+- Sin respuesta en **20 segundos**, se cancela. Jarvis nunca hace nada por defecto.
 
-## 7. La interfaz
+## 5. La interfaz
 
-### Pantalla de sesión
+- **Pantalla de sesión:** a la izquierda, la actividad (cada tarea con su estado); en el centro, el orbe; a la derecha, el panel del módulo en uso; abajo, los subtítulos y la caja de texto.
+- **HUD:** ventana pequeña siempre visible en una esquina, con el estado, la última respuesta y su propia caja de texto. Haga clic en la caja para escribir. Mientras Jarvis habla, muestra un botón para silenciarlo.
+- **Ventanas flotantes:** los paneles se mueven y redimensionan. Un triple clic en la cabecera, o «aparta {ventana}», la lleva al borde como una pestaña; un clic en la pestaña la devuelve. «Restablecer disposición» lo coloca todo como al principio.
+- **Icono de la bandeja:** gris (dormido), cian tenue (reposo), cian (activo), ámbar (esperando). Su menú abre la sesión, la configuración y el registro, y permite salir.
 
-Ventana a pantalla completa con estas zonas:
+## 6. Problemas frecuentes
 
-- **Barra superior:** nombre de la sesión (con estrella si es importante), estado del asistente y hora.
-- **Panel de actividad**, a la izquierda: cada tarea con su estado. El punto late mientras está pendiente; si hay error, se muestra el motivo.
-- **Orbe**, en el centro: reacciona a la voz y al estado del asistente.
-- **Panel activo**, a la derecha: comandos, búsqueda, recordatorios, historial, etc.
-- **Subtítulos**, abajo: su última orden y la respuesta de Jarvis. Se desvanecen a los 6 segundos.
-- **Caja de texto:** la única entrada de órdenes.
-
-### HUD flotante
-
-Ventana compacta, siempre encima, en una esquina de la pantalla. Muestra el estado, la última respuesta y su propia caja de texto. No roba el foco: haga clic en su caja para escribir. El botón de la cabecera la expande para ver el panel activo. Mientras Jarvis habla, aparece el botón de silencio.
-
-### Ventanas flotantes
-
-Los paneles son ventanas que se pueden mover y redimensionar. Para apartar una ventana a un borde:
-
-- haga triple clic en su cabecera,
-- use el botón del selector «Apartar ventanas», o
-- escriba «Aparta {ventana}».
-
-La ventana queda como una pestaña pequeña. Un clic en la pestaña la devuelve a su sitio. «Restablecer disposición», en el selector, devuelve todas las ventanas a su posición inicial.
-
-### Bandeja del sistema
-
-El color del icono indica el estado: gris (dormido), cian tenue (reposo), cian (activo) y ámbar (esperando). Su menú permite abrir la sesión, abrir las carpetas de configuración y de registro, y salir.
-
-## 8. Configuración
-
-Su configuración personal está en `%APPDATA%\Jarvis\config\`, fuera del repositorio. Se abre con «Abrir configuración» en el menú de la bandeja. Los cambios se aplican **al abrir la siguiente sesión**.
-
-Allí se definen sus aplicaciones y páginas web, sus carpetas con nombre, los programas permitidos, las estructuras de carpetas, los protocolos y los ajustes generales.
-
-Cómo hacerlo, con ejemplos e instrucciones para agentes: [PERSONALIZAR.md](PERSONALIZAR.md).
-
-## 9. Problemas frecuentes
-
-| Síntoma | Causa probable | Solución |
-|---|---|---|
-| Jarvis no responde a una orden. | La frase no encaja con ningún patrón, o el asistente está en reposo o dormido. | Mire el estado en la barra superior. Escriba «Hey Jarvis» y luego «ayuda» para ver las frases válidas. |
-| «No encuentro {nombre}». | El nombre no está en el catálogo o se parece poco. | Añada el elemento o un alias en `catalog.toml`. |
-| «Ese comando no está permitido». | El programa no está en la lista permitida. | Añádalo a `commands.toml`. |
-| «La carpeta {nombre} no existe». | La ruta es relativa al directorio de trabajo actual. | Escriba «dónde estoy» o use un lugar con nombre de `places.toml`. |
-| Un recordatorio no ha sonado. | No había ninguna sesión abierta. | Abra una sesión: los avisos pendientes suenan al empezar. |
-| La búsqueda dice «Búsqueda limitada a sus carpetas». | *Everything* no está instalado. | Instale *Everything* y su línea de órdenes `es.exe`. |
-| Jarvis no habla. | Falta la voz o no hay altavoz. | Ejecute `scripts\fetch_models.py` y compruebe el altavoz. Los subtítulos siguen funcionando. |
-| Un cambio de configuración no se aplica. | Los archivos se leen al abrir sesión. | Escriba «Buenas noches Jarvis» y luego «Hey Jarvis». |
-
-El registro de diagnóstico está en `%LOCALAPPDATA%\Jarvis\logs\jarvis.log`. Para ver más detalle, arranque con `.\scripts\start_jarvis.ps1 -Console` o con `--log-level DEBUG`.
+| Síntoma | Solución |
+|---|---|
+| Jarvis no responde. | Mire el estado arriba a la derecha. Si está dormido o en reposo, escriba «Hey Jarvis». Si la frase no es del catálogo, escriba «ayuda». |
+| «No encuentro {nombre}». | Añada la aplicación, la página o un alias en su configuración ([PERSONALIZAR.md](PERSONALIZAR.md)). |
+| «Ese comando no está permitido». | Añada el programa a los permitidos ([PERSONALIZAR.md](PERSONALIZAR.md#5-programas-permitidos-commandstoml)). |
+| «La carpeta {nombre} no existe». | La ruta parte de la carpeta actual. Escriba «dónde estoy» o use un lugar con nombre. |
+| Un recordatorio no sonó. | No había sesión abierta. Abra una: los avisos pendientes suenan al empezar. |
+| «Búsqueda limitada a sus carpetas». | Instale *Everything* para buscar en todo el disco. |
+| Un cambio de configuración no se aplica. | Se aplica al abrir sesión: «Buenas noches Jarvis» y luego «Hey Jarvis». |
+| Jarvis no habla o no arranca. | Vea [Problemas frecuentes de INSTALAR.md](INSTALAR.md#problemas-frecuentes). |
