@@ -202,6 +202,11 @@ class UiApp(QObject):
         self.hud_window.requestActivate()
 
     @Slot()
+    def hudOpenScreen(self) -> None:
+        """Botón del HUD que abre la pantalla de sesión."""
+        self._execute(self.controller.show_screen())
+
+    @Slot()
     def hudDismissed(self) -> None:
         """Botón de ocultar del HUD."""
         self._execute(self.controller.hud_dismissed())

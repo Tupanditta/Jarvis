@@ -110,9 +110,7 @@ class WindowController:
             return actions
         if isinstance(event, events.ShowScreenRequested):
             if event.visible:
-                self._screen_active = True
-                self._hud_dismissed = False
-                return [BringScreenToFront(), *self._sync_hud()]
+                return self.show_screen()
             self._screen_active = False
             return [MinimizeScreen(), *self._sync_hud()]
         if isinstance(event, events.ShowHudRequested):
@@ -126,6 +124,13 @@ class WindowController:
         if active:
             self._hud_dismissed = False  # al volver a salir de la pantalla, el HUD reaparece
         return self._sync_hud()
+
+    def show_screen(self) -> list[Action]:
+        """La pantalla de sesión pasa al frente («muestra la pantalla», «Mostrar pantalla» en
+        la bandeja o el botón del HUD); el HUD se oculta."""
+        self._screen_active = True
+        self._hud_dismissed = False
+        return [BringScreenToFront(), *self._sync_hud()]
 
     def hud_dismissed(self) -> list[Action]:
         """El usuario oculta el HUD con su botón. Vuelve a mostrarse al abrir otra sesión, al

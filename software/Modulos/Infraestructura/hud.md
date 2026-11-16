@@ -60,12 +60,12 @@ Cada panel es un componente QML en `ui/qml/panels/` alimentado por un modelo. El
 
 **Activar un panel** (p. ej. el de recordatorios, RF-44) es convertirlo en el panel activo y expandir el HUD. No implica foco del sistema.
 
-**Interacción con el ratón.** Solo tres controles: «traer al frente» en cada tarjeta de apertura, el botón de silencio mientras el asistente habla, y el botón de expandir o contraer el HUD. Todo lo demás se maneja escribiendo en la caja de texto; no hay botones de órdenes.
+**Interacción con el ratón.** Solo tres controles: «traer al frente» en cada tarjeta de apertura, el botón de silencio mientras el asistente habla, el botón de expandir o contraer el HUD, el de abrir la pantalla de sesión (la trae al frente y oculta el HUD) y el de ocultar el HUD. Todo lo demás se maneja escribiendo en la caja de texto; no hay botones de órdenes.
 
 ## 4. Elementos comunes
 
 - **Estado del asistente:** texto y color según la actividad (dormido, reposo, escuchando, procesando, hablando, esperando).
-- **Subtítulos (RF-89):** última orden escrita (atenuada y con la marca «no reconocido» cuando lo es) y última respuesta del asistente.
+- **Subtítulos (RF-89):** última orden escrita (atenuada y con la marca «no reconocido» cuando lo es) y última respuesta del asistente. Las frases que solo cambian el estado (activación, «Jarvis» en reposo, reposo y cierre) no se muestran, ni tampoco las frases del ciclo de vida con las que responde el asistente: al sonar una, los subtítulos anteriores se retiran.
 - **Sesión:** nombre, y un distintivo si es importante.
 - **Caja de texto:** una línea, con el texto de ayuda que corresponde al estado ([entrada-texto.md](entrada-texto.md)).
 

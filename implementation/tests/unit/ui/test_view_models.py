@@ -75,6 +75,18 @@ def test_subtitulos_ultima_orden_y_ultima_respuesta(qtbot):
     assert model.subtitleSerial > serial  # reinicia el desvanecido de 6 s
 
 
+def test_las_frases_del_ciclo_de_vida_no_salen_en_los_subtitulos_y_retiran_los_anteriores(qtbot):
+    model = AssistantModel()
+    model.apply(events.CommandReceived("ejecuta git status", True))
+    model.apply(events.SpeechStarted("Ejecutando git status.", True))
+    model.apply(events.SpeechStarted("A su disposición, señor.", False))
+    assert (model.commandText, model.responseText) == ("", "")
+    model.apply(events.CommandReceived("abre el bloc de notas", True))
+    model.apply(events.SpeechStarted("Abriendo el bloc de notas.", True))
+    assert model.commandText == "abre el bloc de notas"
+    assert model.responseText == "Abriendo el bloc de notas."
+
+
 def test_nivel_de_la_voz_y_boton_de_silencio(qtbot):
     model = AssistantModel()
     model.apply(events.SpeechStarted("Sesión iniciada. Le escucho.", False))

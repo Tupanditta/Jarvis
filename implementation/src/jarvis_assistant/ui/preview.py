@@ -46,9 +46,11 @@ def _task(task_id: int, status: str, description: str, *, module: str = "comando
                               datetime.now())  # type: ignore[arg-type]
 
 
-def _say(text: str, seconds: float, state: str, *, lifecycle: bool = False) -> list[Step]:
+def _say(
+    text: str, seconds: float, state: str, *, lifecycle: bool = False, after: float = 0.0
+) -> list[Step]:
     return [
-        Step(0.0, events.SpeechStarted(text, interruptible=not lifecycle), speech=seconds),
+        Step(after, events.SpeechStarted(text, interruptible=not lifecycle), speech=seconds),
         Step(0.0, _activity(state, Activity.HABLANDO)),
     ]
 
@@ -157,17 +159,15 @@ def script() -> list[Step]:
         Step(0.0, _task(3, "completado", "buscar informe", module="busqueda")),
         Step(0.0, _activity(listening, Activity.ESCUCHANDO)),
         # Reposo y vuelta a escucha.
-        Step(2.0, events.CommandReceived("gracias jarvis", True)),
-        *_say("A su disposición.", 1.4, "IDLE", lifecycle=True),
+        # Las frases de activación, reposo y cierre no salen como subtítulo.
+        *_say("A su disposición.", 1.4, "IDLE", lifecycle=True, after=2.0),
         Step(0.0, events.RestEntered()),
         *_done_speaking("IDLE", Activity.REPOSO, 1.4),
-        Step(3.5, events.CommandReceived("hey jarvis", True)),
-        *_say("Le escucho.", 1.0, listening, lifecycle=True),
+        *_say("Le escucho.", 1.0, listening, lifecycle=True, after=3.5),
         Step(0.0, events.ListeningResumed()),
         *_done_speaking(listening, Activity.ESCUCHANDO, 1.0),
         # Cierre de sesión (CU-05).
-        Step(2.5, events.CommandReceived("buenas noches jarvis", True)),
-        *_say("Buenas noches. Sesión cerrada.", 1.8, "DORMIDO", lifecycle=True),
+        *_say("Buenas noches. Sesión cerrada.", 1.8, "DORMIDO", lifecycle=True, after=2.5),
         Step(0.0, events.SessionClosed()),
         *_done_speaking("DORMIDO", Activity.DORMIDO, 1.8),
     ]

@@ -250,11 +250,13 @@ async def rig():
 
 async def test_preload_carga_la_voz_y_sintetiza_el_ciclo_de_vida(rig):
     assert rig.synthesizer.loaded
-    assert rig.synthesizer.texts == [render(Phrase(i)) for i in PRELOADED_IDS]
+    # Se sintetizan todas las variantes de cada frase, una sola vez cada texto distinto.
+    expected = list(dict.fromkeys(text for i in PRELOADED_IDS for text in variants(i)))
+    assert rig.synthesizer.texts == expected
     task = asyncio.ensure_future(rig.speaker.say(Phrase("ciclo.apertura"), lifecycle=True))
     await rig.advance(1.0)
     assert not (await task).interrupted
-    assert len(rig.synthesizer.texts) == len(PRELOADED_IDS)  # no se vuelve a sintetizar
+    assert len(rig.synthesizer.texts) == len(expected)  # no se vuelve a sintetizar
 
 
 async def test_frase_del_ciclo_de_vida_avisa_al_empezar(rig):
@@ -315,7 +317,9 @@ async def test_una_frase_del_ciclo_de_vida_no_se_interrumpe(rig):
     assert not (await task).interrupted
 
 
-async def test_cache_limitada_y_volumen():
+async def test_cache_limitada_y_volumen(monkeypatch):
+    # Una sola variante: la rotación no cambia el texto y la prueba no depende del catálogo.
+    monkeypatch.setitem(PHRASES, "entidad.no_encontrado", ["No encuentro {nombre}, señor."])
     rig = Rig(TtsSettings(cache_size=1, volume=0.5))
     for name in ("a", "a", "b", "a"):
         task = asyncio.ensure_future(

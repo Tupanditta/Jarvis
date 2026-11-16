@@ -176,6 +176,18 @@ def test_cerrar_la_pantalla_la_oculta_y_mostrar_pantalla_la_devuelve(make_ui, qt
     assert ui.hud_window.isVisible()
 
 
+def test_el_boton_del_hud_abre_la_pantalla(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-14"))
+    ui._execute(ui.controller.screen_active_changed(False))
+    assert ui.hud_window.isVisible()
+    button = ui.hud_window.findChild(QObject, "hudOpenScreen")
+    assert button is not None and button.property("visible")
+    button.clicked.emit()
+    assert ui.screen.isVisible() and not ui.hud_window.isVisible()
+
+
 def test_al_salir_la_pantalla_acepta_el_cierre(make_ui, qtbot):
     ui, _ = make_ui()
     ui.start()

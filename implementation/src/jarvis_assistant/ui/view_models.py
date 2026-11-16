@@ -103,9 +103,15 @@ class AssistantModel(QObject):
             self._response_text = ""  # la respuesta anterior era de otra orden
             self._touch_subtitles()
         elif isinstance(event, events.SpeechStarted):
-            self._response_text = event.text
             self._speaking, self._interruptible = True, event.interruptible
             self.speakingChanged.emit()
+            if event.interruptible:
+                self._response_text = event.text
+            else:
+                # Frase del ciclo de vida (activación, reposo, cierre): no es conversación y
+                # no se muestra; los subtítulos de la orden anterior se retiran.
+                self._command_text, self._command_recognized = "", True
+                self._response_text = ""
             self._touch_subtitles()
         elif isinstance(event, events.SpeechFinished):
             self._speaking = False

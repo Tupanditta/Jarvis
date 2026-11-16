@@ -337,7 +337,8 @@ class Orchestrator:
         recognized = fsm.Control | fsm.ClosingPhraseInIdle | fsm.WakeWord | fsm.IntentMatched
         if isinstance(entry, recognized):
             logger.info("Frase reconocida: %s", type(entry).__name__)
-            self._bus.publish(events.CommandReceived(text, recognized=True))
+            if not _changes_state(entry):
+                self._bus.publish(events.CommandReceived(text, recognized=True))
         await self._handle(entry)
 
     async def _on_answer(self, text: str) -> None:
@@ -348,7 +349,8 @@ class Orchestrator:
         if entry is None:
             return
         recognized = not isinstance(entry, fsm.Answer) or entry.valid
-        self._bus.publish(events.CommandReceived(text.strip(), recognized=recognized))
+        if not _changes_state(entry):
+            self._bus.publish(events.CommandReceived(text.strip(), recognized=recognized))
         await self._handle(entry)
 
     async def _on_batch(self, orders: Sequence[str]) -> None:
@@ -1003,6 +1005,14 @@ class Orchestrator:
         self._bus.publish(events.AudioLevel(min(1.0, max(0.0, level)), source))
         if source != "none" and not self._stopping:
             self._schedule_level()
+
+
+def _changes_state(entry: fsm.Input) -> bool:
+    """Frase de activación, de reposo o de cierre: cambia el estado y no se muestra como
+    subtítulo; sí se muestra lo que responde el asistente."""
+    if isinstance(entry, fsm.Control):
+        return entry.kind in (fsm.ControlKind.REPOSO, fsm.ControlKind.CERRAR)
+    return isinstance(entry, fsm.WakeWord | fsm.ClosingPhraseInIdle)
 
 
 def _settle(dialogue: fsm.DialogueContext, answer: DialogueAnswer) -> None:

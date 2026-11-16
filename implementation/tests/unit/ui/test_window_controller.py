@@ -154,6 +154,13 @@ def test_ocultar_el_hud_lo_oculta_y_no_vuelve_al_cambiar_de_ventana():
     assert not controller.hud_visible
 
 
+def test_el_boton_del_hud_trae_la_pantalla_y_oculta_el_hud():
+    controller = opened(screen_active=False)
+    assert controller.show_screen() == [BringScreenToFront(), HideHud()]
+    assert not controller.hud_visible
+    assert controller.screen_active_changed(False) == [ShowHud()]
+
+
 def test_el_hud_oculto_vuelve_con_la_bandeja():
     controller = opened(screen_active=False)
     controller.hud_dismissed()

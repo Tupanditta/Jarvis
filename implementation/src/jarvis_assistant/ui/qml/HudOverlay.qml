@@ -196,6 +196,12 @@ Window {
             }
 
             IconButton {
+                objectName: "hudOpenScreen"
+                icon: "pantalla"
+                onClicked: windows.hudOpenScreen()
+            }
+
+            IconButton {
                 icon: "ocultar"
                 onClicked: windows.hudDismissed()
             }

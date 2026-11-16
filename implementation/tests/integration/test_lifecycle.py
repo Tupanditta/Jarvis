@@ -144,7 +144,7 @@ async def test_cu03_flujo_principal(rig):
     assert not session.is_important
     assert rig.player.is_open
     assert rig.spoken() == [APERTURA]
-    assert rig.of(events.CommandReceived) == [events.CommandReceived("Hey Jarvis", True)]
+    assert rig.of(events.CommandReceived) == []  # la frase de activación no se muestra
     assert rig.of(events.SessionOpened) == [events.SessionOpened(session.id, session.name)]
     assert rig.of(events.SessionChanged) == [events.SessionChanged(session.id, session.name, False)]
     assert rig.activities()[-1] is Activity.HABLANDO
@@ -255,6 +255,22 @@ async def test_cu03_a6_apertura_desde_la_bandeja(rig):
     assert len(rig.sessions.find_open()) == 1
 
 
+async def test_las_frases_de_cambio_de_estado_no_se_muestran_como_subtitulo(rig):
+    await rig.wake()
+    await rig.advance(5.0)
+    await rig.write("Gracias Jarvis")
+    await rig.advance(5.0)
+    assert rig.state is S.IDLE
+    await rig.write("Jarvis")
+    await rig.advance(5.0)
+    assert rig.state is S.LISTENING_COMMAND
+    await rig.write("Buenas noches Jarvis")
+    await rig.advance(5.0)
+    assert rig.state is S.DORMIDO
+    assert rig.of(events.CommandReceived) == []
+    assert rig.spoken()  # las respuestas del asistente sí se publican
+
+
 # --- CU-04. Pasar a reposo -------------------------------------------------------------------
 
 
@@ -264,7 +280,7 @@ async def test_cu04_flujo_principal(rig):
     rig.clear()
     await rig.write("Gracias, Jarvis.")
     assert rig.state is S.IDLE
-    assert rig.of(events.CommandReceived) == [events.CommandReceived("Gracias, Jarvis.", True)]
+    assert rig.of(events.CommandReceived) == []  # la frase de reposo no se muestra
     assert rig.spoken() == [REPOSO]
     assert rig.of(events.RestEntered) == [events.RestEntered()]
     await rig.advance(1.0)
