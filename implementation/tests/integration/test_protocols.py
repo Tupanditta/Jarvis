@@ -199,16 +199,36 @@ async def test_a1_nombre_fijado_por_el_usuario_no_pregunta(work):
     assert len(fake.calls) == 2
 
 
-@pytest.mark.parametrize("answer", ["No", "cancelar"])
-async def test_a2_un_no_o_una_cancelacion_no_detienen_el_protocolo(work, answer):
+async def test_a2_un_no_no_detiene_el_protocolo(work):
     rig, fake = work
     name = current(rig).name
     await rig.order("protocolo modo trabajo")
-    await rig.order(answer)
+    await rig.order("No")
     assert current(rig).name == name
     assert len(fake.calls) == 2
     parent = rig.of(events.ProtocolStarted)[0].task_id
     assert final(rig, parent) == ("completado", None)
+
+
+async def test_a2_cancelar_la_pregunta_del_nombre_detiene_el_protocolo(work):
+    """«Cancelar» ante la propuesta de nombre detiene el protocolo antes de su primera tarea:
+    todas quedan en `error` «cancelada» y la sesión no cambia."""
+    rig, fake = work
+    session = current(rig)
+    await rig.order("protocolo modo trabajo")
+    await rig.order("cancelar")
+    await rig.advance(2.0)
+    (started,) = rig.of(events.ProtocolStarted)
+    assert fake.calls == []
+    assert [final(rig, i) for i in started.step_ids] == [("error", "cancelada")] * 3
+    assert final(rig, started.task_id) == ("error", "cancelada")
+    assert rig.of(events.ProtocolFinished)[-1] == events.ProtocolFinished(started.task_id, 0, 3)
+    after = current(rig)
+    assert after.name == session.name
+    assert not after.is_important  # el protocolo es importante, pero no ha llegado a marcarla
+    assert rig.spoken()[-1] == said("general.operacion_cancelada")
+    assert not any("protocolo" in line.casefold() for line in rig.spoken()[2:])
+    assert rig.state is S.LISTENING_COMMAND
 
 
 async def test_a2_sin_respuesta_el_protocolo_continua(work):

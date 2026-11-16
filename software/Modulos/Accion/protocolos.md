@@ -59,7 +59,7 @@ El archivo predeterminado incluye un protocolo de ejemplo, comentado, para que e
 ## Ejecución
 
 1. **Panel:** se publica `ProtocolStarted` con todas las tareas, y cada una se crea como subtarea en `pendiente` (RF-53). El asistente dice «Iniciando el protocolo {nombre}.».
-2. **Nombre de la sesión:** `ctx.invoke("sesion", "proponer_nombre", {nombre})`. Si el usuario no había fijado el nombre, se le pregunta; con un sí, la sesión toma el nombre del protocolo (RN-04, RF-54). Un no, una cancelación o el vencimiento del tiempo no detienen el protocolo.
+2. **Nombre de la sesión:** `ctx.invoke("sesion", "proponer_nombre", {nombre})`. Si el usuario no había fijado el nombre, se le pregunta; con un sí, la sesión toma el nombre del protocolo (RN-04, RF-54). Un no o el vencimiento del tiempo no detienen el protocolo. «Cancelar» sí lo detiene: se dice «Operación cancelada.», no se ejecuta ninguna tarea (tampoco la importancia) y todas quedan en `error` con el motivo «cancelada».
 3. **Importancia:** si el protocolo es importante, `ctx.invoke("sesion", "importante_por_protocolo")` (RN-36, RF-55). Nunca se degrada una sesión importante.
 4. **Tareas:** en orden (RN-34). Para cada una: se resuelven sus parámetros y se ejecuta con `ctx.invoke(module, action, params)`, es decir, con la misma interfaz y el mismo `run_task` que una orden del usuario. Su estado se actualiza en el panel en cuanto cambia (RF-57).
    - Las respuestas de voz de cada tarea **no se dicen**, salvo los errores y las preguntas de diálogo: un protocolo no debe ser una sucesión de frases.
@@ -89,7 +89,7 @@ Con módulos falsos registrados:
 
 - Las tareas se ejecutan en orden y con los parámetros resueltos en su momento.
 - Tarea en `error` sin y con `stop_on_error`.
-- Renombrado: nombre fijado por el usuario (no pregunta), no fijado con sí y con no.
+- Renombrado: nombre fijado por el usuario (no pregunta), no fijado con sí, con no y con «cancelar» (detiene el protocolo).
 - Protocolo importante con la sesión no importante, ya importante, y con desbordamiento.
 - Tarea con diálogo en mitad del protocolo.
 - Cancelación a mitad.

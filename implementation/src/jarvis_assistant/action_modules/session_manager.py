@@ -153,6 +153,8 @@ class SessionManager:
             Phrase("sesion.proponer_nombre", {"nombre": name}), ExpectedType.BOOLEAN,
             metadata={"session_id": session.id, "nombre": name},
         )  # fmt: skip
+        if answer.by_user:  # «cancelar»: el protocolo se detiene («Operación cancelada.» ya dicho)
+            return ActionResult.cancelled(description=f"proponer el nombre {name}")
         if answer.cancelled or answer.value is not True:
             return ActionResult("completado", description=f"proponer el nombre {name}")
         self._sessions.rename(session.id, name, by_user=False)

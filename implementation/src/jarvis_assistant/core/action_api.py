@@ -138,10 +138,12 @@ class DialogueAnswer:
     dos veces. Si no, `value` ya está validado: `bool` para `BOOLEAN`, `str` para
     `NEW_FILENAME`, `datetime` para `DATETIME` (sin comprobar que sea futura),
     `ReminderAction` o `False` para `REMINDER_ACTION`. Una negación es `value=False`, no una
-    cancelación."""
+    cancelación. `by_user`: la cancelación es un «cancelar» del usuario, no el tiempo agotado
+    ni una respuesta no válida."""
 
     cancelled: bool
     value: object | None = None
+    by_user: bool = False
 
 
 @dataclass(frozen=True)

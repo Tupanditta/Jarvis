@@ -107,10 +107,13 @@ def test_cada_pregunta_empieza_sin_intentos():
     assert fsm.handle(Answer(valid=False)) == [RepeatQuestion()]
 
 
-@pytest.mark.parametrize("entry", [DialogueTimeout(), Control(ControlKind.CANCELAR)])
-def test_tiempo_agotado_o_cancelar_cancela_el_dialogo(entry):
+@pytest.mark.parametrize(
+    ("entry", "by_user"),
+    [(DialogueTimeout(), False), (Control(ControlKind.CANCELAR), True)],
+)
+def test_tiempo_agotado_o_cancelar_cancela_el_dialogo(entry, by_user):
     fsm, _dialogue = awaiting(ExpectedType.NEW_FILENAME)
-    assert fsm.handle(entry) == [CancelDialogue(announce=True)]
+    assert fsm.handle(entry) == [CancelDialogue(announce=True, by_user=by_user)]
     assert fsm.state is S.LISTENING_COMMAND
     assert fsm.dialogue is None
 

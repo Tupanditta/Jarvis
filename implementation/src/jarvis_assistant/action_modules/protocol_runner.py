@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 from jarvis_assistant.config import ProtocolDef, ProtocolTask
 from jarvis_assistant.core.action_api import (
+    CANCELLED_REASON,
     ActionContext,
     ActionResult,
     IntentSpec,
@@ -111,11 +112,18 @@ class ProtocolRunner:
         logger.info("Protocolo %s: %d tareas", protocol.id, len(subtasks))
         completed = failed = 0
         try:
-            # Un no, una cancelación o el tiempo agotado no detienen el protocolo (RN-04).
-            await ctx.invoke(
+            # Un no o el tiempo agotado no detienen el protocolo (RN-04); «cancelar», sí: no
+            # se ejecuta ninguna tarea.
+            proposal = await ctx.invoke(
                 "sesion", "proponer_nombre", {"nombre": name},
                 description=f"proponer el nombre {name}",
             )  # fmt: skip
+            if proposal.detail == CANCELLED_REASON:
+                for subtask in subtasks:
+                    subtask.fail(CANCELLED_REASON)
+                logger.info("Protocolo %s cancelado antes de empezar", protocol.id)
+                ctx.publish(ProtocolFinished(ctx.task_id, 0, len(subtasks)))
+                return ActionResult.cancelled(description=f"protocolo {name}")
             if protocol.important:  # RN-36; nunca degrada (RN-06)
                 await ctx.invoke(
                     "sesion", "importante_por_protocolo", {}, quiet=False,

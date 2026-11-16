@@ -255,9 +255,11 @@ class ResolveDialogue(Effect):
 @dataclass(frozen=True)
 class CancelDialogue(Effect):
     """Resolver la pregunta como cancelada y publicar `DialogueClosed(cancelled)`.
-    `announce`: decir «Operación cancelada.»."""
+    `announce`: decir «Operación cancelada.». `by_user`: el usuario ha dicho «cancelar» (no
+    es tiempo agotado ni respuesta no válida)."""
 
     announce: bool
+    by_user: bool = False
 
 
 # --- Máquina ---------------------------------------------------------------------------------
@@ -374,8 +376,10 @@ class StateMachine:
                 dialogue.attempts += 1
                 return [RepeatQuestion()]
             return self._close_dialogue(CancelDialogue(announce=True))
-        if isinstance(entry, DialogueTimeout) or entry == Control(ControlKind.CANCELAR):
+        if isinstance(entry, DialogueTimeout):
             return self._close_dialogue(CancelDialogue(announce=True))
+        if entry == Control(ControlKind.CANCELAR):
+            return self._close_dialogue(CancelDialogue(announce=True, by_user=True))
         if isinstance(entry, WakeWord):
             return [RestartDialogueTimer()]
         if entry == Control(ControlKind.REPOSO):

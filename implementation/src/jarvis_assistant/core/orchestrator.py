@@ -462,9 +462,9 @@ class Orchestrator:
                     self._arm_dialogue_timer()
             case fsm.ResolveDialogue(value=value):
                 self._close_dialogue(DialogueAnswer(cancelled=False, value=value), "answered")
-            case fsm.CancelDialogue(announce=announce):
+            case fsm.CancelDialogue(announce=announce, by_user=by_user):
                 dialogue = self._dialogue
-                self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
+                self._close_dialogue(DialogueAnswer(cancelled=True, by_user=by_user), "cancelled")
                 # «¿Quiere añadir otro aviso…?» cancelada no cancela nada: el recordatorio se
                 # guarda con lo que tiene (recordatorio.md, «Creación con una orden»).
                 # Tampoco un ofrecimiento sin respuesta (`OFFER`): no había nada en marcha.
