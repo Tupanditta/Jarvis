@@ -1,35 +1,21 @@
-# Catálogo de aplicaciones y páginas que se pueden abrir por voz.
-# El asistente solo lee este archivo.
+# Catálogo de aplicaciones y páginas que se pueden abrir con «abre {nombre}».
+# El asistente solo lee este archivo. Guía: PERSONALIZAR.md, en la raíz del repositorio.
 
 # Añadir al catálogo las aplicaciones del menú Inicio.
 discover_installed_apps = true
 
 # Una aplicación: nombre que se escribe, otras formas de escribirlo, y qué se lanza
-# (ejecutable, acceso directo o nombre en el PATH).
+# (ejecutable, acceso directo o nombre en el PATH). Quite los «#» y adáptelo:
 #
 # [[apps]]
 # name = "Visual Studio Code"
-# aliases = ["code", "vs code", "el editor", "vscode]
+# aliases = ["code", "vs code", "el editor"]
 # path = "C:/Users/usuario/AppData/Local/Programs/Microsoft VS Code/Code.exe"
 # args = []
 
-# Una página: se abre en Microsoft Edge.
-[[pages]]
-name = "GitHub"
-aliases = ["git hub", "github", "Github"]
-url = "https://github.com"
-
-[[pages]]
-name = "ChatGPT"
-aliases = ["chat gpt", "chat"]
-url = "https://chatgpt.com/"
-
-[[pages]]
-name = "Gmail"
-aliases = ["correo", "mail"]
-url = "https://mail.google.com/mail/u/0/?hl=es#inbox"
-
-[[pages]]
-name = "MiAulario"
-aliases = ["mi aulario", "aulario"]
-url = "https://sso.unavarra.es/SAML2/SSOService.php"
+# Una página: se abre en Microsoft Edge. Quite los «#» y adáptela:
+#
+# [[pages]]
+# name = "Documentación"
+# aliases = ["docs", "la documentación"]
+# url = "https://example.com/docs"
