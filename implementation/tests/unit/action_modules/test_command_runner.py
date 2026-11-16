@@ -133,7 +133,8 @@ async def test_ls_ordena_carpetas_primero_y_cuenta(rig, module):
     )  # fmt: skip
     assert listed.total == 5
     assert result.speech == Phrase(
-        "comandos.ls", {"carpetas": "2 carpetas", "archivos": "3 archivos"}
+        "comandos.ls",
+        {"carpeta": rig.home.name, "carpetas": "2 carpetas", "archivos": "3 archivos"},
     )
 
 
@@ -141,7 +142,9 @@ async def test_ls_dice_el_singular(rig, module):
     (rig.home / "una").mkdir()
     (rig.home / "uno.txt").write_text("x")
     result = await module.execute("ls", {}, rig.ctx)
-    assert result.speech.params == {"carpetas": "1 carpeta", "archivos": "1 archivo"}
+    assert result.speech.params == {
+        "carpeta": rig.home.name, "carpetas": "1 carpeta", "archivos": "1 archivo"
+    }
 
 
 async def test_ls_muestra_como_maximo_500_entradas(rig, module, monkeypatch):
@@ -220,14 +223,17 @@ async def test_arbol_del_directorio_de_trabajo_o_de_la_ruta_indicada(rig, module
     here = await module.execute("arbol", {}, rig.ctx)
     assert rig.last(events.DirectoryTreeBuilt).root == str(rig.home)
     assert here.speech == Phrase(
-        "comandos.arbol", {"carpetas": "2 carpetas", "archivos": "1 archivo"}
+        "comandos.arbol",
+        {"carpeta": rig.home.name, "carpetas": "2 carpetas", "archivos": "1 archivo"},
     )
     there = await module.execute("arbol", {"ruta": rig.home / "docs"}, rig.ctx)
     built = rig.last(events.DirectoryTreeBuilt)
     assert (built.root, built.dirs, built.files, built.truncated) == (
         str(rig.home / "docs"), 1, 1, False,
     )  # fmt: skip
-    assert there.speech.params == {"carpetas": "1 carpeta", "archivos": "1 archivo"}
+    assert there.speech.params == {
+        "carpeta": "docs", "carpetas": "1 carpeta", "archivos": "1 archivo"
+    }
     assert rig.workdir.path == rig.home
 
 

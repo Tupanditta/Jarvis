@@ -491,7 +491,9 @@ async def test_cu02_arbol_del_directorio_de_trabajo(rig):
     assert [(node.name, node.depth) for node in tree.nodes] == [
         ("Docs", 1), ("Proyectos", 1), ("Jarvis", 2), ("notas.txt", 1),
     ]  # fmt: skip
-    assert rig.spoken() == [said("comandos.arbol", carpetas="3 carpetas", archivos="1 archivo")]
+    assert rig.spoken() == [said(
+        "comandos.arbol", carpeta=rig.home.name, carpetas="3 carpetas", archivos="1 archivo"
+    )]
     assert rig.tasks()[-1] == ("comandos", f"árbol de {rig.home}", "completado")
     assert rig.of(events.PanelActivated) == [events.PanelActivated("comandos")]
 
@@ -679,7 +681,9 @@ async def test_cu08_busca_y_abre_un_resultado(rig):
     (shown,) = rig.of(events.SearchResultsReady)
     assert [(r.index, r.name) for r in shown.results] == [(1, "informe.txt"), (2, "informes")]
     assert (shown.query, shown.kind, shown.total, shown.limited) == ("informe", "ambos", 2, False)
-    assert rig.spoken() == [said("busqueda.varios", n=2, nombre="informe.txt", carpeta="Docs")]
+    assert rig.spoken() == [said(
+        "busqueda.varios", consulta="informe", n=2, nombre="informe.txt", carpeta="Docs"
+    )]
     await rig.order("abre el resultado uno")
     assert rig.platform.calls[-1] == ("open_with_default", (informe,))
     assert rig.spoken()[-1] == said("apertura.abriendo", nombre="informe.txt")
@@ -701,7 +705,7 @@ async def test_cu08_a3_busqueda_limitada(rig):
     (shown,) = rig.of(events.SearchResultsReady)
     assert shown.limited and [r.name for r in shown.results] == ["Jarvis"]
     assert rig.spoken() == [
-        said("busqueda.uno", nombre="Jarvis", carpeta="Proyectos"),
+        said("busqueda.uno", consulta="jarvis", nombre="Jarvis", carpeta="Proyectos"),
         PHRASES["busqueda.limitada"][0], PHRASES["busqueda.instalar"][0],
     ]  # fmt: skip
     assert rig.tasks()[-1] == ("busqueda", "buscar jarvis", "completado")

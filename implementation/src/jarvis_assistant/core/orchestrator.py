@@ -135,7 +135,6 @@ class _UserAction:
     module: str
     action: str
     params: Mapping[str, object]
-    quiet: bool = False
 
 
 @dataclass
@@ -221,7 +220,7 @@ class Orchestrator:
         bus.subscribe(events.UserTyping, self.submit)
         bus.subscribe(
             events.ActionRequested,
-            lambda e: self.submit(_UserAction(e.module, e.action, e.params, e.quiet)),
+            lambda e: self.submit(_UserAction(e.module, e.action, e.params)),
         )
         # El botón de silencio calla la respuesta en curso y las que esperaban su turno.
         bus.subscribe(events.SilenceRequested, lambda _e: self._announcer.clear())
@@ -376,7 +375,6 @@ class Orchestrator:
             entry.module, entry.action, entry.params,
             description=entry.action.replace("_", " "),
             panel=self._panels.get((entry.module, entry.action)),
-            quiet=entry.quiet,
         )  # fmt: skip
         await self._handle(fsm.IntentMatched(intent))
 

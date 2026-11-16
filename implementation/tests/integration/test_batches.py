@@ -270,7 +270,8 @@ async def test_una_accion_pedida_desde_una_ventana_entra_en_la_cola_como_una_ord
     assert rig.app.workdir.path == rig.home / "Docs"
     assert rig.tasks()[-1] == ("comandos", f"cd {rig.home / 'Docs'}", "completado")
     await rig.advance(1.0)
-    assert rig.spoken() == []  # el resultado ya se ve en la ventana: no se dice
+    # Se responde como si la orden se hubiera escrito.
+    assert rig.spoken() == [first("comandos.cd", carpeta="Docs")]
 
 
 async def test_una_accion_de_una_ventana_que_falla_si_se_dice(rig):
@@ -280,11 +281,11 @@ async def test_una_accion_de_una_ventana_que_falla_si_se_dice(rig):
     assert rig.spoken() == [first("ruta.no_existe", nombre="Fotos")]
 
 
-async def test_la_ayuda_pedida_desde_su_ventana_se_muestra_sin_voz(rig):
+async def test_la_ayuda_pedida_desde_su_ventana_se_responde_como_una_orden(rig):
     rig.app.bus.publish(events.ActionRequested("nucleo", "ayuda"))
     await settle()
     assert rig.of(events.HelpShown) and rig.of(events.PanelActivated)[-1].panel == "ayuda"
-    assert rig.spoken() == []
+    assert rig.spoken() == [first("general.ayuda")]
 
 
 async def test_el_catalogo_se_publica_al_abrir_la_sesion_para_el_acceso_rapido(rig):

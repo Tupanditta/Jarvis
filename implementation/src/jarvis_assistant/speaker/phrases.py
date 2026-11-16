@@ -250,9 +250,9 @@ PHRASES: dict[str, list[str]] = {
         "Listo, señor. El directorio actual es {carpeta}.",
     ],
     "comandos.ls": [
-        "He encontrado {carpetas} y {archivos}, señor.",
-        "En esta carpeta hay {carpetas} y {archivos}, señor.",
-        "La carpeta contiene {carpetas} y {archivos}, señor.",
+        "He listado {carpeta}: tiene {carpetas} y {archivos}, señor.",
+        "En {carpeta} hay {carpetas} y {archivos}, señor.",
+        "La carpeta {carpeta} contiene {carpetas} y {archivos}, señor.",
     ],
     "comandos.pwd": [
         "Se encuentra en {ruta}, señor.",
@@ -261,16 +261,19 @@ PHRASES: dict[str, list[str]] = {
         "Su ubicación actual es {ruta}, señor.",
     ],
     "comandos.arbol": [
-        "He recorrido el árbol: contiene {carpetas} y {archivos}, señor.",
-        "El árbol de carpetas reúne {carpetas} y {archivos}, señor.",
-        "Hay {carpetas} y {archivos} en el árbol, señor.",
-        "El recorrido ha encontrado {carpetas} y {archivos}, señor.",
+        "He recorrido el árbol de {carpeta}: contiene {carpetas} y {archivos}, señor.",
+        "El árbol de {carpeta} reúne {carpetas} y {archivos}, señor.",
+        "Hay {carpetas} y {archivos} en el árbol de {carpeta}, señor.",
+        "El recorrido de {carpeta} ha encontrado {carpetas} y {archivos}, señor.",
     ],
     "comandos.arbol_recortado": [
-        "He recorrido el árbol, señor, pero la vista está limitada: hay {carpetas} y {archivos}.",
-        "El árbol contiene {carpetas} y {archivos}, señor. La salida se ha recortado.",
-        "Hay {carpetas} y {archivos}, señor. Le muestro solo el fragmento permitido.",
-        "El árbol es demasiado grande, señor. Aquí tiene una parte con {carpetas} y {archivos}.",
+        "He recorrido el árbol de {carpeta}, señor, pero la vista está limitada:"
+        " hay {carpetas} y {archivos}.",
+        "El árbol de {carpeta} contiene {carpetas} y {archivos}, señor."
+        " La salida se ha recortado.",
+        "En {carpeta} hay {carpetas} y {archivos}, señor. Le muestro solo el fragmento permitido.",
+        "El árbol de {carpeta} es demasiado grande, señor. Aquí tiene una parte con {carpetas}"
+        " y {archivos}.",
     ],
     "comandos.ejecutando": [
         "Ejecutando {comando}, señor.",
@@ -344,14 +347,16 @@ PHRASES: dict[str, list[str]] = {
         "No he localizado ningún resultado para {consulta}, señor.",
     ],
     "busqueda.uno": [
-        "Ya he localizado {nombre} dentro de {carpeta}, señor.",
-        "Encontré {nombre}; está en {carpeta}, señor.",
-        "{nombre} está ubicado en {carpeta}, señor.",
+        "He buscado {consulta} y he localizado {nombre} dentro de {carpeta}, señor.",
+        "Buscando {consulta}, encontré {nombre}; está en {carpeta}, señor.",
+        "La búsqueda de {consulta} ha dado un resultado, señor: {nombre}, en {carpeta}.",
     ],
     "busqueda.varios": [
-        "La búsqueda ha dado {n} resultados, señor. El primero está en {carpeta}: {nombre}.",
-        "He localizado {n} coincidencias, señor. La primera es {nombre}, en {carpeta}.",
-        "Tengo {n} resultados para usted, señor. El primero es {nombre}, en {carpeta}.",
+        "La búsqueda de {consulta} ha dado {n} resultados, señor. El primero está en {carpeta}:"
+        " {nombre}.",
+        "He localizado {n} coincidencias con {consulta}, señor. La primera es {nombre},"
+        " en {carpeta}.",
+        "Tengo {n} resultados para {consulta}, señor. El primero es {nombre}, en {carpeta}.",
     ],
     "busqueda.limitada": [
         "La búsqueda se ha limitado a sus carpetas, señor.",

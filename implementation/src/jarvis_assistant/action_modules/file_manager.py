@@ -231,7 +231,11 @@ class FileSearch:
     def _summary(query: str, shown: Sequence[Found], total: int) -> Phrase:
         if not shown:
             return Phrase("busqueda.ninguno", {"consulta": query})
-        first = {"nombre": shown[0].path.name, "carpeta": folder_name(shown[0].path.parent)}
+        first = {
+            "consulta": query,
+            "nombre": shown[0].path.name,
+            "carpeta": folder_name(shown[0].path.parent),
+        }
         if total == 1:
             return Phrase("busqueda.uno", first)
         return Phrase("busqueda.varios", {"n": total, **first})

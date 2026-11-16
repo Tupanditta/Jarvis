@@ -190,7 +190,7 @@ def test_ayuda_grupos_con_sus_ordenes_y_ejemplos():
 
 
 def requested(published) -> list[tuple[str, str, dict]]:
-    assert all(isinstance(event, events.ActionRequested) and event.quiet for event in published)
+    assert all(isinstance(event, events.ActionRequested) for event in published)
     return [(event.module, event.action, dict(event.params)) for event in published]
 
 

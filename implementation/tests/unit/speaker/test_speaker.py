@@ -346,9 +346,12 @@ async def test_abre_y_cierra_la_salida_a_la_frecuencia_de_la_voz(rig):
 
 async def test_cada_vez_que_se_dice_una_frase_se_usa_la_siguiente_variante(rig, monkeypatch):
     monkeypatch.setitem(PHRASES, "general.error", ["Primera, señor.", "Segunda, señor."])
-    for _ in range(3):
+    for turn in range(1, 4):
         task = asyncio.ensure_future(rig.speaker.say(Phrase("general.error")))
-        await settle()
+        # Las variantes no están presintetizadas: se sintetizan en otro hilo. El reloj solo
+        # avanza cuando la frase ya suena; si no, su temporizador nunca vencería.
+        while len(rig.player.played) < turn:
+            await asyncio.sleep(0.001)
         await rig.advance(1.0)
         await task
     texts = [e.text for e in rig.events if isinstance(e, SpeechStarted)]

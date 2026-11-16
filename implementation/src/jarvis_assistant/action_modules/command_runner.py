@@ -256,6 +256,7 @@ class CommandRunner:
         return ActionResult(
             "completado",
             Phrase("comandos.ls", {
+                "carpeta": folder_name(path),
                 "carpetas": count(dirs, "carpeta", "carpetas"),
                 "archivos": count(len(entries) - dirs, "archivo", "archivos"),
             }),
@@ -280,6 +281,7 @@ class CommandRunner:
         return ActionResult(
             "completado",
             Phrase(phrase, {
+                "carpeta": folder_name(root),
                 "carpetas": count(tree.dirs, "carpeta", "carpetas"),
                 "archivos": count(tree.files, "archivo", "archivos"),
             }),

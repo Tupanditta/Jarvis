@@ -308,13 +308,12 @@ class FocusItemRequested(Event):
 @dataclass(frozen=True)
 class ActionRequested(Event):
     """Un control de una ventana pide una acción de un módulo. Entra en la cola de órdenes
-    como una orden escrita. `params`: las entidades ya con su tipo (una ruta es un `Path`).
-    `quiet`: la respuesta solo se dice si es un error; el resultado ya se ve en la ventana."""
+    como una orden escrita y se responde igual, también con voz. `params`: las entidades ya con
+    su tipo (una ruta es un `Path`)."""
 
     module: str
     action: str
     params: Mapping[str, object] = field(default_factory=dict)
-    quiet: bool = True
 
 
 @dataclass(frozen=True)

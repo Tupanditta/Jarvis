@@ -72,7 +72,9 @@ async def test_un_resultado_dice_su_nombre_y_su_carpeta(rig, module):
     (path,) = make(rig.home, "Facturas/enero.pdf")
     rig.platform.search_outcome = SearchOutcome((path,), 1)
     result = await module.execute("buscar", {"consulta": "enero", "tipo": "archivos"}, rig.ctx)
-    assert result.speech == Phrase("busqueda.uno", {"nombre": "enero.pdf", "carpeta": "Facturas"})
+    assert result.speech == Phrase(
+        "busqueda.uno", {"consulta": "enero", "nombre": "enero.pdf", "carpeta": "Facturas"}
+    )
     (shown,) = results(rig).results
     assert (shown.index, shown.name, shown.is_dir, shown.folder, shown.path) == (
         1, "enero.pdf", False, str(path.parent), str(path),
@@ -95,7 +97,8 @@ async def test_varios_resultados_orden_de_presentacion_y_limite(rig, module):
     assert names[:4] == ["informe", "informe.txt", "informe final.txt", "mi informe.txt"]
     assert shown.results[0].is_dir
     assert result.speech == Phrase(
-        "busqueda.varios", {"n": 40, "nombre": "informe", "carpeta": rig.home.name}
+        "busqueda.varios",
+        {"consulta": "Informe", "n": 40, "nombre": "informe", "carpeta": rig.home.name},
     )
 
 
