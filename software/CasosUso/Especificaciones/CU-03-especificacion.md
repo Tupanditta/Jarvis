@@ -19,12 +19,12 @@ El usuario escribe «Hey Jarvis» en la caja de texto y pulsa Enter.
 2. El sistema recarga la configuración, crea una sesión nueva con el nombre y la importancia por defecto (RN-02) y pone el directorio de trabajo en la carpeta del usuario (RN-14).
 3. La pantalla de sesión pasa al frente con el foco en la caja de texto. A la vez empiezan la animación de despertar (2 s) y la frase «Sesión iniciada. Le escucho.».
 4. Al terminar la frase, el sistema entrega los avisos de recordatorio que quedaron pendientes sin sesión (RF-41; continúa en CU-12).
-5. El sistema pasa a `LISTENING_COMMAND`: atiende cada orden que el usuario escribe, sin repetir «Hey Jarvis». El núcleo del orbe reacciona a la voz del asistente cuando habla. Empieza la cuenta de 30 s sin escribir.
+5. El sistema pasa a `LISTENING_COMMAND`: atiende cada orden que el usuario escribe, sin repetir «Hey Jarvis». El núcleo del orbe reacciona a la voz del asistente cuando habla. Empieza la cuenta de 120 s sin escribir.
 
 ## Flujos alternativos
 
 - **A1. Volver a escuchar desde reposo.** En `IDLE`, «Hey Jarvis» no abre sesión nueva: el sistema dice «Le escucho.» y muestra la animación de despertar, en la pantalla de sesión si es la ventana activa o, si no lo es, en el HUD flotante, sin tocar el foco. Sigue en el paso 5.
-- **A2. «Hey Jarvis» con la escucha activa.** Se ignora en silencio: sin animación ni frase. La cuenta de 30 s vuelve a empezar. Si el asistente estaba diciendo una respuesta, calla (RN-48).
+- **A2. «Hey Jarvis» con la escucha activa.** Se ignora en silencio: sin animación ni frase. La cuenta de 120 s vuelve a empezar. Si el asistente estaba diciendo una respuesta, calla (RN-48).
 - **A3. Otra frase en modo dormido.** «Gracias Jarvis», «Buenas noches Jarvis» o cualquier otro texto no tienen ningún efecto.
 - **A4. Texto enviado durante la frase de apertura.** Las frases del ciclo de vida no se interrumpen: lo enviado mientras suena una se atiende, en orden, al terminar.
 - **A5. «Hey Jarvis» durante la animación de cierre de la sesión anterior.** La sesión nueva se abre al instante; la pantalla no se oculta y la animación de dormirse se funde con la de despertar.

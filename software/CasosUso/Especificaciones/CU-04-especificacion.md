@@ -23,8 +23,8 @@ El usuario escribe «Gracias Jarvis» y pulsa Enter.
 
 ## Flujos alternativos
 
-- **A1. 30 s sin escribir.** Si pasan 30 s sin enviar texto ni teclear mientras escucha y no hay ninguna orden en curso, el sistema pasa a reposo igual que en los pasos 3 a 5.
-- **A2. Frase parecida pero no igual.** «Muchas gracias Jarvis por todo» no alcanza el umbral: se muestra como no reconocida, sin frase del asistente, y reinicia la cuenta de 30 s (RN-51).
+- **A1. 120 s sin escribir.** Si pasan 120 s sin enviar texto ni teclear mientras escucha y no hay ninguna orden en curso, el sistema pasa a reposo igual que en los pasos 3 a 5.
+- **A2. Frase parecida pero no igual.** «Muchas gracias Jarvis por todo» no alcanza el umbral: se muestra como no reconocida, sin frase del asistente, y reinicia la cuenta de 120 s (RN-51).
 - **A3. «Gracias Jarvis» con una orden en curso.** La orden se cancela (su tarea queda en `error`, «cancelada») y se aplica el flujo principal. Un binario lanzado en segundo plano sigue ejecutándose.
 - **A4. «Gracias Jarvis» durante un diálogo.** La operación en pausa se cancela y se aplica el flujo principal.
 - **A5. Aviso de recordatorio en reposo.** El sistema vuelve a escucha, sin frase, para entregarlo (CU-12).

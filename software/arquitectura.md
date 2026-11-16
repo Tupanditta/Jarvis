@@ -218,6 +218,8 @@ implementation/
 │   ├── core/
 │   │   ├── state_machine.py         # AssistantState, entradas, efectos, DialogueContext
 │   │   ├── orchestrator.py          # bucle de turnos, run_task, entrega de avisos
+│   │   ├── dialogue.py              # pregunta abierta, tiempo de espera y respuesta (sección 6)
+│   │   ├── tasks.py                 # registro de tareas: actividades, subtareas, segundo plano
 │   │   ├── event_bus.py
 │   │   ├── events.py
 │   │   ├── action_api.py            # sección 5
@@ -315,7 +317,7 @@ Todas gratuitas (RES-44). Se instalan siempre en el entorno virtual `implementat
 | `rapidfuzz` | ≥ 3.6 | Coincidencia difusa | MIT |
 | `APScheduler` | ≥ 3.10, < 4 | Planificador | MIT |
 | `psutil` | ≥ 5.9 | Núcleos físicos, árbol de procesos, medidas | BSD |
-| Desarrollo: `pytest`, `pytest-asyncio`, `pytest-qt`, `pytest-timeout`, `pytest-cov`, `ruff` | — | Pruebas y estilo | MIT |
+| Desarrollo: `pytest`, `pytest-asyncio`, `pytest-qt`, `pytest-timeout`, `pytest-cov`, `pytest-xdist`, `ruff` | — | Pruebas y estilo; `pytest-xdist` las ejecuta en paralelo (RNF-24) | MIT |
 
 Herramientas externas opcionales, gratuitas: *Everything* con `es.exe` (búsqueda indexada). Las APIs de Windows se llaman con `ctypes`; no se añade `pywin32`.
 

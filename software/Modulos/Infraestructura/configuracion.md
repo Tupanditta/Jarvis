@@ -23,7 +23,7 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 
 | Clave | Predeterminado | Significado |
 |---|---|---|
-| `input.inactivity_to_idle_seconds` | `30` | Segundos sin escribir que pasan a reposo (5–600). |
+| `input.inactivity_to_idle_seconds` | `120` | Segundos sin escribir que pasan a reposo (5–600). |
 | `tts.voice` | `"es_ES-davefx-medium"` | Voz de Piper. |
 | `tts.volume` | `1.0` | Volumen (0–1). |
 | `tts.cache_size` | `64` | Frases en caché. |

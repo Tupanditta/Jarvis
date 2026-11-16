@@ -98,7 +98,7 @@ def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
     ui.start()
     seen = set()
     driver = PreviewDriver(lambda e: (ui.on_event(e), seen.add(ui.assistant.activity)),
-                           speed=40, loop=False)
+                           speed=120, loop=False)
     driver.start()
     # Una parte con el HUD a la vista, como si el usuario hubiera pasado a otra ventana.
     qtbot.wait(150)

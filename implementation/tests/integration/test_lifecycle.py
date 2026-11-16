@@ -12,7 +12,7 @@ import pytest
 from fakes.clock import FakeClock
 from fakes.platform import FakePlatform
 from fakes.voice import FakePlayer, FakeSynthesizer
-from jarvis_assistant.config import Config, Settings
+from jarvis_assistant.config import Config, InputSettings, Settings
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.database import Database
@@ -28,6 +28,10 @@ REPOSO = PHRASES["ciclo.reposo"][0]
 CIERRE = PHRASES["ciclo.cierre"][0]
 
 S = AssistantState
+# Cuenta de inactividad predeterminada (`input.inactivity_to_idle_seconds`).
+INACTIVITY = InputSettings().inactivity_to_idle_seconds
+PART = INACTIVITY * 2 / 3  # menos que la cuenta; dos seguidos, más
+REST = INACTIVITY / 3 + 0.5  # lo que falta, tras `PART`, para que venza
 RECORDED = (
     events.SessionOpened, events.ListeningResumed, events.RestEntered, events.SessionClosed,
     events.AssistantActivityChanged, events.AudioLevel, events.CommandReceived,
@@ -197,21 +201,21 @@ async def test_cu03_a1_hey_jarvis_en_reposo_vuelve_a_escucha_sin_sesion_nueva(ri
     assert rig.of(events.SessionOpened) == []
     assert len(rig.sessions.find_open()) == 1
     await rig.advance(1.0)
-    await rig.advance(30.0)  # la cuenta de inactividad vuelve a empezar al terminar la frase
+    await rig.advance(INACTIVITY)  # la cuenta de inactividad vuelve a empezar al terminar la frase
     assert rig.state is S.IDLE
 
 
 async def test_cu03_a2_hey_jarvis_con_la_escucha_activa_no_habla_y_reinicia_la_cuenta(rig):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     rig.clear()
     await rig.wake()
     assert rig.state is S.LISTENING_COMMAND
     assert rig.spoken() == []
     assert rig.of(events.ListeningResumed) == []
-    await rig.advance(20.0)
-    assert rig.state is S.LISTENING_COMMAND  # 40 s desde la apertura, 20 desde «Hey Jarvis»
-    await rig.advance(10.5)
+    await rig.advance(PART)
+    assert rig.state is S.LISTENING_COMMAND  # vencida desde la apertura, no desde «Hey Jarvis»
+    await rig.advance(REST)
     assert rig.state is S.IDLE
 
 
@@ -297,9 +301,9 @@ async def test_cu04_flujo_principal(rig):
     assert rig.of(events.AudioLevel) == [events.AudioLevel(0.0, "none")]  # y deja de publicarse
 
 
-async def test_cu04_a1_treinta_segundos_sin_escribir(rig):
+async def test_cu04_a1_el_tiempo_de_inactividad_sin_escribir(rig):
     await rig.open_session()
-    await rig.advance(29.5)
+    await rig.advance(INACTIVITY - 0.5)
     assert rig.state is S.LISTENING_COMMAND
     await rig.advance(1.0)
     assert rig.state is S.IDLE
@@ -326,11 +330,11 @@ async def test_cu04_a1_el_plazo_de_inactividad_es_configurable(tmp_path):
 
 async def test_cu04_a1_teclear_reinicia_la_cuenta(rig):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     await rig.keystroke()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     assert rig.state is S.LISTENING_COMMAND
-    await rig.advance(10.5)
+    await rig.advance(REST)
     assert rig.state is S.IDLE
 
 
@@ -349,7 +353,7 @@ async def test_cu04_teclear_en_reposo_o_en_dormido_no_tiene_efecto(rig):
 
 async def test_cu04_a2_frase_parecida_se_muestra_como_no_reconocida_y_reinicia_la_cuenta(rig):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     rig.clear()
     await rig.write("Muchas gracias Jarvis por todo")
     assert rig.state is S.LISTENING_COMMAND
@@ -358,20 +362,20 @@ async def test_cu04_a2_frase_parecida_se_muestra_como_no_reconocida_y_reinicia_l
         events.CommandReceived("Muchas gracias Jarvis por todo", False)
     ]
     assert rig.activities() == []  # sigue escuchando: la actividad no cambia
-    await rig.advance(20.0)
+    await rig.advance(PART)
     assert rig.state is S.LISTENING_COMMAND
-    await rig.advance(10.5)
+    await rig.advance(REST)
     assert rig.state is S.IDLE
 
 
 @pytest.mark.parametrize("text", ["", "   ", "\t"])
 async def test_cu04_un_envio_vacio_no_se_muestra_ni_reinicia_la_cuenta(rig, text):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     rig.clear()
     await rig.write(text)
     assert rig.of(events.CommandReceived) == []
-    await rig.advance(10.5)
+    await rig.advance(REST)
     assert rig.state is S.IDLE
 
 
@@ -397,7 +401,7 @@ async def test_cu04_en_reposo_una_orden_despierta_en_silencio_y_se_ejecuta(rig):
     assert rig.spoken() == []
     assert rig.of(events.ListeningResumed) == [events.ListeningResumed(silent=True)]
     assert rig.of(events.ShowScreenRequested) == [events.ShowScreenRequested(visible=True)]
-    await rig.advance(30.5)
+    await rig.advance(INACTIVITY + 0.5)
     assert rig.state is S.IDLE
 
 
@@ -410,17 +414,17 @@ async def test_cu04_en_reposo_pulsar_una_ventana_despierta_en_silencio(rig):
     assert rig.state is S.LISTENING_COMMAND
     assert rig.spoken() == []
     assert rig.of(events.ListeningResumed) == [events.ListeningResumed(silent=True)]
-    await rig.advance(30.5)
+    await rig.advance(INACTIVITY + 0.5)
     assert rig.state is S.IDLE
 
 
 async def test_cu04_pulsar_una_ventana_en_escucha_reinicia_la_cuenta(rig):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     await rig.press_window()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     assert rig.state is S.LISTENING_COMMAND
-    await rig.advance(10.5)
+    await rig.advance(REST)
     assert rig.state is S.IDLE
 
 
@@ -526,7 +530,7 @@ async def test_un_error_al_atender_una_entrada_no_detiene_el_nucleo(rig, caplog)
     await rig.write("lo que sea")
     assert "Error al atender TextSubmitted" in caplog.text
     assert not rig.task.done()
-    await rig.advance(30.5)  # la cuenta de inactividad sigue en marcha
+    await rig.advance(INACTIVITY + 0.5)  # la cuenta de inactividad sigue en marcha
     assert rig.state is S.IDLE
 
 
@@ -552,7 +556,7 @@ async def test_un_texto_muy_largo_o_con_saltos_de_linea_se_trata_como_no_reconoc
 
 async def test_muestra_y_oculta_la_pantalla_sin_voz_y_reiniciando_la_cuenta(rig):
     await rig.open_session()
-    await rig.advance(20.0)
+    await rig.advance(PART)
     rig.clear()
     await rig.write("oculta la pantalla")
     assert rig.of(events.ShowScreenRequested) == [events.ShowScreenRequested(False)]
@@ -560,7 +564,7 @@ async def test_muestra_y_oculta_la_pantalla_sin_voz_y_reiniciando_la_cuenta(rig)
     await rig.write("muestra la pantalla")
     assert rig.of(events.ShowScreenRequested)[-1] == events.ShowScreenRequested(True)
     assert rig.spoken() == []  # sin voz
-    await rig.advance(20.0)
+    await rig.advance(PART)
     assert rig.state is S.LISTENING_COMMAND  # la orden cuenta como actividad
-    await rig.advance(10.5)
+    await rig.advance(REST)
     assert rig.state is S.IDLE

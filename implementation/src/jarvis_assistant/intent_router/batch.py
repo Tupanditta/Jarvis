@@ -6,8 +6,6 @@ una opción de un programa, no un separador.
 """
 import re
 
-SEPARATOR = "--"
-
 _SEPARATOR = re.compile(r"(?<!\S)--+(?=\s|$)|(?<=[^\s-])--+")
 
 

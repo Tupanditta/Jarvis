@@ -60,11 +60,11 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | T-1.4 | Retirada: entrada por texto (micrófono, palabra de activación por audio, calibración). | — |
 | T-1.5 | Retirada: entrada por texto (transcriptor). | — |
 | T-1.6 | `speaker/`: catálogo con las frases del ciclo de vida y generales, Piper, reproductor, cola, nivel. | Criterios de aceptación del Sintetizador. |
-| T-1.7 | `core/orchestrator.py`: bucle de turnos, recepción de `TextSubmitted` y `UserTyping`, cuenta de inactividad de 30 s, ejecución de efectos, publicación del nivel de la voz a 20 Hz. | CU-03, CU-04 y CU-05 completos con dobles, incluidas todas sus alternativas. |
+| T-1.7 | `core/orchestrator.py`: bucle de turnos, recepción de `TextSubmitted` y `UserTyping`, cuenta de inactividad de 120 s, ejecución de efectos, publicación del nivel de la voz a 20 Hz. | CU-03, CU-04 y CU-05 completos con dobles, incluidas todas sus alternativas. |
 | T-1.8 | Sesión mínima: `open_session`, `close_session`, `recover_interrupted` sobre la base de datos. | Abrir y cerrar deja las filas correctas; recuperación de una sesión huérfana. |
 | T-1.9 | `main.py` (`build_app` y `main`), `process/tray.py`, ventana mínima con la caja de texto ([entrada-texto.md](Modulos/Infraestructura/entrada-texto.md)), `scripts/install_startup.ps1` y `uninstall_startup.ps1`. | Criterios de aceptación de Proceso y de Entrada por texto. |
 
-**Lista manual de la fase:** el ciclo completo escribiendo en el equipo real; lo enviado durante una locución del ciclo de vida se atiende al terminar; 30 s sin escribir pasan a reposo; cierre desde reposo; salir desde la bandeja; red desactivada; la ventana visible en modo dormido y oculta, con el proceso en la bandeja, al cerrarla.
+**Lista manual de la fase:** el ciclo completo escribiendo en el equipo real; lo enviado durante una locución del ciclo de vida se atiende al terminar; 120 s sin escribir pasan a reposo; cierre desde reposo; salir desde la bandeja; red desactivada; la ventana visible en modo dormido y oculta, con el proceso en la bandeja, al cerrarla.
 
 ---
 
@@ -162,13 +162,27 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
-| T-7.1 | `scripts/measure.py` y medida de todos los RNF de rendimiento en el equipo de referencia. Ajuste de `beam_size`, hilos y calidad de la interfaz si hace falta. | RNF-03, RNF-04, RNF-05, RNF-21, RNF-22, RNF-25 cumplidos y anotados. |
+| T-7.1 | `scripts/measure.py` y medida de todos los RNF de rendimiento en el equipo de referencia. Ajuste de la calidad de la interfaz si hace falta. | RNF-03, RNF-04, RNF-05, RNF-21, RNF-22, RNF-25 cumplidos y anotados. |
 | T-7.2 | Uso real durante varios días: ajuste de umbrales, alias y patrones según el registro. Medida de RNF-31. Cada frase no reconocida que debería haberlo sido se añade al juego de pruebas. | RNF-11 sobre el juego ampliado. |
 | T-7.3 | Robustez: altavoz ausente, base de datos dañada, configuración inválida, falta de un modelo. | Cada caso con el comportamiento especificado. |
 | T-7.4 | Revisión visual completa y `ui.reduce_motion`, `ui.quality`. | Lista de Interfaz, sección 11. |
 | T-7.5 | Inicio automático, instrucciones de instalación en `implementation/README.md` y comprobación de privacidad con la red desactivada y con un monitor de conexiones. | RNF-01, RNF-02, RF-75. |
-| T-7.6 | Cobertura y limpieza: código muerto fuera, cobertura ≥ 80 % en el núcleo. | RNF-24. |
+| T-7.6 | Cobertura, tiempo de las pruebas y limpieza: código muerto fuera, cobertura ≥ 80 % en el núcleo, pruebas en ≤ 60 s. | RNF-24. |
 | T-7.7 | Escalabilidad, mantenibilidad e independencia entre módulos, sin cambiar funcionalidades ni conceptos (detalle debajo). | Mapa de dependencias en verde; contratos entre paquetes tipados; el resto de pruebas sin cambios. |
+
+**Lista manual de la fase:** [tests/manual/fase-7.md](../implementation/tests/manual/fase-7.md): medidas con `measure.py`, uso real, robustez en el equipo, revisión visual, instalación en limpio y privacidad con un monitor de conexiones.
+
+### Estado
+
+| Tarea | Hecho en el código | Queda para el equipo de referencia |
+|---|---|---|
+| T-7.1 | `scripts/measure.py`: `proceso --estado dormido\|reposo\|uso` muestrea CPU y RAM con `psutil`; `registro` extrae del registro en `DEBUG` las latencias (marcas «Texto enviado» al pulsar Enter, «Inicio del audio» e «Inicio de la animación») y el arranque («Listo en»). Sale con 1 si algo no cumple. Pruebas en `tests/unit/scripts/test_measure.py`. | Medir y anotar. El registro existente da un arranque de 9,6 s, cerca del límite de RNF-25. |
+| T-7.2 | — | Todo: necesita días de uso real. |
+| T-7.3 | `tests/integration/test_robustness.py`: una sesión completa con cada fallo. `main.report_missing_models` registra qué modelo falta y cómo resolverlo. | Repetir los cuatro casos en el equipo. |
+| T-7.4 | `ui.reduce_motion` y `ui.quality` ya se aplican; la vista previa completa se prueba con las seis combinaciones sin avisos de QML. | La revisión visual. |
+| T-7.5 | `implementation/README.md`: instalación, arranque, inicio automático, carpetas, diagnóstico, privacidad y desinstalación. | Instalación en limpio, red desactivada y monitor de conexiones. |
+| T-7.6 | Cobertura del 95 % (`core/`, `intent_router/` y `action_modules/` ≥ 91 %). Pruebas en paralelo con `pytest-xdist` (`-n auto` por defecto): unos 35 s en lugar de 72 s. Fuera: `NoticeQueue.has_reminder`, `Orchestrator.idle`, `numbers.MAX_VALUE`, `batch.SEPARATOR` y `scripts/bake_shaders.ps1` (compilaba sombreadores de un tema que ya no existe). | — |
+| T-7.7 | Mapa de dependencias, contratos tipados y orquestador dividido (punto 1 de abajo). | — |
 
 ### T-7.7. Escalabilidad, mantenibilidad e independencia
 
@@ -176,10 +190,10 @@ Revisión del código con tres criterios. Ningún cambio altera el comportamient
 
 - **Independencia entre módulos.** Cada paquete solo importa lo que permite el mapa de dependencias de [arquitectura.md](arquitectura.md), sección 8.1. Lo comprueba `tests/unit/test_architecture.py` (`ALLOWED_DEPENDENCIES`): una dependencia nueva entre paquetes se añade al mapa a propósito, o la prueba falla. Un paquete nuevo sin reglas también la hace fallar.
 - **Mantenibilidad.** Los contratos entre paquetes se anotan con sus `Protocol` en lugar de `Any`: `ActionContext.platform` y `Orchestrator(platform=…)` son `PlatformAdapter`; `scheduler`, `Scheduler`; `modules` y `ACTION_MODULES`, `ActionModule`. Las importaciones que solo sirven para anotar van bajo `TYPE_CHECKING`, sin crear dependencias en tiempo de ejecución.
-- **Escalabilidad.** Añadir un módulo sigue siendo añadirlo a `ACTION_MODULES` (RNF-18). Pendiente, por orden de valor, y siempre sin cambio de comportamiento:
-  1. `core/orchestrator.py` (unas 1 200 líneas) concentra el bucle de turnos, el diálogo y el registro de tareas. Extraer el diálogo (`_ask`, su temporizador y su cierre) a `core/dialogue.py` y el registro de tareas (`run_task`, subtareas, segundo plano) a `core/tasks.py`. `run_task` sigue siendo la única función que ejecuta acciones (AD-13).
-  2. La configuración propia de cada módulo (`Catalog`, `StructureDef`, `ProtocolDef`…) vive en `config.py`: un módulo nuevo con configuración obliga a tocarlo. Si llegan más módulos, cada uno declara su sección y `config.py` solo la carga y valida.
-  3. Los módulos de acción usan funciones puras de texto del enrutador y de la voz (`normalize`, `tokenize`, `slots.datetimes`, `count`, `formats`). Están permitidas en el mapa; si la lista crece, se mueven a un paquete neutro de texto del que dependan los tres.
+- **Escalabilidad.** Añadir un módulo sigue siendo añadirlo a `ACTION_MODULES` (RNF-18). Siempre sin cambio de comportamiento:
+  1. **Hecho.** `core/orchestrator.py` pasa de 1 180 a unas 990 líneas: el diálogo (pregunta abierta, temporizador y cierre) vive en `core/dialogue.py` y el registro de tareas (actividades, `TaskUpdated`, subtareas y segundo plano) en `core/tasks.py`. `run_task` sigue en el orquestador y sigue siendo la única función que ejecuta acciones (AD-13).
+  2. **Cuando haga falta.** La configuración propia de cada módulo (`Catalog`, `StructureDef`, `ProtocolDef`…) vive en `config.py`: un módulo nuevo con configuración obliga a tocarlo. Si llegan más módulos, cada uno declara su sección y `config.py` solo la carga y valida.
+  3. **Cuando haga falta.** Los módulos de acción usan funciones puras de texto del enrutador y de la voz (`normalize`, `tokenize`, `slots.datetimes`, `count`, `formats`). Están permitidas en el mapa; si la lista crece, se mueven a un paquete neutro de texto del que dependan los tres.
 
 ---
 

@@ -32,9 +32,6 @@ class NoticeQueue:
     def pop(self) -> Notice | None:
         return self._items.popleft() if self._items else None
 
-    def has_reminder(self) -> bool:
-        return any(notice.reminder for notice in self._items)
-
     def pop_reminder(self) -> Notice | None:
         for notice in self._items:
             if notice.reminder:

@@ -285,9 +285,10 @@ async def test_leeme_los_recordatorios_los_dicta_sin_preguntar(rig):
 
 async def test_rn39_en_reposo_un_aviso_pone_en_escucha(rig):
     await create_in_a_minute(rig)
-    await rig.advance(35.0)
+    await rig.write("gracias jarvis")
+    await rig.advance(5.0)
     assert rig.state is S.IDLE
-    await rig.advance(30.0)
+    await rig.advance(60.0)
     assert rig.state is S.AWAITING_CONFIRMATION  # en escucha, y ya le pregunta
     assert said("recordatorio.aviso_uno") in rig.spoken()
 

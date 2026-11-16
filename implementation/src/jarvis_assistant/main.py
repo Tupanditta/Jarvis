@@ -278,6 +278,18 @@ def _load_config(args: argparse.Namespace, paths: AppPaths) -> Config:
     return config
 
 
+def report_missing_models(paths: AppPaths, voice: str) -> list[Path]:
+    """Modelos que faltan, registrados con un mensaje claro (proceso.md). Vacía si están."""
+    missing = missing_models(paths.models_dir, voice)
+    if missing:
+        names = ", ".join(str(path) for path in missing)
+        logger.error(
+            "Faltan modelos en %s: %s. Ejecute el guion de descarga de modelos de la instalación",
+            paths.models_dir, names,
+        )
+    return missing
+
+
 def _run_preview(args: argparse.Namespace, paths: AppPaths) -> int:
     """Vista previa de la interfaz: sin núcleo, voz, modelos ni instancia única."""
     from PySide6.QtGui import QGuiApplication
@@ -321,13 +333,7 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         log_dir=paths.log_dir,
     )
 
-    missing = missing_models(paths.models_dir, config.settings.tts.voice)
-    if missing:
-        names = ", ".join(str(path) for path in missing)
-        logger.error(
-            "Faltan modelos en %s: %s. Ejecute el guion de descarga de modelos de la instalación",
-            paths.models_dir, names,
-        )
+    if report_missing_models(paths, config.settings.tts.voice):
         tray.show()
         tray.notify("Jarvis no puede arrancar", "Faltan modelos. Ejecute la descarga de modelos.")
         QTimer.singleShot(_MISSING_MODELS_NOTICE_MS, qt_app.quit)

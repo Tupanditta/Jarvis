@@ -8,7 +8,7 @@ from jarvis_assistant import config as cfg
 
 # Tabla de `settings.toml` de configuracion.md.
 SPEC_DEFAULTS = {
-    "input": {"inactivity_to_idle_seconds": 30},
+    "input": {"inactivity_to_idle_seconds": 120},
     "tts": {"voice": "es_ES-davefx-medium", "volume": 1.0, "cache_size": 64},
     "router": {
         "intent_threshold": 80, "wake_threshold": 80, "control_threshold": 80,
@@ -122,7 +122,7 @@ def test_las_secciones_de_la_entrada_por_voz_solo_producen_avisos(tmp_path):
     )
     config, errors = cfg.load(tmp_path)
     assert config.settings.tts.volume == 0.5
-    assert config.settings.input.inactivity_to_idle_seconds == 30.0
+    assert config.settings.input.inactivity_to_idle_seconds == 120.0
     assert all(error.warning for error in errors)
     assert {error.key for error in errors} == {"audio", "stt", "ui.wake_brings_screen_to_front"}
 

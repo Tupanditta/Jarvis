@@ -33,8 +33,6 @@ _ORDINALS = {
 
 _LEADING = ("el", "la", "numero")  # «la segunda», «el número tres»
 
-MAX_VALUE = 999
-
 
 def parse(text: str) -> int | None:
     """El número que dice `text`, o None si no es un número."""

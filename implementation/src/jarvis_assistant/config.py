@@ -35,7 +35,7 @@ CONFIG_FILES = (
 
 @dataclass(frozen=True)
 class InputSettings:
-    inactivity_to_idle_seconds: float = 30.0
+    inactivity_to_idle_seconds: float = 120.0
 
 
 @dataclass(frozen=True)

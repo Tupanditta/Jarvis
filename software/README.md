@@ -38,7 +38,7 @@ El usuario deja de hablar al asistente: escribe sus órdenes en una caja de text
 |---|---|
 | «Hey Jarvis» detectada por audio con `openwakeword`. | «Hey Jarvis» escrita, reconocida por el enrutador; vale «Jarvis» a secas y admite erratas. |
 | Órdenes dichas, capturadas con VAD y transcritas con `faster-whisper`. | Órdenes escritas y enviadas con Enter ([entrada-texto.md](Modulos/Infraestructura/entrada-texto.md)). |
-| 30 s de silencio pasan a reposo. | 30 s sin enviar ni teclear pasan a reposo. |
+| 30 s de silencio pasan a reposo. | 120 s sin enviar ni teclear pasan a reposo. |
 | Nada visible en modo dormido salvo la bandeja. | La ventana con la caja de texto está visible desde el arranque. |
 | El HUD nunca toma el foco. | El HUD no toma el foco por su cuenta; lo recibe con un clic en su caja de texto. |
 | El orbe reacciona al micrófono y a la voz del asistente. | El orbe reacciona solo a la voz del asistente. |

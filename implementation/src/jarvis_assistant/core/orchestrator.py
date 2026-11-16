@@ -14,10 +14,9 @@ van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en
 `run_task` es la única función que ejecuta acciones (AD-13). Un protocolo ejecuta sus tareas
 con `ctx.invoke`, que también pasa por `run_task`, como subtareas de la suya.
 
-Diálogo: un módulo pregunta con `ctx.ask`. La pregunta entra como `DialogueRequested` y la
-FSM pasa a `AWAITING_*`; lo que se escribe entonces es la respuesta, y la corrutina del módulo
-sigue cuando la FSM la resuelve. Como varias órdenes pueden ir a la vez, las preguntas se hacen
-de una en una: la segunda espera a que se resuelva la primera.
+Diálogo: un módulo pregunta con `ctx.ask`; la pregunta abierta y su tiempo de espera viven
+en `dialogue.py`. El registro de tareas (actividades, `TaskUpdated`, subtareas y segundo plano)
+vive en `tasks.py`; `run_task` lo usa.
 """
 import asyncio
 import dataclasses
@@ -47,12 +46,14 @@ from jarvis_assistant.core.action_api import (
 from jarvis_assistant.core.announcer import Announcement, Announcer
 from jarvis_assistant.core.clock import Clock, TimerHandle
 from jarvis_assistant.core.database import Database
+from jarvis_assistant.core.dialogue import DialogueElapsed, Dialogues, settle
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.notices import Notice, NoticeQueue
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
+from jarvis_assistant.core.tasks import TaskRecord, TaskRegistry
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.batch import split_orders
 from jarvis_assistant.intent_router.router import (
@@ -90,14 +91,6 @@ _ACTIVITY_OF_STATE = {
     AssistantState.AWAITING_PARAMETER: Activity.ESPERANDO,
 }
 
-# Respuestas admitidas que la interfaz muestra con cada tipo de pregunta.
-HINTS: Mapping[ExpectedType, tuple[str, ...]] = {
-    ExpectedType.BOOLEAN: ("Sí", "No", "Cancelar"),
-    ExpectedType.NEW_FILENAME: ("Otro nombre", "Cancelar"),
-    ExpectedType.DATETIME: ("Una fecha", "Cancelar"),
-    ExpectedType.REMINDER_ACTION: ("Otro aviso", "Fecha límite", "No"),
-}
-
 _AWAITING = (AssistantState.AWAITING_CONFIRMATION, AssistantState.AWAITING_PARAMETER)
 
 Origin = Literal["voz", "protocolo"]
@@ -111,11 +104,6 @@ class Sessions(Protocol):
 
 @dataclass(frozen=True)
 class _SilenceElapsed:
-    token: int
-
-
-@dataclass(frozen=True)
-class _DialogueElapsed:
     token: int
 
 
@@ -152,17 +140,6 @@ class _UserAction:
     params: Mapping[str, object]
 
 
-@dataclass
-class _Task:
-    """Tarea registrada: lo que hace falta para publicar su estado."""
-
-    id: int
-    parent: int | None
-    module: str
-    description: str
-    reason: str = CANCELLED_REASON  # motivo si se cancela mientras sigue en segundo plano
-
-
 class Orchestrator:
     def __init__(
         self,
@@ -196,7 +173,6 @@ class Orchestrator:
         self._reload_config = reload_config
         self._on_exit = on_exit
         self._scheduler = scheduler
-        self._activities = ActivityRepository(database)
         self._active_panel: str | None = None  # el último `PanelActivated`
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
@@ -217,18 +193,18 @@ class Orchestrator:
         )
         self._executing = 0  # acciones en ejecución: la actividad es «procesando»
         self._notices = NoticeQueue()
-        self._background: dict[asyncio.Task, _Task] = {}
-        self._unrun: dict[int, _Task] = {}  # subtareas creadas que aún no se han ejecutado
+        self._tasks = TaskRegistry(
+            bus=bus, clock=clock, activities=ActivityRepository(database),
+            notify=self._notify, render=render,
+        )  # fmt: skip
         # Motivo de las tareas que se cancelan: «cancelada», o «sesión cerrada» al cerrar.
         self._cancel_reason = CANCELLED_REASON
         self._places: dict[str, Path] = {}
-        # Diálogo: la pregunta abierta, el turno para preguntar y su tiempo de espera, que
-        # empieza a correr (`armed`) cuando termina de decirse la pregunta.
-        self._dialogue: fsm.DialogueContext | None = None
-        self._dialogue_lock = asyncio.Lock()
-        self._dialogue_timer: TimerHandle | None = None
-        self._dialogue_token = 0
-        self._dialogue_armed = False
+        self._dialogues = Dialogues(
+            bus=bus, clock=clock, announcer=self._announcer, submit=self._queue.put_nowait,
+            awaiting=lambda: self._machine.state in _AWAITING, announce=self._announce,
+            render=render,
+        )  # fmt: skip
 
         for module in modules:
             self._register(module)
@@ -296,10 +272,6 @@ class Orchestrator:
                 self._queue.task_done()
                 self._refresh()
 
-    async def idle(self) -> None:
-        """Espera a que no queden entradas por atender."""
-        await self._queue.join()
-
     # --- Registro de módulos -----------------------------------------------------------------
 
     def _register(self, module: ActionModule) -> None:
@@ -338,8 +310,8 @@ class Orchestrator:
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
             await self._on_silence(entry)
-        elif isinstance(entry, _DialogueElapsed):
-            if entry.token == self._dialogue_token and self._machine.state in _AWAITING:
+        elif isinstance(entry, DialogueElapsed):
+            if self._dialogues.elapsed(entry):
                 await self._handle(fsm.DialogueTimeout())
         elif isinstance(entry, _JobDone):
             self._jobs.finish(entry.job)
@@ -462,19 +434,20 @@ class Orchestrator:
             case fsm.DeliverPendingNotices():
                 pass  # los entrega `_pump` cuando termina la frase de apertura
             case fsm.OpenDialogue(dialogue=dialogue):
-                self._open_dialogue(dialogue)
+                self._dialogues.open(dialogue)
             case fsm.RejectDialogue(dialogue=dialogue):
-                _settle(dialogue, DialogueAnswer(cancelled=True))
+                settle(dialogue, DialogueAnswer(cancelled=True))
             case fsm.RepeatQuestion():
-                self._ask_again()
+                self._dialogues.ask_again()
             case fsm.RestartDialogueTimer():
-                if self._dialogue_armed:
-                    self._arm_dialogue_timer()
+                self._dialogues.restart_timer()
             case fsm.ResolveDialogue(value=value):
-                self._close_dialogue(DialogueAnswer(cancelled=False, value=value), "answered")
+                self._dialogues.close(DialogueAnswer(cancelled=False, value=value), "answered")
             case fsm.CancelDialogue(announce=announce, by_user=by_user):
-                dialogue = self._dialogue
-                self._close_dialogue(DialogueAnswer(cancelled=True, by_user=by_user), "cancelled")
+                dialogue = self._dialogues.current
+                self._dialogues.close(
+                    DialogueAnswer(cancelled=True, by_user=by_user), "cancelled"
+                )
                 # «¿Quiere añadir otro aviso…?» cancelada no cancela nada: el recordatorio se
                 # guarda con lo que tiene (recordatorio.md, «Creación con una orden»).
                 # Tampoco un ofrecimiento sin respuesta (`OFFER`): no había nada en marcha.
@@ -545,13 +518,13 @@ class Orchestrator:
 
     async def _close_session(self, reason: str, silent: bool) -> None:
         self._cancel_silence_timer()
-        self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
+        self._dialogues.close(DialogueAnswer(cancelled=True), "cancelled")
         self._cancel_reason = CLOSED_REASON  # RN-46: también el protocolo en curso
         try:
             await self._cancel_orders()
         finally:
             self._cancel_reason = CANCELLED_REASON
-        await self._cancel_background(CLOSED_REASON)
+        await self._tasks.cancel_background(CLOSED_REASON)
         self._speaker.stop()
         await self._session_hook("on_session_closed")
         self._notices.clear()
@@ -680,8 +653,8 @@ class Orchestrator:
         cancelled = await self._cancel_orders()
         if not announce:
             return
-        if self._background:
-            await self._cancel_background(CANCELLED_REASON)
+        if self._tasks.has_background:
+            await self._tasks.cancel_background(CANCELLED_REASON)
             cancelled = True
         if cancelled:
             self._announce(Phrase("general.cancelado"))
@@ -744,85 +717,11 @@ class Orchestrator:
         subject: Mapping[str, object] | None = None,
         speech: list[Phrase] | None = None,
     ) -> DialogueAnswer:
-        """`ctx.ask`: pregunta y espera la respuesta sin bloquear el bucle. Lo que la tarea
-        llevaba dicho se dice antes de la pregunta."""
-        async with self._dialogue_lock:
-            if speech:
-                self._announce(*speech)
-                speech.clear()
-            dialogue = fsm.DialogueContext(
-                question, expected_type, dict(metadata or {}),
-                self._config.settings.dialogue.timeout_seconds,
-                asyncio.get_running_loop().create_future(), subject,
-            )  # fmt: skip
-            self._queue.put_nowait(fsm.DialogueRequested(dialogue))
-            answer = await dialogue.continuation  # type: ignore[misc]
-            logger.info("Diálogo resuelto: %s", "cancelado" if answer.cancelled else "respuesta")
-            return answer
-
-    def _open_dialogue(self, dialogue: fsm.DialogueContext) -> None:
-        """`OpenDialogue`: publica la pregunta y la dice; el tiempo de espera empieza al
-        terminar de decirla."""
-        self._dialogue = dialogue
-        self._cancel_dialogue_timer()
-        try:
-            text = render(dialogue.question)
-        except Exception:
-            logger.exception("Pregunta sin frase: %s", dialogue.question.id)
-            text = ""
-        self._bus.publish(
-            events.DialogueOpened(
-                text, dialogue.expected_type.name, HINTS.get(dialogue.expected_type, ()),
-                dialogue.timeout_seconds, dialogue.subject,
-            )
+        """`ctx.ask`, con el tiempo de espera de la configuración vigente."""
+        return await self._dialogues.ask(
+            question, expected_type, self._config.settings.dialogue.timeout_seconds,
+            metadata=metadata, subject=subject, speech=speech,
         )  # fmt: skip
-        self._speak_question(dialogue.question)
-
-    def _ask_again(self) -> None:
-        """Respuesta no válida, primera vez: «No le he entendido.» (o «No he entendido la
-        fecha.» si se esperaba una) y la pregunta otra vez."""
-        if self._dialogue is not None:
-            reason = (
-                Phrase("entidad.fecha")
-                if self._dialogue.expected_type is ExpectedType.DATETIME
-                else Phrase("general.no_entendido")
-            )
-            self._speak_question(reason, self._dialogue.question)
-
-    def _speak_question(self, *phrases: Phrase) -> None:
-        self._cancel_dialogue_timer()
-        self._announcer.submit(Announcement(phrases, on_delivered=self._question_said))
-
-    def _question_said(self) -> None:
-        if self._dialogue is not None and self._machine.state in _AWAITING:
-            self._arm_dialogue_timer()
-
-    def _arm_dialogue_timer(self) -> None:
-        self._cancel_dialogue_timer()
-        if self._dialogue is None:
-            return
-        self._dialogue_armed = True
-        token = self._dialogue_token
-        self._dialogue_timer = self._clock.call_later(
-            self._dialogue.timeout_seconds,
-            lambda: self._queue.put_nowait(_DialogueElapsed(token)),
-        )
-
-    def _cancel_dialogue_timer(self) -> None:
-        self._dialogue_token += 1
-        self._dialogue_armed = False
-        timer, self._dialogue_timer = self._dialogue_timer, None
-        if timer is not None:
-            timer.cancel()
-
-    def _close_dialogue(self, answer: DialogueAnswer, outcome: events.DialogueOutcome) -> None:
-        """Resuelve la pregunta abierta, si la hay, y publica `DialogueClosed`."""
-        dialogue, self._dialogue = self._dialogue, None
-        self._cancel_dialogue_timer()
-        if dialogue is None:
-            return
-        _settle(dialogue, answer)
-        self._bus.publish(events.DialogueClosed(outcome))
 
     # --- Voz ---------------------------------------------------------------------------------
 
@@ -873,7 +772,7 @@ class Orchestrator:
         description: str | None = None,
         error: Phrase | None = None,
         quiet: bool = False,
-        task: "_Task | None" = None,
+        task: TaskRecord | None = None,
     ) -> ActionResult:
         """Ejecuta una acción como tarea: la registra en `pendiente`, llama al módulo, captura
         cualquier excepción (RNF-23), fija el estado final y deja la respuesta en la cola de
@@ -886,9 +785,11 @@ class Orchestrator:
         if self._session is None:
             raise RuntimeError("No hay sesión abierta")
         if task is None:
-            task = self._new_task(module, description or f"{module} {action}", parent)
+            task = self._tasks.new(
+                self._session.id, module, description or f"{module} {action}", parent
+            )
         else:
-            self._publish_task(task, "pendiente")
+            self._tasks.publish(task, "pendiente")
         panel = self._panels.get((module, action))
         if panel is not None:
             self._bus.publish(events.PanelActivated(panel))
@@ -902,8 +803,8 @@ class Orchestrator:
                 ctx = self._context(origin, task, speech)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
-            self._finish_task(task, "error", self._cancel_reason)
-            self._fail_unrun(task, self._cancel_reason)
+            self._tasks.finish(task, "error", self._cancel_reason)
+            self._tasks.fail_unrun(task, self._cancel_reason)
             raise
         except Exception:
             logger.exception("La acción %s.%s ha fallado", module, action)
@@ -911,13 +812,13 @@ class Orchestrator:
         finally:
             self._executing -= 1
             self._refresh()
-        self._fail_unrun(task, CANCELLED_REASON)  # subtareas que el módulo no ha ejecutado
+        self._tasks.fail_unrun(task, CANCELLED_REASON)  # subtareas que el módulo no ha ejecutado
         if result.description:
             task.description = result.description
         if result.background and result.status == "completado":
-            self._publish_task(task, "pendiente")  # sigue en segundo plano
+            self._tasks.publish(task, "pendiente")  # sigue en segundo plano
         else:
-            self._finish_task(task, result.status, self._detail(result))
+            self._tasks.finish(task, result.status, self._tasks.detail(result))
         if result.speech is not None:
             speech.append(result.speech)
         if quiet and result.status == "completado":
@@ -925,39 +826,9 @@ class Orchestrator:
         self._announce(*speech, on_delivered=result.on_spoken)
         return result
 
-    def _new_task(self, module: str, description: str, parent: int | None) -> _Task:
-        """Registra una tarea en `pendiente` como actividad de la sesión y la publica."""
-        assert self._session is not None
-        task = _Task(
-            self._activities.add(self._session.id, module, description, self._clock.now(), parent),
-            parent, module, description,
-        )  # fmt: skip
-        self._publish_task(task, "pendiente")
-        return task
-
-    def _fail_unrun(self, parent: _Task, reason: str) -> None:
-        """Las subtareas de `parent` que no han llegado a ejecutarse quedan en `error`."""
-        for task_id, task in list(self._unrun.items()):
-            if task.parent == parent.id:
-                del self._unrun[task_id]
-                self._finish_task(task, "error", reason)
-
-    def _subtask(self, parent: _Task | None, module: str, description: str) -> Subtask:
-        """`ctx.subtask`: una tarea hija en `pendiente`, que se ejecuta después con `invoke`."""
-        if parent is None:
-            raise RuntimeError("Solo una tarea puede tener subtareas")
-        task = self._new_task(module, description, parent.id)
-        self._unrun[task.id] = task
-
-        def fail(reason: str) -> None:
-            if self._unrun.pop(task.id, None) is not None:
-                self._finish_task(task, "error", reason)
-
-        return Subtask(task.id, fail)
-
     async def _invoke(
         self,
-        parent: _Task | None,
+        parent: TaskRecord | None,
         speech: list[Phrase] | None,
         module: str,
         action: str,
@@ -976,11 +847,7 @@ class Orchestrator:
         if speech:
             self._announce(*speech)
             speech.clear()
-        task = None
-        if subtask is not None:
-            task = self._unrun.pop(subtask.id, None)
-            if task is None:
-                raise RuntimeError(f"La subtarea {subtask.id} ya no está pendiente")
+        task = None if subtask is None else self._tasks.take_unrun(subtask.id)
         error = None
         if resolve:
             try:
@@ -995,7 +862,7 @@ class Orchestrator:
         )  # fmt: skip
 
     def _context(
-        self, origin: Origin, task: _Task | None, speech: list[Phrase] | None = None
+        self, origin: Origin, task: TaskRecord | None, speech: list[Phrase] | None = None
     ) -> ActionContext:
         """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola."""
 
@@ -1020,7 +887,7 @@ class Orchestrator:
             if task is None:
                 work.close()
                 raise RuntimeError("Solo una tarea puede seguir en segundo plano")
-            self._spawn_background(task, work)
+            self._tasks.spawn_background(task, work)
 
         async def invoke(
             module: str, action: str, params: Mapping[str, object], **options: Any
@@ -1044,72 +911,19 @@ class Orchestrator:
             scheduler=self._scheduler,
             ask=ask,
             active_panel=self._active_panel,
-            subtask=lambda module, description: self._subtask(task, module, description),
+            subtask=self._subtask_of(task),
             invoke=invoke,
         )
 
-    @staticmethod
-    def _detail(result: ActionResult) -> str | None:
-        """Motivo que se muestra bajo una tarea en `error`: el del módulo o, si no, su frase."""
-        if result.status != "error":
-            return None
-        if result.detail is not None:
-            return result.detail
-        if result.speech is None:
-            return None
-        try:
-            return render(result.speech)
-        except Exception:
-            return None
+    def _subtask_of(self, task: TaskRecord | None) -> Callable[[str, str], Subtask]:
+        """`ctx.subtask` de la tarea `task`."""
 
-    def _publish_task(self, task: _Task, status: str, detail: str | None = None) -> None:
-        self._bus.publish(
-            events.TaskUpdated(
-                task.id, task.parent, task.module, task.description,
-                status,  # type: ignore[arg-type]
-                detail, self._clock.now().astimezone(),
-            )
-        )
+        def subtask(module: str, description: str) -> Subtask:
+            if self._session is None:
+                raise RuntimeError("No hay sesión abierta")
+            return self._tasks.subtask(self._session.id, task, module, description)
 
-    def _finish_task(self, task: _Task, status: str, detail: str | None = None) -> None:
-        self._activities.finish(task.id, status, task.description, self._clock.now())
-        self._publish_task(task, status, detail)
-
-    # --- Tareas en segundo plano -------------------------------------------------------------
-
-    def _spawn_background(self, task: _Task, work: Coroutine[Any, Any, ActionResult]) -> None:
-        job = asyncio.ensure_future(work)
-        self._background[job] = task
-        job.add_done_callback(self._background_done)
-
-    def _background_done(self, job: asyncio.Task) -> None:
-        """El trabajo en segundo plano ha terminado: su resultado fija el estado de la tarea
-        y su frase se entrega como aviso cuando el asistente quede libre (RN-39)."""
-        task = self._background.pop(job, None)
-        if task is None:
-            return
-        if job.cancelled():
-            self._finish_task(task, "error", task.reason)
-            return
-        if job.exception() is not None:
-            logger.error("La tarea en segundo plano ha fallado", exc_info=job.exception())
-            result = ActionResult("error", Phrase("general.error"))
-        else:
-            result = job.result()
-        if result.description:
-            task.description = result.description
-        self._finish_task(task, result.status, self._detail(result))
-        if result.speech is not None:
-            self._notify(Notice(result.speech))
-
-    async def _cancel_background(self, reason: str) -> None:
-        jobs = list(self._background)
-        for job in jobs:
-            self._background[job].reason = reason
-            job.cancel()
-        await asyncio.gather(*jobs, return_exceptions=True)
-        for job in jobs:
-            self._background_done(job)
+        return subtask
 
     # --- Cuenta de inactividad ---------------------------------------------------------------
 
@@ -1171,9 +985,3 @@ def _changes_state(entry: fsm.Input) -> bool:
         return entry.kind in (fsm.ControlKind.REPOSO, fsm.ControlKind.CERRAR)
     return isinstance(entry, fsm.WakeWord | fsm.ClosingPhraseInIdle)
 
-
-def _settle(dialogue: fsm.DialogueContext, answer: DialogueAnswer) -> None:
-    """Entrega la respuesta a la corrutina que pregunta, si sigue esperando."""
-    future = dialogue.continuation
-    if future is not None and not future.done():
-        future.set_result(answer)

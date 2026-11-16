@@ -3,6 +3,7 @@
 Viven en el hilo de la interfaz. Reconstruyen su estado solo con los eventos que reciben y
 publican las acciones del usuario; no interpretan el texto ni contienen reglas de negocio.
 """
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
@@ -23,6 +24,8 @@ from PySide6.QtCore import (
 from jarvis_assistant.config import UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.core.events import Activity
+
+logger = logging.getLogger(__name__)
 
 ACTIVITY_LABELS = {
     Activity.DORMIDO: "Dormido",
@@ -143,6 +146,8 @@ class AssistantModel(QObject):
         """Enter en la caja de texto: publica el texto tal cual; un envío vacío no hace nada."""
         self._last_typing = None
         if text.strip():
+            # Para medir la latencia hasta la respuesta (RNF-03). Sin el texto (RES-48).
+            logger.debug("Texto enviado: %.3f", self._monotonic())
             self._publish(events.TextSubmitted(text))
 
     @Slot()

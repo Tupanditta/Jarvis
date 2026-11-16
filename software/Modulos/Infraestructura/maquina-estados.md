@@ -28,7 +28,7 @@ Además del estado, el orquestador publica la **actividad** que ve el usuario: `
 | `IntentMatched(intent)` / `NoMatch(text)` | Enrutador, en `LISTENING_COMMAND`. |
 | `Answer(text)` | Enrutador, en `AWAITING_*`. |
 | `ClosingPhraseInIdle` | Enrutador, en `IDLE`. |
-| `SilenceTimeout` | Temporizador de 30 s ⚙ sin escribir (RF-78). |
+| `SilenceTimeout` | Temporizador de 120 s ⚙ sin escribir (RF-78). |
 | `DialogueRequested(ctx)` | Un módulo llama a `ctx.ask(…)`. |
 | `DialogueTimeout` | Temporizador de 20 s ⚙ (RN-38). |
 | `NoticeReady(notice)` | Cola de avisos. |

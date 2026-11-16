@@ -46,7 +46,7 @@ La frase de activación se reconoce por similitud con la frase completa (`router
 
 ### Cuenta de inactividad (RF-78)
 
-En `LISTENING_COMMAND`, pasados 30 s ⚙ (`input.inactivity_to_idle_seconds`) sin actividad, el asistente pasa a reposo. Cuenta como actividad:
+En `LISTENING_COMMAND`, pasados 120 s ⚙ (`input.inactivity_to_idle_seconds`) sin actividad, el asistente pasa a reposo. Cuenta como actividad:
 
 - enviar un texto, se reconozca o no;
 - teclear en la caja sin enviar: la interfaz publica `UserTyping` como mucho una vez por segundo.
