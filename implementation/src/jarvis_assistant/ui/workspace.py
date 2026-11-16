@@ -53,6 +53,11 @@ class WindowSpec:
     open: bool = False  # abierta en la disposición inicial
     min_width: int = 300  # píxeles
     min_height: int = 220
+    style: str = "round"  # forma del marco y textura del fondo: una de `FRAME_STYLES`
+
+
+# Formas de marco que sabe dibujar `qml/components/outline.js`.
+FRAME_STYLES = ("round", "cut", "leaf", "bracket")
 
 
 # Disposición inicial: columnas a los lados del orbe, que ocupa el centro.
@@ -60,15 +65,15 @@ WINDOWS: tuple[WindowSpec, ...] = (
     WindowSpec("actividad", "Actividad", "tarea", "ActivityPanel.qml",
                0.015, 0.03, 0.21, 0.55, open=True),
     WindowSpec("comandos", "Comandos", "comandos", "CommandsPanel.qml",
-               0.765, 0.03, 0.22, 0.55),
+               0.765, 0.03, 0.22, 0.55, style="cut"),
     WindowSpec("aperturas", "Aperturas", "apertura", "OpenedPanel.qml",
-               0.765, 0.60, 0.22, 0.38),
+               0.765, 0.60, 0.22, 0.38, style="leaf"),
     WindowSpec("busqueda", "Búsqueda", "busqueda", "SearchPanel.qml",
-               0.015, 0.60, 0.21, 0.38),
+               0.015, 0.60, 0.21, 0.38, style="leaf"),
     WindowSpec("historial", "Historial", "historial", "HistoryPanel.qml",
-               0.24, 0.03, 0.17, 0.42),
+               0.24, 0.03, 0.17, 0.42, style="cut"),
     WindowSpec("ayuda", "Ayuda", "ayuda", "HelpPanel.qml",
-               0.59, 0.03, 0.16, 0.42),
+               0.59, 0.03, 0.16, 0.42, style="bracket"),
 )  # fmt: skip
 
 
@@ -145,7 +150,7 @@ class WorkspaceModel(QAbstractListModel):
     changed = Signal()
 
     ROLES = ("windowId", "title", "icon", "component", "open", "fx", "fy", "fw", "fh",
-             "order", "focused", "minWidth", "minHeight")  # fmt: skip
+             "order", "focused", "minWidth", "minHeight", "style")  # fmt: skip
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(
@@ -187,7 +192,7 @@ class WorkspaceModel(QAbstractListModel):
         match name:
             case "windowId":
                 return spec.id
-            case "title" | "icon" | "component":
+            case "title" | "icon" | "component" | "style":
                 return getattr(spec, name)
             case "open":
                 return placement.open

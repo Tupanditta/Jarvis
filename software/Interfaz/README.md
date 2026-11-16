@@ -59,6 +59,7 @@ Tamaños (px lógicos): 11 (etiquetas), 13 (texto secundario), 15 (texto), 18 (s
 - Bordes de 1 px `line.soft`. El panel activo usa `line.strong` y cuatro esquinas marcadas en `primary` (trazos de 12 px), el único guiño «HUD» de los paneles.
 - Sin sombras. La profundidad se consigue con la translucidez de `bg.panel`.
 - Resplandor (`MultiEffect`): solo en el orbe y en el punto de estado de una tarea `pendiente`.
+- Neón: un trazo de luz de grosor uniforme (`neon.width`, 1,5 px) que recorre un borde a `neon.speed` (70 px/s), con un resplandor tenue, la cabeza casi blanca y una cola que se desvanece. Solo en la caja de texto y en el borde de las ventanas flotantes.
 
 ### Movimiento
 
@@ -151,8 +152,10 @@ Referencia de escucha: [referencia-escucha-espectro.jpg](referencia-escucha-espe
 ### Reacción a la voz (RF-83)
 
 - La interfaz recibe un nivel de 0 a 1, 20 veces por segundo, con su origen (asistente o ninguno), y lo suaviza con `motion.level`.
-- **Núcleo:** su escala es `1 + 0,12 × nivel` y su resplandor crece con el nivel.
-- **Espectro:** la longitud de cada barra es `nivel × perfil[i]`, donde `perfil` es un patrón fijo de 64 valores, simétrico y suave, que se desplaza lentamente alrededor del anillo. El resultado se percibe como un ecualizador sincronizado con el volumen, sin necesidad de analizar frecuencias.
+- **Núcleo y halo:** la escala del núcleo es `1 + 0,2 × nivel` y su resplandor crece con el nivel; el halo se hincha hasta un 12 %.
+- **Ondas de la voz:** mientras suena una frase, dos anillos seguidos salen del núcleo (1,3 por segundo) y cruzan la pantalla; su grosor y su brillo siguen al nivel. Se suman a la onda del latido (`wave`), así que los elementos del fondo y el borde de las ventanas se encienden a su paso.
+- **Neón:** los trazos de la caja de texto y de las ventanas brillan más con el nivel y corren hasta 2,6 veces más rápido mientras dura la frase (la velocidad sigue a la frase, no a cada sílaba, para que no avancen a tirones).
+- **Espectro:** las barras se alargan con el nivel (hasta 0,12 D); la longitud de cada barra es `nivel × perfil[i]`, donde `perfil` es un patrón fijo de 64 valores, simétrico y suave, que se desplaza lentamente alrededor del anillo. El resultado se percibe como un ecualizador sincronizado con el volumen, sin necesidad de analizar frecuencias.
 - Con nivel 0 (el asistente no habla), el espectro no se ve.
 
 ## 4. Animaciones de transición
@@ -242,9 +245,22 @@ Pantalla completa, fondo `bg.base`. Referencia a 1920 × 1080; los márgenes y c
 | Centro | El orbe, centrado en la pantalla. |
 | Columna derecha (420 px) | Panel activo. Vacía hasta que un módulo activa un panel. El panel de diálogo se superpone a ella mientras hay una pregunta. |
 | Franja inferior | Subtítulos, centrados, ancho máximo 900 px: la última orden entre comillas en `text.secondary` (en `text.muted` y con la marca «no reconocido» si lo es) y, debajo, la última respuesta en `text.primary`, tamaño 18. Se desvanecen a los 6 s. |
-| Caja de texto | Bajo los subtítulos, centrada, ancho máximo 900 px: una línea, fondo `bg.panel`, borde `line.soft` (`line.strong` con el foco), radio 6, texto en `text.primary` y texto de ayuda en `text.muted`. Es la única entrada de órdenes ([entrada-texto.md](../Modulos/Infraestructura/entrada-texto.md)). Tiene el foco siempre que la pantalla es la ventana activa. No se atenúa en reposo. |
+| Caja de texto | Bajo los subtítulos, centrada, ancho máximo 450 px y 40 px de alto: una cápsula de una línea, fondo `bg.panel`, borde `line.soft` (`line.strong` con el foco), marca de entrada «›» en `primary`, texto en `text.primary` y texto de ayuda en `text.muted`. Dos trazos de neón recorren su borde: lentos y tenues en dormido y en reposo, vivos con la sesión despierta, más brillantes con el foco. Es la única entrada de órdenes ([entrada-texto.md](../Modulos/Infraestructura/entrada-texto.md)). Tiene el foco siempre que la pantalla es la ventana activa. No se atenúa en reposo. |
 
 En reposo, los paneles y los subtítulos bajan su opacidad al 50 %.
+
+### Marcos de las ventanas flotantes
+
+Cada ventana declara su forma de marco en el registro (`ui/workspace.py`, campo `style`). La forma fija también la textura del fondo. Dos ventanas pueden compartir forma.
+
+| Forma | Marco | Fondo | Ventanas |
+|---|---|---|---|
+| `round` | Cuatro esquinas redondeadas (radio 12). | Resplandor suave que cae desde la cabecera. | Actividad |
+| `cut` | Chaflán de 16 px arriba a la izquierda y abajo a la derecha (hace de asa de tamaño). | Líneas de barrido, como una terminal. | Comandos, Historial |
+| `leaf` | Esquinas alternas: radio 16 y radio 3. | Retícula de puntos. Dos trazos de neón cortos. | Aperturas, Búsqueda |
+| `bracket` | Recto, con cuatro esquinas marcadas por fuera que se abren con el latido. | Trama diagonal en la esquina inferior izquierda. | Ayuda |
+
+Un trazo de neón recorre el borde de cada ventana: más rápido y brillante en la que está encima, encendido al paso del latido y de las ondas de la voz, apagado en reposo. La esquina superior derecha nunca va en chaflán: ahí está el botón de cerrar. Sin aceleración gráfica el marco es un rectángulo liso y el neón no avanza.
 
 ### Fondo vivo
 
@@ -298,6 +314,7 @@ Todos en `ui/qml/components/`, usados por igual en las dos superficies.
 | `DialogCard` | Pregunta en tamaño 18, elemento sobre el que se pregunta, respuestas admitidas como distintivos («Sí», «No», «Cancelar») y una barra fina que se vacía con el tiempo de espera. Borde `status.pending`. |
 | `NumberedRow` | Fila con un número grande en `primary` (`font.mono`), para recordatorios y resultados: el número es lo que el usuario escribe en la orden. |
 | `IconButton` | Botón de icono de 28 px con realce al pasar el cursor. Solo para «traer al frente», silencio y expandir. |
+| `NeonTrace` | Trazo de neón que recorre un contorno (`outline.js`): sigue la voz, toma `status.pending` en «esperando» y se detiene con `ui.reduce_motion`. |
 | `Badge` | Distintivo pequeño: «actual», «importante», «vencido», «limitada», «no reconocido». |
 | `EmptyState` | Texto atenuado centrado cuando un panel no tiene contenido («Sin recordatorios»). |
 
@@ -322,6 +339,7 @@ Un círculo con un anillo, en cuatro variantes: dormido (gris), reposo (cian ten
 
 - ⚙ `ui.quality`: `high` (todo), `medium` (la mitad de partículas, nodos, glifos, mini orbes y polvo; sin retícula ni estelas), `low` (sin fondo, red, glifos, partículas ni resplandor; núcleo liso; anillos sin texto).
 - Las animaciones son declarativas de Qt Quick; no se ejecuta código Python por frame.
+- Los conjuntos de muchos elementos (constelación, polvo, partículas, espectro) no tienen enlaces de propiedades que dependan del reloj: una función `refresh` los coloca a todos de una pasada por fotograma. Lo que se mueve en cada fotograma solo cambia de posición, giro, escala u opacidad; las formas (`Shape`) que sí cambian de contorno en cada fotograma no usan `CurveRenderer`.
 - Una ventana oculta o tapada no se dibuja. En reposo solo se anima lo que está a la vista.
 - Objetivo: 60 fps en el equipo de referencia y nunca menos de 30 (RNF-21).
 
@@ -334,6 +352,9 @@ Se revisa con `--preview` y en uso real al cerrar las fases 2 y 7.
 - [ ] Despertar: la masa se concentra en el centro, estalla, los anillos salen despedidos en sentidos opuestos y todo se estabiliza. Dura 2 s.
 - [ ] Dormirse: en el cierre, horizonte negro, caída en espiral cada vez más rápida, viraje a marino y chispa final; en reposo, contracción contenida y orbe tenue y lento.
 - [ ] Interrumpir una animación con la contraria no produce ningún salto.
+- [ ] Al hablar el asistente se nota en toda la pantalla: ondas que salen del núcleo y neón más rápido en la caja de texto y en las ventanas.
+- [ ] El neón tiene el mismo grosor en todo su recorrido, también en las esquinas y los chaflanes, y no distrae de leer los paneles.
+- [ ] Las ventanas no son todas iguales: se distinguen cuatro formas de marco, y ninguna parece forzada.
 - [ ] Al hablar el asistente, el núcleo y el espectro siguen su voz; en escucha el plasma ondula despacio; en reposo, quieto.
 - [ ] Reposo y despierto se distinguen de un vistazo: en reposo solo quedan el núcleo y los anillos, tenues.
 - [ ] Los elementos del centro y del fondo se mueven a la vez: la onda del latido los ilumina a su paso.

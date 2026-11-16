@@ -146,6 +146,9 @@ Window {
         height: Math.max(0, input.y - Theme.space8 - y)
         opacity: screen.panels
         visible: opacity > 0
+        conductor: orb
+        centerX: orb.x + orb.width / 2 - x
+        centerY: orb.y + orb.height / 2 - y
     }
 
     Dock {
@@ -171,7 +174,7 @@ Window {
     CommandInput {
         id: input
 
-        width: Math.min(900, screen.width - 2 * screen.margin)
+        width: Math.min(450, screen.width - 2 * screen.margin)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: screen.margin

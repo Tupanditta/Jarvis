@@ -70,7 +70,10 @@ Item {
         anchors.centerIn: parent
         width: core.diameter * 1.5
         height: width
-        preferredRendererType: Shape.CurveRenderer
+        // El contorno cambia en cada fotograma: se dibuja con el trazador sencillo, que es
+        // mucho más barato de recalcular, y el suavizado lo pone la capa.
+        layer.enabled: true
+        layer.samples: 4
 
         // Capa exterior: membrana.
         ShapePath {

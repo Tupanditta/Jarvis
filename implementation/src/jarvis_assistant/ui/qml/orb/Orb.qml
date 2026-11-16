@@ -60,6 +60,8 @@ Item {
     property real flow: 0                // segundos ponderados por `energy`
     property real mind: 0                // segundos ponderados por `chaos`
     property real beatPhase: 0           // 0–1: avance de la onda del latido
+    property real voicePhase: 0          // 0–1: avance de las ondas de la voz
+    readonly property real voiceRate: 1.3    // ondas de voz por segundo
     readonly property real reach: 2.5    // alcance de la onda, en unidades de D: toda la pantalla
     readonly property real pulse: reduceMotion ? 0 : Math.min(1, beatRate / 0.4)
     readonly property real live: particles
@@ -79,10 +81,15 @@ Item {
     }
 
     // Brillo que el latido añade a un elemento situado a `r` (en unidades de D) del centro:
-    // una onda que nace en el núcleo y se atenúa al alejarse.
+    // una onda que nace en el núcleo y se atenúa al alejarse. Mientras el asistente habla se
+    // suman las ondas de la voz, más anchas y seguidas: toda la pantalla vibra con la frase.
     function wave(r) {
         var x = (r - beatPhase * reach) / 0.16
-        return pulse * (1 - 0.6 * beatPhase) * Math.exp(-x * x)
+        var glow = pulse * (1 - 0.6 * beatPhase) * Math.exp(-x * x)
+        if (reduceMotion || smoothLevel <= 0.01)
+            return glow
+        var v = (r - voicePhase * reach) / 0.3
+        return Math.min(1, glow + smoothLevel * (1 - 0.5 * voicePhase) * Math.exp(-v * v))
     }
 
     function aspect(name) {
@@ -171,6 +178,8 @@ Item {
             // En reposo el pensamiento casi se detiene: el núcleo queda quieto.
             orb.mind += (0.25 + 1.75 * orb.chaos) * Math.min(1, orb.energy * 4) * frameTime
             orb.beatPhase = (orb.beatPhase + orb.beatRate * frameTime) % 1
+            if (orb.smoothLevel > 0.01)
+                orb.voicePhase = (orb.voicePhase + orb.voiceRate * frameTime) % 1
         }
     }
 
@@ -469,9 +478,10 @@ Item {
             height: width
             visible: orb.quality !== "low"
             opacity: Math.min(1, 0.35 + 0.6 * orb.energy + orb.breathWave + 0.5 * orb.flash
-                                 + 0.3 * orb.smoothLevel)
-            // Al concentrarse la masa, la luz se recoge hacia el núcleo.
+                                 + 0.6 * orb.smoothLevel)
+            // Al concentrarse la masa, la luz se recoge hacia el núcleo. La voz lo hincha.
             scale: orb.structure * (1 + 0.3 * orb.energy) * (1 - 0.3 * orb.mass)
+                   * (1 + 0.12 * orb.smoothLevel)
 
             ShapePath {
                 strokeWidth: -1
@@ -507,6 +517,27 @@ Item {
             border.color: orb.accent
             opacity: orb.pulse * 0.45 * Math.pow(1 - orb.beatPhase, 2)
             visible: opacity > 0.005
+        }
+
+        // Ondas de la voz: dos anillos seguidos salen del núcleo mientras suena una frase y
+        // cruzan la pantalla. Su grosor y su brillo siguen al nivel de la voz.
+        Repeater {
+            model: orb.reduceMotion ? 0 : 2
+
+            Rectangle {
+                required property int index
+                readonly property real travel: (orb.voicePhase + index * 0.5) % 1
+
+                anchors.centerIn: parent
+                width: orb.d * (0.3 + 2 * orb.reach * travel)
+                height: width
+                radius: width / 2
+                color: "transparent"
+                border.width: 1 + 2 * orb.smoothLevel
+                border.color: Theme.mix(orb.main, Theme.primaryBright, 0.5)
+                opacity: orb.smoothLevel * 0.7 * Math.pow(1 - travel, 2)
+                visible: opacity > 0.005
+            }
         }
 
         Accretion {
@@ -600,7 +631,7 @@ Item {
             diameter: orb.d * 0.48
             level: orb.smoothLevel
             shift: orb.clock * 3
-            maxLength: orb.d * 0.07
+            maxLength: orb.d * (0.07 + 0.05 * orb.smoothLevel)
             color: orb.main
             // Sigue a la voz aunque el aspecto no muestre espectro (frases de dormirse).
             opacity: Math.max(orb.spectrum, orb.smoothLevel > 0.01 ? 1 : 0) * (1 - orb.arc)
@@ -657,7 +688,7 @@ Item {
             level: orb.smoothLevel
             fluid: orb.quality !== "low" && !orb.reduceMotion
             // Crece con la masa antes del estallido y con la estructura después.
-            scale: (1 + 0.12 * orb.smoothLevel) * orb.coreBounce
+            scale: (1 + 0.2 * orb.smoothLevel) * orb.coreBounce
                    * (orb.reduceMotion ? 1 : Math.max(0.12 + 0.88 * orb.ringScale(0),
                                                       0.12 + 0.55 * orb.mass))
         }

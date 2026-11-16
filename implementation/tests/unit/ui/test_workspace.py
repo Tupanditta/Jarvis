@@ -186,3 +186,12 @@ def test_sin_archivo_no_se_guarda_nada(model):
     model.move("actividad", 0.5, 0.5)
     model.save()
     assert not model._save_timer.isActive()
+
+
+def test_cada_ventana_tiene_una_forma_de_marco_conocida_y_el_modelo_la_expone():
+    from jarvis_assistant.ui.workspace import FRAME_STYLES
+
+    assert {spec.style for spec in WINDOWS} <= set(FRAME_STYLES)
+    assert len({spec.style for spec in WINDOWS}) > 1  # no son todas iguales
+    full = WorkspaceModel(WINDOWS)
+    assert rows(full, "style") == [spec.style for spec in WINDOWS]

@@ -55,6 +55,9 @@ QtObject {
     readonly property int windowGrip: 6
     readonly property int cornerMark: 12
     readonly property real iconStroke: 1.5
+    readonly property int inputHeight: 40
+    readonly property real neonWidth: 1.5    // grosor del neón que recorre los bordes
+    readonly property real neonSpeed: 70     // su velocidad, en píxeles por segundo
 
     // Movimiento (ms)
     readonly property int motionTransition: 2000

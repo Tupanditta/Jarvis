@@ -2,10 +2,18 @@
 // de un módulo como contenido. Se mueve arrastrando la cabecera, cambia de tamaño desde
 // cualquier borde o esquina, pasa al frente al pulsarla y se cierra con su botón.
 //
+// `frameStyle` elige la forma del marco y la textura del fondo (`outline.js`): «round»,
+// «cut» (chaflanes y líneas de barrido), «leaf» (esquinas alternas y retícula de puntos) o
+// «bracket» (recto, con las esquinas marcadas por fuera). Un trazo de neón recorre el borde;
+// corre más en la ventana que está encima, se enciende al paso del latido del orbe (`beat`)
+// y se apaga en reposo.
+//
 // No guarda su disposición: la recibe en fracciones del área de trabajo (`fx`, `fy`, `fw`,
 // `fh`) y pide los cambios con sus señales. El dueño es `workspace` (`ui/workspace.py`).
 import QtQuick
+import QtQuick.Shapes
 import ".."
+import "outline.js" as Outline
 
 Item {
     id: win
@@ -24,7 +32,20 @@ Item {
     property int minHeight: 220
     property real areaWidth: 0           // área de trabajo, en píxeles
     property real areaHeight: 0
+    property string frameStyle: "round"
+    property real beat: 0                // brillo del latido del orbe a la altura de la ventana
     default property alias content: body.data
+
+    readonly property var outline: Outline.corners(frameStyle)
+    readonly property string outlinePath: Outline.path(width, height, outline, 0.5)
+    // En reposo no queda movimiento llamativo: el neón se apaga.
+    readonly property real live: assistant.activity === "reposo" ? 0 : 1
+    readonly property bool accelerated: GraphicsInfo.api !== GraphicsInfo.Software
+    property real headerTone: focused ? 1 : 0.45
+
+    Behavior on headerTone {
+        NumberAnimation { duration: Theme.motionWindow }
+    }
 
     objectName: "window-" + windowId
 
@@ -93,17 +114,163 @@ Item {
 
     // --- Marco -------------------------------------------------------------------------------
 
+    // Sin aceleración gráfica las formas no se rellenan: el marco es un rectángulo liso.
     Rectangle {
-        id: frame
-
         anchors.fill: parent
-        radius: Theme.radiusWindow
+        visible: !win.accelerated
+        radius: Theme.radiusCard
         color: Theme.bgWindow
         border.width: 1
         border.color: win.focused ? Theme.lineStrong : Theme.lineSoft
+    }
 
-        Behavior on border.color {
-            ColorAnimation { duration: Theme.motionWindow }
+    // Fondo y borde con la forma del marco y, encima, el degradado de la cabecera. Solo se
+    // recalculan al cambiar el tamaño o el foco, nunca en cada fotograma.
+    Shape {
+        id: frame
+
+        anchors.fill: parent
+        visible: win.accelerated
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+            strokeWidth: 1
+            strokeColor: win.focused ? Theme.lineStrong : Theme.lineSoft
+            fillColor: Theme.bgWindow
+            PathSvg { path: win.outlinePath }
+        }
+
+        ShapePath {
+            strokeWidth: -1
+            fillGradient: LinearGradient {
+                x1: 0
+                y1: 0
+                x2: 0
+                y2: Theme.windowHeader + 1
+                GradientStop {
+                    position: 0
+                    color: Theme.alpha(Theme.primaryDeep, 0.85 * win.headerTone)
+                }
+                GradientStop {
+                    position: 0.999
+                    color: Theme.alpha(Theme.primaryDeep, 0.20 * win.headerTone)
+                }
+                GradientStop { position: 1; color: Theme.alpha(Theme.primaryDeep, 0) }
+            }
+            PathSvg { path: win.outlinePath }
+        }
+    }
+
+    // Textura del fondo, propia de cada forma de marco. Se pinta una vez; al cambiar el
+    // tamaño de la ventana espera a que el arrastre se detenga para repintarse.
+    Canvas {
+        id: texture
+
+        readonly property string kind: win.frameStyle
+
+        anchors.fill: parent
+        visible: win.accelerated && ui.quality !== "low"
+        opacity: win.focused ? 1 : 0.6
+
+        onKindChanged: repaint.restart()
+        onWidthChanged: repaint.restart()
+        onHeightChanged: repaint.restart()
+
+        Timer {
+            id: repaint
+            interval: 120
+            onTriggered: texture.requestPaint()
+        }
+
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.reset()
+            if (width <= 0 || height <= 0)
+                return
+            Outline.trace(ctx, width, height, win.outline, 1)
+            ctx.clip()
+            var top = Theme.windowHeader + 2
+            if (kind === "cut") {
+                // Líneas de barrido, como una terminal.
+                ctx.fillStyle = Theme.alpha(Theme.primary, 0.035)
+                for (var y = top; y < height; y += 4)
+                    ctx.fillRect(0, y, width, 1)
+            } else if (kind === "leaf") {
+                // Retícula de puntos.
+                ctx.fillStyle = Theme.alpha(Theme.primary, 0.13)
+                for (var py = top + 8; py < height; py += 18)
+                    for (var px = 10; px < width; px += 18)
+                        ctx.fillRect(px, py, 1, 1)
+            } else if (kind === "bracket") {
+                // Trama diagonal en la esquina inferior izquierda.
+                ctx.strokeStyle = Theme.alpha(Theme.primary, 0.07)
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                for (var d = 8; d <= 96; d += 8) {
+                    ctx.moveTo(0, height - d)
+                    ctx.lineTo(d, height)
+                }
+                ctx.stroke()
+            } else {
+                // Resplandor suave que cae desde la cabecera.
+                var glow = ctx.createLinearGradient(0, top, 0, Math.min(height, top + 140))
+                glow.addColorStop(0, Theme.alpha(Theme.primary, 0.06))
+                glow.addColorStop(1, Theme.alpha(Theme.primary, 0))
+                ctx.fillStyle = glow
+                ctx.fillRect(0, top, width, 140)
+            }
+        }
+    }
+
+    // El neón que recorre el borde.
+    NeonTrace {
+        anchors.fill: parent
+        visible: drawn && win.accelerated
+        path: win.outlinePath
+        length: Outline.length(win.width, win.height, win.outline, 0.5)
+        count: win.frameStyle === "leaf" ? 2 : 1
+        tail: win.frameStyle === "leaf" ? 56 : 80
+        speed: Theme.neonSpeed * (win.focused ? 1 : 0.55)
+        strength: win.live * (win.focused ? 0.85 : 0.35)
+        boost: win.beat * win.live
+        running: win.open
+    }
+
+    // Marco «bracket»: cuatro esquinas marcadas por fuera, que se abren con el latido.
+    Repeater {
+        model: win.frameStyle === "bracket" && win.accelerated ? 4 : 0
+
+        Item {
+            id: mark
+
+            required property int index
+            readonly property bool atRight: index % 2 === 1
+            readonly property bool atBottom: index >= 2
+            readonly property real gap: 4 + 3 * win.beat * win.live
+
+            x: atRight ? win.width + gap - width : -gap
+            y: atBottom ? win.height + gap - height : -gap
+            width: Theme.cornerMark
+            height: Theme.cornerMark
+            opacity: win.focused ? 0.9 : 0.4
+
+            Behavior on opacity {
+                NumberAnimation { duration: Theme.motionWindow }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                y: mark.atBottom ? parent.height - 1 : 0
+                color: Theme.primary
+            }
+
+            Rectangle {
+                width: 1
+                height: parent.height
+                x: mark.atRight ? parent.width - 1 : 0
+                color: Theme.primary
+            }
         }
     }
 
@@ -116,24 +283,6 @@ Item {
         y: 1
         width: parent.width - 2
         height: Theme.windowHeader
-        clip: true
-
-        // Más alto que la cabecera: sus esquinas inferiores quedan fuera y no se ven.
-        Rectangle {
-            width: parent.width
-            height: parent.height + Theme.radiusWindow
-            radius: Theme.radiusWindow - 1
-            opacity: win.focused ? 1 : 0.45
-
-            gradient: Gradient {
-                GradientStop { position: 0; color: Theme.alpha(Theme.primaryDeep, 0.85) }
-                GradientStop { position: 1; color: Theme.alpha(Theme.primaryDeep, 0.20) }
-            }
-
-            Behavior on opacity {
-                NumberAnimation { duration: Theme.motionWindow }
-            }
-        }
 
         MouseArea {
             id: mover
@@ -276,8 +425,9 @@ Item {
         }
     }
 
-    // Marca del asa de la esquina inferior derecha.
+    // Marca del asa de la esquina inferior derecha. Con chaflán, el propio corte hace de asa.
     Canvas {
+        visible: win.outline[2][0] !== "cut"
         x: win.width - width - 4
         y: win.height - height - 4
         width: 9

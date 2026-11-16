@@ -7,6 +7,10 @@ import "components"
 Item {
     id: area
 
+    property Item conductor              // el orbe: su latido enciende el borde de las ventanas
+    property real centerX: width / 2     // centro del orbe, en coordenadas de esta área
+    property real centerY: height / 2
+
     Repeater {
         model: workspace
 
@@ -14,6 +18,7 @@ Item {
             id: win
 
             required property string component
+            required property string style
             required property int order
             required windowId
             required title
@@ -29,6 +34,14 @@ Item {
 
             areaWidth: area.width
             areaHeight: area.height
+            frameStyle: style
+            beat: {
+                if (!area.conductor || !open)
+                    return 0
+                var dx = x + width / 2 - area.centerX
+                var dy = y + height / 2 - area.centerY
+                return area.conductor.wave(Math.sqrt(dx * dx + dy * dy) / area.conductor.d)
+            }
             z: order
             subtitle: loader.item ? loader.item.summary : ""
 

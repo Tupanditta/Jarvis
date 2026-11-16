@@ -1,5 +1,7 @@
 // Anillo de espectro: barras radiales cuya longitud es `nivel × perfil[i]` (RF-83).
 // El perfil es fijo, simétrico y suave, y se desplaza despacio alrededor del anillo.
+//
+// `refresh` ajusta todas las barras de una pasada; con nivel 0 no hace nada.
 import QtQuick
 import ".."
 
@@ -31,24 +33,45 @@ Item {
         return a + (b - a) * rest
     }
 
+    function refresh() {
+        if (spokes.count !== bars)
+            return
+        var on = level > 0.001
+        if (!on && !lit)
+            return
+        var reach = on ? level * maxLength : 0
+        for (var i = 0; i < bars; i++)
+            spokes.itemAt(i).reach = on ? reach * sample(i) : 0
+        lit = on
+    }
+
+    property bool lit: false         // hay barras a la vista
+
     width: diameter
     height: diameter
 
+    onLevelChanged: refresh()
+    onShiftChanged: refresh()
+    onMaxLengthChanged: refresh()
+
     Repeater {
+        id: spokes
+
         model: ring.bars
 
         Item {
-            id: spoke
-
             required property int index
+            property alias reach: bar.height
 
             anchors.fill: parent
             rotation: index * 360 / ring.bars
 
             Rectangle {
+                id: bar
+
                 width: Math.max(2, ring.diameter * 0.012)
-                height: ring.level > 0.001 ? ring.level * ring.sample(spoke.index) * ring.maxLength : 0
-                radius: width / 2
+                height: 0
+                antialiasing: true
                 color: ring.color
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.top

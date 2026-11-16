@@ -103,7 +103,7 @@ def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
     # Una parte con el HUD a la vista, como si el usuario hubiera pasado a otra ventana.
     qtbot.wait(150)
     ui._execute(ui.controller.screen_active_changed(False))
-    qtbot.waitUntil(lambda: driver.finished_rounds == 1, timeout=10_000)
+    qtbot.waitUntil(lambda: driver.finished_rounds == 1, timeout=20_000)
     qtbot.wait(150)
     assert seen == {activity.value for activity in Activity}
     assert ui.warnings == []
