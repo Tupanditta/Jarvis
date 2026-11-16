@@ -65,6 +65,8 @@ QtObject {
     readonly property int motionWindow: 160
     readonly property int motionState: 400
     readonly property int motionLevel: 80
+    readonly property int motionEmerge: 520  // una ventana sale del orbe hasta su sitio
+    readonly property int motionEmergeGap: 300 // entre una ventana y la siguiente al abrir sesión
 
     function statusColor(status) {
         if (status === "pendiente")

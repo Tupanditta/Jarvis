@@ -22,6 +22,9 @@ Item {
     property bool reduceMotion: false
     property bool running: true          // falso con la ventana oculta: no se anima nada
 
+    // El despertar ("wake") ha terminado entero; no se emite si otra transición lo corta.
+    signal awake()
+
     // Propiedades de control
     property real brightness: 0
     property real spin1: 0               // °/s de los anillos de datos
@@ -150,6 +153,8 @@ Item {
         if (reduceMotion) {
             goal = aspect(mode)
             tween.restart()
+            if (kind === "wake")
+                awake()
             return
         }
         if (kind === "wake")
@@ -217,7 +222,10 @@ Item {
     ParallelAnimation {
         id: wake
 
-        onFinished: orb.settle()
+        onFinished: {
+            orb.settle()
+            orb.awake()
+        }
 
         // 0 – 1,0 s: concentración. El punto del modo dormido se vuelve una masa viva: materia
         // que cae en espiral hacia el centro, el núcleo crece y se agita, y vira al cian.

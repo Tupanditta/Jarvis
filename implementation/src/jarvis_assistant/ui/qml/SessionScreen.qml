@@ -46,6 +46,11 @@ Window {
         target: windows
 
         function onScreenAnimation(kind) {
+            // Al abrir sesión las ventanas esperan al orbe y salen de él al acabar el despertar.
+            if (kind === "wake")
+                desk.hold()
+            else
+                desk.cancel()
             orb.play(kind)
             panelFade.stop()
             if (kind === "wake") {
@@ -131,6 +136,8 @@ Window {
         quality: ui.quality
         reduceMotion: ui.reduceMotion
         running: screen.drawing
+
+        onAwake: desk.release()
     }
 
     // --- Ventanas flotantes -----------------------------------------------------------------

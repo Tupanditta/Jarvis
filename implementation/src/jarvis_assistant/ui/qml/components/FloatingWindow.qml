@@ -34,6 +34,10 @@ Item {
     property real areaHeight: 0
     property string frameStyle: "round"
     property real beat: 0                // brillo del latido del orbe a la altura de la ventana
+    property bool held: false            // abierta pero oculta: espera a que el orbe la lance
+    property real originX: 0             // centro del orbe, en coordenadas del área de trabajo
+    property real originY: 0
+    property real launch: 1              // salida desde el orbe: 0 en su centro, 1 en su sitio
     default property alias content: body.data
 
     readonly property var outline: Outline.corners(frameStyle)
@@ -59,18 +63,48 @@ Item {
     x: Math.max(0, Math.min(areaWidth - width, Math.round(fx * areaWidth)))
     y: Math.max(0, Math.min(areaHeight - height, Math.round(fy * areaHeight)))
 
+    readonly property bool shown: open && !held
+    property real pop: shown ? 1 : 0.97  // escala al abrir y cerrar a mano
+
     visible: opacity > 0
-    opacity: open ? 1 : 0
-    scale: open ? 1 : 0.97
+    opacity: shown ? 1 : 0
+    scale: pop * (0.06 + 0.94 * launch)
+    // `scale` crece desde el centro de la ventana; esto la lleva del orbe a su sitio.
+    transform: Translate {
+        x: (1 - win.launch) * (win.originX - win.x - win.width / 2)
+        y: (1 - win.launch) * (win.originY - win.y - win.height / 2)
+    }
 
     Behavior on opacity {
         NumberAnimation { duration: ui.reduceMotion ? 0 : Theme.motionWindow }
     }
-    Behavior on scale {
+    Behavior on pop {
         NumberAnimation {
             duration: ui.reduceMotion ? 0 : Theme.motionWindow
             easing.type: Easing.OutCubic
         }
+    }
+
+    // Deja de esperar y sale del centro del orbe hasta su sitio.
+    function emerge() {
+        if (ui.reduceMotion) {
+            held = false
+            return
+        }
+        launch = 0
+        held = false
+        launcher.restart()
+    }
+
+    NumberAnimation {
+        id: launcher
+
+        target: win
+        property: "launch"
+        from: 0
+        to: 1
+        duration: Theme.motionEmerge
+        easing.type: Easing.OutCubic
     }
 
     // Nuevo rectángulo al tirar de un borde: `hx`, `hy` dicen qué bordes se mueven.

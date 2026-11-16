@@ -1,6 +1,10 @@
 // Área de trabajo de la pantalla de sesión: las ventanas flotantes de los módulos.
 // Una por fila de `workspace` (`ui/workspace.py`). El panel de cada ventana solo se carga
 // mientras la ventana está abierta.
+//
+// Al abrir sesión (`hold`, luego `release`) las ventanas esperan ocultas a que termine el
+// despertar del orbe y salen de él una a una, de la de abajo a la de arriba. Las que se abren
+// mientras tanto se suman a la cola.
 import QtQuick
 import "components"
 
@@ -10,8 +14,62 @@ Item {
     property Item conductor              // el orbe: su latido enciende el borde de las ventanas
     property real centerX: width / 2     // centro del orbe, en coordenadas de esta área
     property real centerY: height / 2
+    property bool staging: false         // abriendo sesión: las ventanas esperan al orbe
+
+    // Empieza el despertar: ninguna ventana se ve hasta `release`.
+    function hold() {
+        launches.stop()
+        if (ui.reduceMotion) {
+            staging = false
+            return
+        }
+        staging = true
+        for (var i = 0; i < stack.count; ++i)
+            stack.itemAt(i).held = true
+    }
+
+    // El orbe ya ha despertado: lanza las ventanas abiertas, una a una.
+    function release() {
+        if (!staging)
+            return
+        launchNext()
+        launches.start()
+    }
+
+    // Deja de esperar sin animación: otra transición ha cortado el despertar.
+    function cancel() {
+        launches.stop()
+        staging = false
+        for (var i = 0; i < stack.count; ++i)
+            stack.itemAt(i).held = false
+    }
+
+    // Lanza la ventana abierta que queda más abajo; si no queda ninguna, termina.
+    function launchNext() {
+        var next = null
+        for (var i = 0; i < stack.count; ++i) {
+            var win = stack.itemAt(i)
+            if (win.held && win.open && (next === null || win.order < next.order))
+                next = win
+        }
+        if (next !== null) {
+            next.emerge()
+            return
+        }
+        cancel()
+    }
+
+    Timer {
+        id: launches
+
+        interval: Theme.motionEmergeGap
+        repeat: true
+        onTriggered: area.launchNext()
+    }
 
     Repeater {
+        id: stack
+
         model: workspace
 
         FloatingWindow {
@@ -34,6 +92,8 @@ Item {
 
             areaWidth: area.width
             areaHeight: area.height
+            originX: area.centerX
+            originY: area.centerY
             frameStyle: style
             beat: {
                 if (!area.conductor || !open)
