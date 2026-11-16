@@ -428,26 +428,21 @@ async def test_repite_la_ultima_respuesta(rig):
     assert rig.spoken() == [pwd, pwd]
 
 
-def presentation(rig, who: str) -> list[str]:
-    """Lo que dice «preséntate»: los módulos son los del registro, con «y» antes del último."""
+def modules(rig) -> str:
+    """Los módulos que nombra «preséntate»: los del registro, con «y» antes del último."""
     *rest, last = (
         group.title.lower() for group in rig.app.router.help() if group.module != "nucleo"
     )
-    return [
-        who,
-        said("presentacion.funcionamiento"),
-        said("presentacion.tecnologia"),
-        said("presentacion.modulos", modulos=f"{', '.join(rest)} y {last}"),
-        said("presentacion.cierre"),
-    ]
+    return f"{', '.join(rest)} y {last}"
 
 
 async def test_presentate_sin_nombre_configurado(rig):
     await rig.order("preséntate")
-    await rig.advance(5.0)  # son cinco frases seguidas
+    await rig.advance(5.0)
     spoken = rig.spoken()
-    assert spoken == presentation(rig, said("presentacion.quien_anonimo"))
-    assert "comandos, aperturas, búsqueda" in spoken[3]
+    assert spoken == [said("presentacion.anonima", modulos=modules(rig))]  # una sola frase
+    assert "comandos, aperturas, búsqueda" in spoken[0]
+    assert "Hey" not in spoken[0]  # nada en inglés: la voz es española
     assert rig.tasks() == []  # no es una tarea de ningún módulo
 
 
@@ -458,7 +453,7 @@ async def test_presentate_con_el_nombre_de_la_configuracion(tmp_path, monkeypatc
     await rig.open_session()
     await rig.order("presentate")
     await rig.advance(5.0)
-    assert rig.spoken() == presentation(rig, said("presentacion.quien", nombre="Jane Doe"))
+    assert rig.spoken() == [said("presentacion", nombre="Jane Doe", modulos=modules(rig))]
     await rig.stop()
 
 

@@ -80,36 +80,29 @@ PHRASES: dict[str, list[str]] = {
         "Cómo no, señor. Estas son mis órdenes.",
         "Encantado, señor. Eche un vistazo a lo que puedo hacer.",
     ],
-    # Presentación («preséntate»): se dicen seguidas, en este orden, y siempre en primera
-    # persona. `presentacion.quien` cuando la configuración da el nombre del usuario; si no,
-    # `presentacion.quien_anonimo`.
-    "presentacion.quien": [
-        "Permítame presentarme, señor. Soy Jarvis, el asistente personal de {nombre}.",
-        "Con mucho gusto, señor. Soy Jarvis, el asistente personal de {nombre}.",
+    # Presentación («preséntate»): una sola frase, con una sola variante, siempre en primera
+    # persona y sin palabras en inglés, para que la voz la lea seguida y sin pausas entre
+    # partes. `presentacion` cuando la configuración da el nombre del usuario; si no,
+    # `presentacion.anonima`. Las dos dicen lo mismo salvo de quién es el asistente.
+    "presentacion": [
+        "Permítame presentarme, señor. Soy Jarvis, el asistente personal de {nombre}."
+        " Soy una aplicación de escritorio y funciono por completo en su equipo."
+        " Leo las órdenes que me escribe, las ejecuto y le respondo de viva voz y en pantalla."
+        " No uso inteligencia artificial generativa, ni modelos de lenguaje, ni internet,"
+        " así que ningún dato sale de su equipo."
+        " Reconozco sus órdenes por patrones, y por eso a la misma orden respondo siempre igual."
+        " Cuento con estos módulos: {modulos}."
+        " Si escribe ayuda, le enseño todas mis órdenes.",
     ],
-    "presentacion.quien_anonimo": [
-        "Permítame presentarme, señor. Soy Jarvis, su asistente personal.",
-        "Con mucho gusto, señor. Soy Jarvis, su asistente personal.",
-    ],
-    "presentacion.funcionamiento": [
-        "Soy una aplicación de escritorio y funciono por completo en su equipo. Leo las"
-        " órdenes que me escribe, las reconozco, las ejecuto y le respondo de viva voz,"
-        " con el resultado en pantalla. Despierto cuando leo Hey Jarvis y guardo cada"
-        " sesión de trabajo en mi historial.",
-    ],
-    "presentacion.tecnologia": [
-        "No uso inteligencia artificial generativa, ni modelos de lenguaje, ni internet:"
-        " ningún dato sale de su equipo. Me baso en intenciones y patrones. Comparo lo que"
-        " me escribe con las frases que conozco, saco de ahí los datos que necesito, como"
-        " fechas, carpetas o nombres, y sigo una máquina de estados. Por eso respondo"
-        " siempre igual a la misma orden y nunca me invento nada.",
-    ],
-    "presentacion.modulos": [
-        "Para ayudarle cuento con estos módulos: {modulos}.",
-    ],
-    "presentacion.cierre": [
-        "Le explico a fondo cada una de mis funciones en cuanto escriba ayuda.",
-        "Si escribe ayuda, le enseño con detalle todas mis órdenes.",
+    "presentacion.anonima": [
+        "Permítame presentarme, señor. Soy Jarvis, su asistente personal."
+        " Soy una aplicación de escritorio y funciono por completo en su equipo."
+        " Leo las órdenes que me escribe, las ejecuto y le respondo de viva voz y en pantalla."
+        " No uso inteligencia artificial generativa, ni modelos de lenguaje, ni internet,"
+        " así que ningún dato sale de su equipo."
+        " Reconozco sus órdenes por patrones, y por eso a la misma orden respondo siempre igual."
+        " Cuento con estos módulos: {modulos}."
+        " Si escribe ayuda, le enseño todas mis órdenes.",
     ],
     "general.indice_invalido": [
         "Me temo que no hay ningún elemento {n}, señor.",

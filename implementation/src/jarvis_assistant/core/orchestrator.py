@@ -718,29 +718,20 @@ class Orchestrator:
         elif intent == REPEAT:
             self._announce(self._speaker.last_phrase or Phrase("general.nada_que_repetir"))
         elif intent == PRESENT:
-            self._announce(*self._presentation())
+            self._announce(self._presentation())
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
-    def _presentation(self) -> tuple[Phrase, ...]:
-        """«Preséntate»: quién es, cómo funciona, sus módulos (los del registro, para que la
-        lista no se desfase) y cómo saber más."""
+    def _presentation(self) -> Phrase:
+        """«Preséntate»: una sola frase con quién es, cómo funciona, sus módulos (los del
+        registro, para que la lista no se desfase) y cómo saber más."""
         name = self._config.settings.user.name.strip()
-        who = (
-            Phrase("presentacion.quien", {"nombre": name})
-            if name
-            else Phrase("presentacion.quien_anonimo")
+        modules = enumeration(
+            [group.title.lower() for group in self._router.help() if group.module != CORE_MODULE]
         )
-        modules = [
-            group.title.lower() for group in self._router.help() if group.module != CORE_MODULE
-        ]
-        return (
-            who,
-            Phrase("presentacion.funcionamiento"),
-            Phrase("presentacion.tecnologia"),
-            Phrase("presentacion.modulos", {"modulos": enumeration(modules)}),
-            Phrase("presentacion.cierre"),
-        )
+        if name:
+            return Phrase("presentacion", {"nombre": name, "modulos": modules})
+        return Phrase("presentacion.anonima", {"modulos": modules})
 
     # --- Diálogo ------------------------------------------------------------------------------
 
