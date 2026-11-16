@@ -61,7 +61,9 @@ class Speaker:
         return self._last_phrase
 
     async def preload(self) -> None:
-        """Carga la voz y sintetiza las frases del ciclo de vida y las más usadas."""
+        """Carga la voz y la salida de audio, y sintetiza las frases del ciclo de vida y las
+        más usadas."""
+        self._player.prepare()  # en este hilo: el mismo que abrirá el flujo
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._synthesizer.load)
         for phrase_id in PRELOADED_IDS:

@@ -33,11 +33,15 @@ class FakePlayer:
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
         self.is_open = False
+        self.prepared = 0
         self.opened: list[int] = []
         self.closed = 0
         self.played: list[np.ndarray] = []
         self.level = 0.0
         self._done: asyncio.Future[bool] | None = None
+
+    def prepare(self) -> None:
+        self.prepared += 1
 
     def open(self, sample_rate: int) -> None:
         self.is_open = True

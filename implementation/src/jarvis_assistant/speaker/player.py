@@ -20,6 +20,7 @@ _STALL_MARGIN_SECONDS = 1.0
 
 
 class AudioPlayer(Protocol):
+    def prepare(self) -> None: ...
     def open(self, sample_rate: int) -> None: ...
     def close(self) -> None: ...
     async def play(self, pcm: np.ndarray, on_start: Callable[[], None] | None = None) -> bool: ...
@@ -69,6 +70,17 @@ class Player:
     @property
     def is_open(self) -> bool:
         return self._stream is not None
+
+    def prepare(self) -> None:
+        """Carga la biblioteca de audio al arrancar (importar `sounddevice` inicia PortAudio y
+        cuesta unos cientos de milisegundos): así no retrasa la apertura de la primera sesión.
+        Un fallo no es fatal; `open` lo volverá a intentar."""
+        if self._factory is not _default_factory:
+            return
+        try:
+            import sounddevice  # noqa: F401
+        except Exception as error:
+            logger.warning("No se puede cargar la biblioteca de audio: %s", error)
 
     def open(self, sample_rate: int) -> None:
         """Abre el flujo en el dispositivo de salida predeterminado. Un fallo no es fatal."""

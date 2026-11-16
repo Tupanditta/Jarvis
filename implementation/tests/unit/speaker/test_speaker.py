@@ -259,6 +259,12 @@ async def test_preload_carga_la_voz_y_sintetiza_el_ciclo_de_vida(rig):
     assert len(rig.synthesizer.texts) == len(expected)  # no se vuelve a sintetizar
 
 
+async def test_preload_prepara_la_salida_de_audio_sin_abrirla(rig):
+    # La biblioteca de audio se carga al arrancar, no al abrir la primera sesión.
+    assert rig.player.prepared == 1
+    assert not rig.player.is_open
+
+
 async def test_frase_del_ciclo_de_vida_avisa_al_empezar(rig):
     started = []
     task = asyncio.ensure_future(
