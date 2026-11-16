@@ -106,6 +106,15 @@ class SessionChanged(Event):
     is_important: bool
 
 
+@dataclass(frozen=True)
+class SessionOverflowed(Event):
+    """Ya había 10 sesiones importantes: la más antigua deja de serlo y se eliminará al cerrar
+    la actual (RN-07, RN-08)."""
+
+    displaced_id: int
+    displaced_name: str
+
+
 # --- Órdenes y voz ---------------------------------------------------------------------------
 
 

@@ -160,6 +160,23 @@ class SessionRepository:
             conn.executemany("UPDATE sessions SET is_deleted = 1 WHERE id = ?", [(i,) for i in ids])
             return ids
 
+    def restore_displaced(self, displaced_by: int) -> list[int]:
+        """Devuelve la importancia a las sesiones que desplazó `displaced_by` y les quita la
+        marca de desbordamiento (RN-08, restauración)."""
+        with self._db.transaction() as conn:
+            rows = conn.execute(
+                "SELECT id FROM sessions WHERE displaced_by = ? AND pending_purge_on_close = 1"
+                " AND is_deleted = 0 ORDER BY id",
+                (displaced_by,),
+            ).fetchall()
+            ids = [row["id"] for row in rows]
+            conn.executemany(
+                "UPDATE sessions SET is_important = 1, pending_purge_on_close = 0,"
+                " displaced_by = NULL WHERE id = ?",
+                [(i,) for i in ids],
+            )
+            return ids
+
     def soft_delete(self, session_id: int) -> None:
         with self._db.transaction() as conn:
             conn.execute("UPDATE sessions SET is_deleted = 1 WHERE id = ?", (session_id,))

@@ -3,6 +3,7 @@ import pytest
 
 from jarvis_assistant.config import RouterSettings
 from jarvis_assistant.core.state_machine import (
+    Answer,
     AssistantState,
     ClosingPhraseInIdle,
     Control,
@@ -153,4 +154,4 @@ def test_en_dormido_mostrar_la_pantalla_se_descarta(router):
 
 def test_mostrar_la_pantalla_no_es_una_respuesta_de_dialogo(router):
     text = "muestra la pantalla"
-    assert router.route(text, S.AWAITING_CONFIRMATION) == NoMatch(text)
+    assert router.route(text, S.AWAITING_CONFIRMATION) == Answer(valid=False)

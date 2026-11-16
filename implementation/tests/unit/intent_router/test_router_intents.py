@@ -16,6 +16,7 @@ from jarvis_assistant.core.action_api import (
     SlotType,
 )
 from jarvis_assistant.core.state_machine import (
+    Answer,
     AssistantState,
     Control,
     ControlKind,
@@ -262,6 +263,11 @@ def test_si_ningun_candidato_se_resuelve_vale_el_error_del_primero(router):
         ("abre el navegador", "apertura.abrir",
          Phrase("entidad.no_encontrado", {"nombre": "el navegador"})),
         ("abre el resultado muchos", "busqueda.abrir_resultado", Phrase("entidad.numero")),
+        # Una alternativa de otro módulo que solo se parece no se prueba: no se crea nada.
+        ("abr la carpeta fotos", "apertura.abrir_carpeta",
+         Phrase("ruta.no_existe", {"nombre": "fotos"})),
+        ("crea el archivo notas en fotos", "creacion.crear_archivo",
+         Phrase("ruta.no_existe", {"nombre": "fotos"})),
     ],
 )  # fmt: skip
 def test_errores_de_entidad(router, text, key, error):
@@ -314,7 +320,7 @@ def test_texto_vacio(router):
 
 def test_en_espera_una_orden_no_se_clasifica_como_intencion(router):
     entry = router.route("abre GitHub", S.AWAITING_CONFIRMATION)
-    assert entry == NoMatch("abre GitHub")
+    assert entry == Answer(valid=False)
 
 
 def test_en_dormido_solo_vale_la_frase_de_activacion(router):
@@ -379,7 +385,7 @@ def test_un_modulo_no_se_registra_dos_veces(router):
 def test_la_ayuda_sale_del_registro(router):
     groups = router.help()
     assert [group.module for group in groups] == [
-        "comandos", "apertura", "busqueda", "historial", "nucleo",
+        "comandos", "apertura", "busqueda", "creacion", "historial", "nucleo",
     ]  # fmt: skip
     assert groups[0].title == "Comandos"
     for group in groups:

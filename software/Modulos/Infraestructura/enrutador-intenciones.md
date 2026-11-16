@@ -64,6 +64,8 @@ Con el texto dividido en palabras:
 3. A igualdad: orden de registro de los módulos y, dentro de cada módulo, de sus intenciones.
 
 4. **Entidades que no se resuelven:** si las entidades del candidato elegido no se pueden resolver (sección 4), se prueba el siguiente candidato, en el mismo orden. Si ninguno se resuelve, el resultado es el error del primero. Así «abre el navegador» no se pierde por un patrón más específico que esperaba un número.
+   - No se prueba otro patrón de la **misma acción**: leería la entidad que falta como parte de otra. «Crea el archivo notas en fotos», sin carpeta «fotos», es un error de ruta, no el archivo «notas en fotos».
+   - Un candidato de **otro módulo** solo se prueba si empata en puntuación con el primero (diferencia < 3 puntos). Uno que solo se le parece haría otra cosa: «abre la carpeta fotos», sin carpeta «fotos», no acaba en «crea la carpeta fotos».
 
 El resultado es siempre el mismo para el mismo texto y el mismo estado del sistema (directorio de trabajo, catálogos).
 

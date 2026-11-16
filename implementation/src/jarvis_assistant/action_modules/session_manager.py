@@ -1,8 +1,9 @@
 """Módulo Sesión: la parte de datos del ciclo de vida de la sesión (sesion.md).
 
-`SessionManager` lo llama el orquestador, no una intención; sus acciones (nombrar, importancia)
-llegan con el diálogo. `History` es el módulo Historial (historial.md): consulta las sesiones
-y sus actividades; la eliminación llega con el diálogo.
+`SessionManager` es el módulo Sesión: el orquestador lo llama para abrir y cerrar la sesión, y
+sus acciones fijan el nombre y la importancia, con prioridad sobre lo que propongan los
+protocolos (RN-03 a RN-06). `History` es el módulo Historial (historial.md): consulta las
+sesiones y sus actividades, y elimina una sesión tras confirmarlo.
 """
 import logging
 from collections.abc import Mapping, Sequence
@@ -12,6 +13,7 @@ from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import (
     ActionContext,
     ActionResult,
+    ExpectedType,
     IntentSpec,
     Phrase,
     Slot,
@@ -20,13 +22,14 @@ from jarvis_assistant.core.action_api import (
 from jarvis_assistant.core.clock import Clock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.events import SessionChanged
+from jarvis_assistant.core.events import SessionChanged, SessionOverflowed
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRepository, SessionRow
 from jarvis_assistant.speaker.phrases import count
 
 logger = logging.getLogger(__name__)
 
 CLOSED_REASON = "sesión cerrada"  # motivo de las tareas pendientes al cerrar (RN-46)
+IMPORTANT_LIMIT = 10  # RN-07
 
 
 class SessionManager:
@@ -80,6 +83,130 @@ class SessionManager:
             recovered.append(session.id)
         return recovered
 
+    # --- Acciones ------------------------------------------------------------------------------
+
+    def intents(self) -> Sequence[IntentSpec]:
+        # `proponer_nombre` e `importante_por_protocolo` no tienen patrones: solo las invoca
+        # el módulo Protocolos.
+        return (
+            IntentSpec(
+                "nombrar", ("llama a la sesión {nombre}", "nombra la sesión {nombre}",
+                            "ponle a la sesión el nombre {nombre}"),
+                (Slot("nombre", SlotType.TEXT),),
+                "Poner nombre a la sesión", "Llama a la sesión práctica de redes",
+                in_protocols=False,
+            ),
+            IntentSpec(
+                "marcar_importante", ("marca la sesión como importante", "sesión importante",
+                                      "esta sesión es importante"),
+                description="Marcar la sesión como importante",
+                example="Marca la sesión como importante", in_protocols=False,
+            ),
+            IntentSpec(
+                "desmarcar_importante", ("marca la sesión como no importante",
+                                         "la sesión no es importante", "quita la importancia"),
+                description="Quitar la importancia a la sesión",
+                example="La sesión no es importante", in_protocols=False,
+            ),
+        )  # fmt: skip
+
+    async def execute(
+        self, action: str, params: Mapping[str, object], ctx: ActionContext
+    ) -> ActionResult:
+        session = self._current
+        if session is None:
+            return ActionResult("error", Phrase("general.error"))
+        match action:
+            case "nombrar":
+                return self._rename(session, str(params.get("nombre", "")).strip(), ctx)
+            case "marcar_importante":
+                return await self._mark(session, ctx, by_user=True)
+            case "desmarcar_importante":
+                return self._unmark(session, ctx)
+            case "proponer_nombre":
+                return await self._propose(session, str(params.get("nombre", "")).strip(), ctx)
+            case "importante_por_protocolo":
+                if session.is_important:
+                    return ActionResult("completado")  # RN-05: nada que cambiar
+                return await self._mark(session, ctx, by_user=False)
+        raise ValueError(f"Acción desconocida: {action}")
+
+    def _rename(self, session: SessionRow, name: str, ctx: ActionContext) -> ActionResult:
+        """Nombre fijado por el usuario: ningún protocolo lo cambia después (RN-03)."""
+        if not name:
+            return ActionResult("error", Phrase("entidad.nombre"))
+        self._sessions.rename(session.id, name, by_user=True)
+        self._changed(ctx)
+        return ActionResult(
+            "completado", Phrase("sesion.nombrada", {"nombre": name}),
+            description=f"nombrar la sesión {name}",
+        )  # fmt: skip
+
+    async def _propose(self, session: SessionRow, name: str, ctx: ActionContext) -> ActionResult:
+        """Un protocolo propone un nombre: solo si el usuario no fijó uno, y con su
+        confirmación (RN-04)."""
+        if not name:
+            return ActionResult("error", Phrase("entidad.nombre"))
+        if session.name_set_by_module:
+            return ActionResult("completado")
+        answer = await ctx.ask(
+            Phrase("sesion.proponer_nombre", {"nombre": name}), ExpectedType.BOOLEAN,
+            metadata={"session_id": session.id, "nombre": name},
+        )  # fmt: skip
+        if answer.cancelled or answer.value is not True:
+            return ActionResult("completado", description=f"proponer el nombre {name}")
+        self._sessions.rename(session.id, name, by_user=False)
+        self._changed(ctx)
+        return ActionResult(
+            "completado", Phrase("sesion.nombrada", {"nombre": name}),
+            description=f"nombrar la sesión {name}",
+        )  # fmt: skip
+
+    async def _mark(
+        self, session: SessionRow, ctx: ActionContext, *, by_user: bool
+    ) -> ActionResult:
+        """`is_important = 1` y, en la misma transacción, el desbordamiento (RN-07, RN-08).
+        Del usuario: también bloquea la importancia. De un protocolo: no toca el bloqueo."""
+        with self._db.transaction():
+            self._sessions.set_importance(session.id, True, by_user=by_user)
+            displaced = None
+            if self._sessions.count_important() > IMPORTANT_LIMIT:
+                displaced = self._sessions.oldest_important(excluding=session.id)
+                if displaced is not None:
+                    self._sessions.set_importance(displaced.id, False, by_user=False)
+                    self._sessions.mark_pending_purge(displaced.id, True, session.id)
+        self._changed(ctx)
+        if displaced is not None:
+            logger.info("Sesión %d desplazada por la %d", displaced.id, session.id)
+            ctx.publish(SessionOverflowed(displaced.id, displaced.name))
+            await ctx.say(Phrase("sesion.desbordamiento", {"nombre": displaced.name}))
+        speech = Phrase("sesion.importante") if by_user else None
+        return ActionResult("completado", speech, description="marcar la sesión como importante")
+
+    def _unmark(self, session: SessionRow, ctx: ActionContext) -> ActionResult:
+        """Solo el usuario quita la importancia (RN-06). La sesión desplazada, si la hay,
+        recupera la suya."""
+        with self._db.transaction():
+            self._sessions.set_importance(session.id, False, by_user=True)
+            restored = self._sessions.restore_displaced(session.id)
+        if restored:
+            logger.info("Sesiones restauradas: %s", restored)
+        self._changed(ctx)
+        return ActionResult(
+            "completado", Phrase("sesion.no_importante"),
+            description="marcar la sesión como no importante",
+        )  # fmt: skip
+
+    def _changed(self, ctx: ActionContext) -> None:
+        """Relee la sesión actual y publica sus datos."""
+        if self._current is None:
+            return
+        session = self._sessions.get(self._current.id)
+        if session is None:
+            return
+        self._current = session
+        ctx.publish(SessionChanged(session.id, session.name, session.is_important))
+
     def _close(self, session_id: int, reason: str, *, at) -> None:
         with self._db.transaction():
             self._activities.fail_pending(session_id, CLOSED_REASON, at)
@@ -119,6 +246,12 @@ class History:
                 "Mostrar las actividades de una sesión", "Actividades de la sesión doce",
                 HISTORY_PANEL,
             ),
+            IntentSpec(
+                "eliminar", ("elimina la sesión {id}", "borra la sesión {id}"),
+                (Slot("id", SlotType.INTEGER),),
+                "Eliminar una sesión del historial", "Elimina la sesión doce", HISTORY_PANEL,
+                in_protocols=False,
+            ),
         )  # fmt: skip
 
     async def execute(
@@ -129,7 +262,38 @@ class History:
                 return self._show(ctx)
             case "actividades":
                 return self._activities(params.get("id"), ctx)  # type: ignore[arg-type]
+            case "eliminar":
+                return await self._delete(int(params["id"]), ctx)  # type: ignore[call-overload]
         raise ValueError(f"Acción desconocida: {action}")
+
+    async def _delete(self, session_id: int, ctx: ActionContext) -> ActionResult:
+        """Borrado lógico, siempre con confirmación explícita (RN-11, RN-12)."""
+        description = f"eliminar la sesión {session_id}"
+        sessions = SessionRepository(ctx.db)
+        session = sessions.get(session_id)
+        if session is None or session.is_deleted:
+            return ActionResult(
+                "error", Phrase("historial.no_existe", {"id": session_id}), description
+            )
+        if ctx.session is not None and session.id == ctx.session.id:
+            return ActionResult("error", Phrase("historial.es_actual"), description)
+        current = None if ctx.session is None else ctx.session.id
+        ctx.publish(events.HistoryShown((session,), current))
+        answer = await ctx.ask(
+            Phrase("historial.confirmar_eliminar", {"id": session.id, "nombre": session.name}),
+            ExpectedType.BOOLEAN,
+            metadata={"session_id": session.id},
+            subject={"id": session.id, "nombre": session.name},
+        )
+        if answer.cancelled:
+            return ActionResult.cancelled(description=description)  # ya se ha dicho
+        if answer.value is not True:
+            return ActionResult.cancelled(Phrase("general.operacion_cancelada"), description)
+        sessions.soft_delete(session.id)
+        logger.info("Sesión %d eliminada", session.id)
+        return ActionResult(
+            "completado", Phrase("historial.eliminada", {"id": session.id}), description
+        )
 
     def _show(self, ctx: ActionContext) -> ActionResult:
         sessions = SessionRepository(ctx.db).visible_history(HISTORY_LIMIT)

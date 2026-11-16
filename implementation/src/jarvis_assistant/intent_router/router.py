@@ -3,8 +3,8 @@
 Código puro: no ejecuta acciones, no habla y no publica eventos. Reconoce la frase de
 activación, las frases de control y el cierre en reposo, y clasifica las órdenes contra los
 patrones que registran los módulos de acción, resolviendo sus entidades. En reposo, cualquier
-otro texto se atiende como orden: la FSM despierta en silencio. Las respuestas de diálogo
-llegan con el diálogo de varios turnos.
+otro texto se atiende como orden: la FSM despierta en silencio. En espera de una respuesta,
+el texto se valida contra el tipo que espera la pregunta (`answers.py`).
 
 Reconocer una orden tiene dos pasos: `prepare` compara el texto con los patrones y `resolve`
 resuelve sus entidades. Van separados porque una orden que espera en la cola se resuelve
@@ -19,6 +19,7 @@ from rapidfuzz import fuzz
 
 from jarvis_assistant.config import DEFAULT_BINARIES, Binary, RouterSettings
 from jarvis_assistant.core.action_api import (
+    ExpectedType,
     HelpEntry,
     HelpGroup,
     Intent,
@@ -38,7 +39,7 @@ from jarvis_assistant.core.state_machine import (
     WakeWord,
 )
 from jarvis_assistant.core.workdir import Workdir
-from jarvis_assistant.intent_router import patterns
+from jarvis_assistant.intent_router import answers, patterns
 from jarvis_assistant.intent_router.normalizer import Tokens, normalize, tokenize
 from jarvis_assistant.intent_router.slots import catalogs, command_line, names, numbers, paths
 
@@ -269,9 +270,17 @@ class IntentRouter:
         normalized = normalize(text, self._aliases)
         if state in _ATTENDING:
             entry = self._attending(normalized)
-            if entry is None and state is AssistantState.LISTENING_COMMAND:
-                entry = self._classify(text, resolve)
-            return entry or NoMatch(text)
+            if entry is not None:
+                return entry
+            if state is not AssistantState.LISTENING_COMMAND:
+                # En espera, el texto es la respuesta: nunca una intención nueva.
+                expected = getattr(dialogue, "expected_type", None)
+                if not isinstance(expected, ExpectedType):
+                    return answers.INVALID
+                return answers.validate(
+                    text, normalized, expected, self._settings.control_threshold
+                )
+            return self._classify(text, resolve) or NoMatch(text)
         if self._is_wake(normalized):
             return WakeWord()
         if state is AssistantState.IDLE:
@@ -337,14 +346,30 @@ class IntentRouter:
         candidata se resuelve, la intención lleva el error de la primera."""
         tokens, description = order.tokens, order.text
         failed: Intent | None = None
+        tried: set[tuple[str, str]] = set()  # acciones cuyas entidades no se han resuelto
+        best = order.candidates[0][0].score
         for found, item in order.candidates:
             spec = item.spec
+            if (
+                failed is not None
+                and item.module != failed.module
+                and best - found.score >= SAME_SCORE_MARGIN
+            ):
+                # Otro módulo solo es alternativa si su texto fijo empata con lo escrito: uno
+                # que solo se le parece haría otra cosa. «abre la carpeta fotos» no acaba en
+                # «crea la carpeta fotos».
+                continue
+            if (item.module, spec.action) in tried:
+                # Otro patrón de la misma acción leería la entidad que falta como parte de
+                # otra: «crea el archivo notas en fotos» no crea «notas en fotos».
+                continue
             try:
                 params = {
                     hole: self._resolve(_slot(spec, hole), tokens, *found.spans[hole])
                     for hole in item.pattern.holes
                 }
             except ParamError as unresolved:
+                tried.add((item.module, spec.action))
                 # Se prueba el siguiente candidato; si ninguno se resuelve, vale este error.
                 failed = failed or Intent(
                     item.module, spec.action, error=unresolved.phrase,

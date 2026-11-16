@@ -159,6 +159,18 @@ Window {
         visible: opacity > 0
     }
 
+    // --- Diálogo ------------------------------------------------------------------------------
+
+    // La pregunta en curso, sobre el lateral derecho y por encima de las ventanas.
+    DialogCard {
+        objectName: "dialogCard"
+        width: Math.min(420, screen.width - 2 * screen.margin)
+        anchors.right: parent.right
+        anchors.rightMargin: screen.margin
+        anchors.verticalCenter: orb.verticalCenter
+        z: 2
+    }
+
     // --- Subtítulos y caja de texto ----------------------------------------------------------
 
     Subtitles {

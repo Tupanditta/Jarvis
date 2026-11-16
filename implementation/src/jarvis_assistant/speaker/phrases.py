@@ -184,6 +184,63 @@ PHRASES: dict[str, list[str]] = {
         "No he localizado la sesión {id}, señor.",
         "No hay ninguna sesión registrada con el número {id}, señor.",
     ],
+    "historial.es_actual": [
+        "No se puede eliminar la sesión actual, señor.",
+        "La sesión en curso no se puede eliminar, señor.",
+        "Disculpe, señor. No puedo eliminar la sesión en la que estamos.",
+    ],
+    "historial.confirmar_eliminar": [
+        "¿Elimino la sesión {id}, {nombre}, señor?",
+        "¿Quiere que elimine la sesión {id}, {nombre}, señor?",
+        "¿Confirma que elimino la sesión {id}, {nombre}, señor?",
+    ],
+    "historial.eliminada": [
+        "Sesión {id} eliminada, señor.",
+        "He eliminado la sesión {id}, señor.",
+        "La sesión {id} ya no aparece en el historial, señor.",
+    ],
+    # Sesión
+    "sesion.nombrada": [
+        "Sesión renombrada a {nombre}, señor.",
+        "A partir de ahora, esta sesión se llama {nombre}, señor.",
+        "He llamado a la sesión {nombre}, señor.",
+    ],
+    "sesion.importante": [
+        "Sesión marcada como importante, señor.",
+        "Entendido, señor. Esta sesión queda marcada como importante.",
+        "He marcado la sesión como importante, señor.",
+    ],
+    "sesion.no_importante": [
+        "Sesión marcada como no importante, señor.",
+        "De acuerdo, señor. La sesión ya no es importante.",
+        "He quitado la importancia a la sesión, señor.",
+    ],
+    "sesion.desbordamiento": [
+        "Se incorpora una nueva sesión importante, señor. La sesión {nombre} deja de serlo"
+        " y se eliminará al cerrar.",
+        "Ya hay diez sesiones importantes, señor. La sesión {nombre} deja de serlo y se"
+        " eliminará al cerrar esta.",
+    ],
+    "sesion.proponer_nombre": [
+        "¿Quiere llamar a esta sesión {nombre}, señor?",
+        "¿Le pongo a esta sesión el nombre {nombre}, señor?",
+    ],
+    # Creación
+    "creacion.creado": [
+        "He creado {tipo} {nombre} en {carpeta}, señor.",
+        "Listo, señor. Ya tiene {tipo} {nombre} en {carpeta}.",
+        "Hecho, señor. He creado {tipo} {nombre} en {carpeta}.",
+    ],
+    "creacion.colision": [
+        "Ya existe {nombre}, señor. Escriba otro nombre o cancelar.",
+        "{nombre} ya existe, señor. Indíqueme otro nombre o escriba cancelar.",
+        "Ya hay algo llamado {nombre}, señor. Escriba otro nombre o cancelar.",
+    ],
+    "creacion.fallo": [
+        "No he podido crear {nombre}, señor.",
+        "Lo siento, señor. No ha sido posible crear {nombre}.",
+        "Disculpe, señor. Algo ha impedido crear {nombre}.",
+    ],
     # Comandos
     "comandos.cd": [
         "Directorio cambiado a {carpeta}, señor.",

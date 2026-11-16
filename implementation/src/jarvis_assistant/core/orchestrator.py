@@ -11,7 +11,12 @@ en su orden. Cada orden se ejecuta en su propia tarea `asyncio`: así las frases
 atienden aunque haya órdenes en curso (RN-52). Las respuestas no se dicen dentro de la orden:
 van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en que terminan.
 
-`run_task` es la única función que ejecuta acciones (AD-13). El diálogo llega con su fase.
+`run_task` es la única función que ejecuta acciones (AD-13).
+
+Diálogo: un módulo pregunta con `ctx.ask`. La pregunta entra como `DialogueRequested` y la
+FSM pasa a `AWAITING_*`; lo que se escribe entonces es la respuesta, y la corrutina del módulo
+sigue cuando la FSM la resuelve. Como varias órdenes pueden ir a la vez, las preguntas se hacen
+de una en una: la segunda espera a que se resuelva la primera.
 """
 import asyncio
 import logging
@@ -24,8 +29,11 @@ from jarvis_assistant.config import Config, ConfigError
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import (
+    CANCELLED_REASON,
     ActionContext,
     ActionResult,
+    DialogueAnswer,
+    ExpectedType,
     Intent,
     IntentSpec,
     Phrase,
@@ -56,7 +64,6 @@ from jarvis_assistant.speaker.speaker import Speaker
 logger = logging.getLogger(__name__)
 
 LEVEL_INTERVAL_SECONDS = 0.05  # 20 Hz (AD-14)
-CANCELLED_REASON = "cancelada"  # RN-52
 CLOSED_REASON = "sesión cerrada"  # RN-46
 HELP_PANEL = "ayuda"
 
@@ -67,6 +74,16 @@ _ACTIVITY_OF_STATE = {
     AssistantState.AWAITING_CONFIRMATION: Activity.ESPERANDO,
     AssistantState.AWAITING_PARAMETER: Activity.ESPERANDO,
 }
+
+# Respuestas admitidas que la interfaz muestra con cada tipo de pregunta.
+HINTS: Mapping[ExpectedType, tuple[str, ...]] = {
+    ExpectedType.BOOLEAN: ("Sí", "No", "Cancelar"),
+    ExpectedType.NEW_FILENAME: ("Otro nombre", "Cancelar"),
+    ExpectedType.DATETIME: ("Una fecha", "Cancelar"),
+    ExpectedType.REMINDER_ACTION: ("Otro aviso", "Fecha límite", "No"),
+}
+
+_AWAITING = (AssistantState.AWAITING_CONFIRMATION, AssistantState.AWAITING_PARAMETER)
 
 Origin = Literal["voz", "protocolo"]
 Reload = Callable[[Config], tuple[Config, Sequence[ConfigError]]]
@@ -79,6 +96,11 @@ class Sessions(Protocol):
 
 @dataclass(frozen=True)
 class _SilenceElapsed:
+    token: int
+
+
+@dataclass(frozen=True)
+class _DialogueElapsed:
     token: int
 
 
@@ -179,6 +201,13 @@ class Orchestrator:
         self._notices = NoticeQueue()
         self._background: dict[asyncio.Task, _Task] = {}
         self._places: dict[str, Path] = {}
+        # Diálogo: la pregunta abierta, el turno para preguntar y su tiempo de espera, que
+        # empieza a correr (`armed`) cuando termina de decirse la pregunta.
+        self._dialogue: fsm.DialogueContext | None = None
+        self._dialogue_lock = asyncio.Lock()
+        self._dialogue_timer: TimerHandle | None = None
+        self._dialogue_token = 0
+        self._dialogue_armed = False
 
         for module in modules:
             self._register(module)
@@ -276,6 +305,9 @@ class Orchestrator:
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
             await self._on_silence(entry)
+        elif isinstance(entry, _DialogueElapsed):
+            if entry.token == self._dialogue_token and self._machine.state in _AWAITING:
+                await self._handle(fsm.DialogueTimeout())
         elif isinstance(entry, _JobDone):
             self._jobs.finish(entry.job)
         elif isinstance(entry, _UserAction):
@@ -288,6 +320,9 @@ class Orchestrator:
             logger.warning("Entrada desconocida: %r", entry)
 
     async def _on_text(self, text: str) -> None:
+        if self._machine.state in _AWAITING:
+            await self._on_answer(text)
+            return
         orders = split_orders(text)
         if len(orders) > 1:
             await self._on_batch(orders)
@@ -303,6 +338,17 @@ class Orchestrator:
         if isinstance(entry, recognized):
             logger.info("Frase reconocida: %s", type(entry).__name__)
             self._bus.publish(events.CommandReceived(text, recognized=True))
+        await self._handle(entry)
+
+    async def _on_answer(self, text: str) -> None:
+        """En espera, el mensaje entero es la respuesta (o una frase de control)."""
+        if not text.strip():
+            return
+        entry = self._router.route(text, self._machine.state, self._machine.dialogue)
+        if entry is None:
+            return
+        recognized = not isinstance(entry, fsm.Answer) or entry.valid
+        self._bus.publish(events.CommandReceived(text.strip(), recognized=recognized))
         await self._handle(entry)
 
     async def _on_batch(self, orders: Sequence[str]) -> None:
@@ -381,6 +427,21 @@ class Orchestrator:
                     self._deliver(notice)
             case fsm.DeliverPendingNotices():
                 pass  # los entrega `_pump` cuando termina la frase de apertura
+            case fsm.OpenDialogue(dialogue=dialogue):
+                self._open_dialogue(dialogue)
+            case fsm.RejectDialogue(dialogue=dialogue):
+                _settle(dialogue, DialogueAnswer(cancelled=True))
+            case fsm.RepeatQuestion():
+                self._ask_again()
+            case fsm.RestartDialogueTimer():
+                if self._dialogue_armed:
+                    self._arm_dialogue_timer()
+            case fsm.ResolveDialogue(value=value):
+                self._close_dialogue(DialogueAnswer(cancelled=False, value=value), "answered")
+            case fsm.CancelDialogue(announce=announce):
+                self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
+                if announce:
+                    self._announce(Phrase("general.operacion_cancelada"))
 
     async def _say_lifecycle(self, phrase_id: str, transition: Transition) -> None:
         announced = False
@@ -442,6 +503,7 @@ class Orchestrator:
 
     async def _close_session(self, reason: str, silent: bool) -> None:
         self._cancel_silence_timer()
+        self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
         await self._cancel_orders()
         await self._cancel_background(CLOSED_REASON)  # RN-46
         self._speaker.stop()
@@ -600,6 +662,91 @@ class Orchestrator:
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
+    # --- Diálogo ------------------------------------------------------------------------------
+
+    async def _ask(
+        self,
+        question: Phrase,
+        expected_type: ExpectedType,
+        *,
+        metadata: Mapping[str, object] | None = None,
+        subject: Mapping[str, object] | None = None,
+        speech: list[Phrase] | None = None,
+    ) -> DialogueAnswer:
+        """`ctx.ask`: pregunta y espera la respuesta sin bloquear el bucle. Lo que la tarea
+        llevaba dicho se dice antes de la pregunta."""
+        async with self._dialogue_lock:
+            if speech:
+                self._announce(*speech)
+                speech.clear()
+            dialogue = fsm.DialogueContext(
+                question, expected_type, dict(metadata or {}),
+                self._config.settings.dialogue.timeout_seconds,
+                asyncio.get_running_loop().create_future(), subject,
+            )  # fmt: skip
+            self._queue.put_nowait(fsm.DialogueRequested(dialogue))
+            answer = await dialogue.continuation  # type: ignore[misc]
+            logger.info("Diálogo resuelto: %s", "cancelado" if answer.cancelled else "respuesta")
+            return answer
+
+    def _open_dialogue(self, dialogue: fsm.DialogueContext) -> None:
+        """`OpenDialogue`: publica la pregunta y la dice; el tiempo de espera empieza al
+        terminar de decirla."""
+        self._dialogue = dialogue
+        self._cancel_dialogue_timer()
+        try:
+            text = render(dialogue.question)
+        except Exception:
+            logger.exception("Pregunta sin frase: %s", dialogue.question.id)
+            text = ""
+        self._bus.publish(
+            events.DialogueOpened(
+                text, dialogue.expected_type.name, HINTS.get(dialogue.expected_type, ()),
+                dialogue.timeout_seconds, dialogue.subject,
+            )
+        )  # fmt: skip
+        self._speak_question(dialogue.question)
+
+    def _ask_again(self) -> None:
+        """Respuesta no válida, primera vez: «No le he entendido.» y la pregunta otra vez."""
+        if self._dialogue is not None:
+            self._speak_question(Phrase("general.no_entendido"), self._dialogue.question)
+
+    def _speak_question(self, *phrases: Phrase) -> None:
+        self._cancel_dialogue_timer()
+        self._announcer.submit(Announcement(phrases, on_delivered=self._question_said))
+
+    def _question_said(self) -> None:
+        if self._dialogue is not None and self._machine.state in _AWAITING:
+            self._arm_dialogue_timer()
+
+    def _arm_dialogue_timer(self) -> None:
+        self._cancel_dialogue_timer()
+        if self._dialogue is None:
+            return
+        self._dialogue_armed = True
+        token = self._dialogue_token
+        self._dialogue_timer = self._clock.call_later(
+            self._dialogue.timeout_seconds,
+            lambda: self._queue.put_nowait(_DialogueElapsed(token)),
+        )
+
+    def _cancel_dialogue_timer(self) -> None:
+        self._dialogue_token += 1
+        self._dialogue_armed = False
+        timer, self._dialogue_timer = self._dialogue_timer, None
+        if timer is not None:
+            timer.cancel()
+
+    def _close_dialogue(self, answer: DialogueAnswer, outcome: events.DialogueOutcome) -> None:
+        """Resuelve la pregunta abierta, si la hay, y publica `DialogueClosed`."""
+        dialogue, self._dialogue = self._dialogue, None
+        self._cancel_dialogue_timer()
+        if dialogue is None:
+            return
+        _settle(dialogue, answer)
+        self._bus.publish(events.DialogueClosed(outcome))
+
     # --- Voz ---------------------------------------------------------------------------------
 
     def _announce(self, *phrases: Phrase) -> None:
@@ -708,6 +855,17 @@ class Orchestrator:
             else:
                 speech.append(phrase)
 
+        async def ask(
+            question: Phrase,
+            expected_type: ExpectedType,
+            *,
+            metadata: Mapping[str, object] | None = None,
+            subject: Mapping[str, object] | None = None,
+        ) -> DialogueAnswer:
+            return await self._ask(
+                question, expected_type, metadata=metadata, subject=subject, speech=speech
+            )
+
         def background(work: Coroutine[Any, Any, ActionResult]) -> None:
             if task is None:
                 work.close()
@@ -728,12 +886,17 @@ class Orchestrator:
             notify=self._notify,
             background=background,
             task_id=None if task is None else task.id,
+            ask=ask,
         )
 
     @staticmethod
     def _detail(result: ActionResult) -> str | None:
-        """Motivo que se muestra bajo una tarea en `error`: su frase."""
-        if result.status != "error" or result.speech is None:
+        """Motivo que se muestra bajo una tarea en `error`: el del módulo o, si no, su frase."""
+        if result.status != "error":
+            return None
+        if result.detail is not None:
+            return result.detail
+        if result.speech is None:
             return None
         try:
             return render(result.speech)
@@ -814,6 +977,8 @@ class Orchestrator:
         state = self._machine.state
         if self._speaker.speaking:
             activity = Activity.HABLANDO
+        elif state in _AWAITING:
+            activity = Activity.ESPERANDO  # la tarea que pregunta sigue en ejecución
         elif self._executing:
             activity = Activity.PROCESANDO
         else:
@@ -838,3 +1003,10 @@ class Orchestrator:
         self._bus.publish(events.AudioLevel(min(1.0, max(0.0, level)), source))
         if source != "none" and not self._stopping:
             self._schedule_level()
+
+
+def _settle(dialogue: fsm.DialogueContext, answer: DialogueAnswer) -> None:
+    """Entrega la respuesta a la corrutina que pregunta, si sigue esperando."""
+    future = dialogue.continuation
+    if future is not None and not future.done():
+        future.set_result(answer)

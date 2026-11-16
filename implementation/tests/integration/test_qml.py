@@ -70,7 +70,7 @@ def test_hay_qml_de_todas_las_partes_de_la_interfaz():
         "components/ToolBar.qml", "components/TextField.qml", "components/Chip.qml",
         "orb/NeuralNet.qml", "orb/GyroArcs.qml", "orb/Satellites.qml", "orb/Glyphs.qml",
         "orb/LifeField.qml", "orb/Constellation.qml", "orb/SatelliteOrbs.qml", "orb/Dust.qml",
-        "orb/Lattice.qml", "orb/Accretion.qml",
+        "orb/Lattice.qml", "orb/Accretion.qml", "components/DialogCard.qml",
     } <= names  # fmt: skip
 
 
@@ -476,3 +476,26 @@ def test_el_inicio_de_cada_animacion_queda_en_el_registro_con_su_marca_de_tiempo
         "Inicio de la animación sleep_rest (pantalla): 50.500",
         "Inicio de la animación sleep_rest (HUD): 50.500",
     ]
+
+
+# --- Diálogo (T-4.2) -------------------------------------------------------------------------
+
+
+def test_la_tarjeta_de_dialogo_muestra_la_pregunta_y_se_retira_al_cerrarla(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    cards = [ui.screen.findChild(QObject, "dialogCard"),
+             ui.hud_window.findChild(QObject, "hudDialogCard")]  # fmt: skip
+    assert all(card is not None for card in cards)
+    assert not any(card.property("shown") for card in cards)
+    ui.on_event(events.DialogueOpened("¿Elimino la sesión 12, pruebas?", "BOOLEAN",
+                                      ("Sí", "No", "Cancelar"), 20.0,
+                                      {"id": 12, "nombre": "pruebas"}))  # fmt: skip
+    qtbot.waitUntil(lambda: all(card.property("opacity") == 1 for card in cards), timeout=3000)
+    question = ui.screen.findChild(QObject, "dialogQuestion")
+    assert question.property("text") == "¿Elimino la sesión 12, pruebas?"
+    qtbot.wait(300)
+    assert 0 < cards[0].property("remaining") < 1  # la barra se vacía con el tiempo
+    ui.on_event(events.DialogueClosed("answered"))
+    qtbot.waitUntil(lambda: not any(card.property("visible") for card in cards), timeout=3000)
+    assert ui.warnings == []

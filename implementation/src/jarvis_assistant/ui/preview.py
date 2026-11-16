@@ -149,9 +149,9 @@ def script() -> list[Step]:
         *panel_tour(),
         # Una pregunta: esperando.
         Step(1.5, events.SessionChanged(1, "prácticas de redes", True)),
-        Step(0.0, events.DialogueOpened("¿Elimino la sesión 12?", "CONFIRMATION",
-                                        ("Sí", "No", "Cancelar"), 15.0,
-                                        {"id": 12, "name": "pruebas"})),
+        Step(0.0, events.DialogueOpened("¿Elimino la sesión 12, pruebas, señor?", "BOOLEAN",
+                                        ("Sí", "No", "Cancelar"), 20.0,
+                                        {"id": 12, "nombre": "pruebas"})),
         Step(0.0, _activity("AWAITING_CONFIRMATION", Activity.ESPERANDO)),
         Step(3.0, events.DialogueClosed("cancelled")),
         Step(0.0, _task(3, "completado", "buscar informe", module="busqueda")),

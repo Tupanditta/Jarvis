@@ -44,9 +44,12 @@ def test_build_app_construye_el_grafo_completo_sin_hilos_ni_dispositivos(tmp_pat
     assert not adapters.player.is_open
     assert app.sessions.current is None
     assert [module.name for module in ACTION_MODULES] == [
-        "comandos", "apertura", "busqueda", "historial",
+        "comandos", "apertura", "busqueda", "creacion", "historial",
     ]  # fmt: skip
-    assert set(app.orchestrator.modules) == {"comandos", "apertura", "busqueda", "historial"}
+    assert set(app.orchestrator.modules) == {
+        "sesion", "comandos", "apertura", "busqueda", "creacion", "historial",
+    }  # fmt: skip
+    assert app.orchestrator.modules["sesion"] is app.sessions
     app.speaker.close()
     adapters.database.close()
 

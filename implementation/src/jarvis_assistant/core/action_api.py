@@ -1,7 +1,7 @@
 """Interfaz común de los módulos de acción (arquitectura.md, sección 5; RNF-18, RNF-19).
 
-Es lo único que un módulo conoce del resto del sistema. El diálogo (`ask`), las subtareas y
-`invoke` llegan con el diálogo de varios turnos y con los protocolos.
+Es lo único que un módulo conoce del resto del sistema. Las subtareas e `invoke` llegan con
+los protocolos.
 """
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 # los recursos que leen y que cambian; el planificador usa esa declaración para decidir qué
 # tareas pueden ejecutarse a la vez (`core/task_queue.py`).
 WORKDIR = "workdir"
+
+# Motivo de una tarea que termina sin hacer nada porque el usuario la ha cancelado (RN-52).
+CANCELLED_REASON = "cancelada"
 
 
 class SlotType(Enum):
@@ -89,6 +92,45 @@ class ActionResult:
     speech: Phrase | None = None
     description: str | None = None  # sustituye la descripción de la tarea
     background: bool = False  # la tarea sigue pendiente (arquitectura.md, sección 4, regla 4)
+    # Motivo que se muestra bajo la tarea en `error`; sin él, el texto de `speech`.
+    detail: str | None = None
+
+    @classmethod
+    def cancelled(
+        cls, speech: Phrase | None = None, description: str | None = None
+    ) -> "ActionResult":
+        """La tarea termina en `error` con el motivo «cancelada» (RN-19, RN-52)."""
+        return cls("error", speech, description, detail=CANCELLED_REASON)
+
+
+class ExpectedType(Enum):
+    """Qué respuesta espera una pregunta (maquina-estados.md, «Contexto de diálogo»)."""
+
+    BOOLEAN = "boolean"  # sí / no → AWAITING_CONFIRMATION
+    NEW_FILENAME = "new_filename"  # un nombre de archivo o carpeta → AWAITING_PARAMETER
+    DATETIME = "datetime"  # una fecha y hora → AWAITING_PARAMETER
+    REMINDER_ACTION = "reminder_action"  # «otro aviso …» / «fecha límite …» / «no»
+
+
+@dataclass(frozen=True)
+class DialogueAnswer:
+    """Respuesta a `ctx.ask`. `cancelled`: «cancelar», tiempo agotado o respuesta no válida
+    dos veces. Si no, `value` ya está validado: `bool` para `BOOLEAN`, `str` para
+    `NEW_FILENAME`. Una negación es `value=False`, no una cancelación."""
+
+    cancelled: bool
+    value: object | None = None
+
+
+# Pregunta al usuario y espera su respuesta sin bloquear (RES-21, RES-22).
+# `ask(question, expected_type, *, metadata=None, subject=None)`. `subject`: el elemento sobre
+# el que se pregunta, para la interfaz; `metadata`: los datos de la operación en pausa.
+Ask = Callable[..., Awaitable[DialogueAnswer]]
+
+
+async def _no_dialogue(*_args: object, **_kwargs: object) -> DialogueAnswer:
+    """Sin nadie a quien preguntar, la pregunta se cancela."""
+    return DialogueAnswer(cancelled=True)
 
 
 @dataclass(frozen=True)
@@ -163,6 +205,7 @@ class ActionContext:
     background: Callable[[Coroutine[Any, Any, ActionResult]], None]
     task_id: int | None = None
     scheduler: Any = None
+    ask: Ask = _no_dialogue
 
 
 class ActionModule(Protocol):

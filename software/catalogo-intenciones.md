@@ -198,7 +198,7 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 
 | Identificador | Texto |
 |---|---|
-| `creacion.creado` | {tipo} {nombre} creado en {carpeta}. |
+| `creacion.creado` | He creado {tipo} {nombre} en {carpeta}. ({tipo}: «el archivo», «la carpeta», «las carpetas», «la estructura».) |
 | `creacion.colision` | Ya existe {nombre}. Escriba otro nombre o cancelar. |
 | `creacion.fallo` | No he podido crear {nombre}. |
 

@@ -19,7 +19,7 @@ from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
 from jarvis_assistant.action_modules.app_launcher import AppLauncher
 from jarvis_assistant.action_modules.command_runner import CommandRunner
-from jarvis_assistant.action_modules.file_manager import FileSearch
+from jarvis_assistant.action_modules.file_manager import FileCreation, FileSearch
 from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
@@ -50,8 +50,11 @@ SHUTDOWN_LIMIT_SECONDS = 3.0
 _MISSING_MODELS_NOTICE_MS = 6000
 
 # Módulos de acción registrados. Añadir un módulo es añadir aquí su clase: `build_app` crea
-# una instancia por aplicación. El orden es el de desempate entre patrones.
-ACTION_MODULES: list[Callable[[], Any]] = [CommandRunner, AppLauncher, FileSearch, History]
+# una instancia por aplicación. El orden es el de desempate entre patrones. El módulo Sesión
+# va aparte, antes que todos: también lo usa el orquestador para abrir y cerrar la sesión.
+ACTION_MODULES: list[Callable[[], Any]] = [
+    CommandRunner, AppLauncher, FileSearch, FileCreation, History,
+]
 
 
 @dataclass
@@ -116,7 +119,7 @@ def build_app(
         database=adapters.database,
         platform=adapters.platform,
         workdir=workdir,
-        modules=[create() for create in ACTION_MODULES],
+        modules=[sessions, *(create() for create in ACTION_MODULES)],
         reload_config=reload_config,
         on_exit=on_exit,
     )

@@ -1,12 +1,16 @@
 """Máquina de estados del asistente (maquina-estados.md, AD-01).
 
 Es pura: `handle` no hace E/S ni lee el reloj; cambia el estado y devuelve los efectos que el
-orquestador ejecuta en orden. Las filas de diálogo de la tabla de transiciones (estados
-`AWAITING_*` y sus entradas) llegan con el diálogo de varios turnos.
+orquestador ejecuta en orden. Incluye las filas de diálogo: un módulo pregunta con `ctx.ask`,
+la FSM pasa a `AWAITING_*` y el orquestador resuelve la pregunta con lo que la FSM decida.
 """
-from dataclasses import dataclass
+import asyncio
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from typing import Literal
+
+from jarvis_assistant.core.action_api import ExpectedType, Phrase
 
 
 class AssistantState(StrEnum):
@@ -30,6 +34,24 @@ class Transition(Enum):
     LISTENING_RESUMED = "listening_resumed"
     REST_ENTERED = "rest_entered"
     SESSION_CLOSED = "session_closed"
+
+
+@dataclass(eq=False)
+class DialogueContext:
+    """La pregunta en curso. Solo hay una: los diálogos se piden de uno en uno."""
+
+    question: Phrase
+    expected_type: ExpectedType
+    metadata: Mapping[str, object] = field(default_factory=dict)  # la operación en pausa
+    timeout_seconds: float = 20.0
+    # Se resuelve con la `DialogueAnswer`; equivale al `pending_callback`.
+    continuation: "asyncio.Future | None" = None
+    subject: Mapping[str, object] | None = None  # el elemento sobre el que se pregunta
+    attempts: int = 0  # respuestas no válidas recibidas
+
+    @property
+    def confirmation(self) -> bool:
+        return self.expected_type is ExpectedType.BOOLEAN
 
 
 # --- Entradas --------------------------------------------------------------------------------
@@ -86,6 +108,27 @@ class OpenSessionRequested(Input):
 @dataclass(frozen=True)
 class ShutdownRequested(Input):
     """Salir desde la bandeja o fin de la sesión del sistema operativo."""
+
+
+@dataclass(frozen=True)
+class DialogueRequested(Input):
+    """Un módulo ha llamado a `ctx.ask(…)`."""
+
+    dialogue: DialogueContext
+
+
+@dataclass(frozen=True)
+class Answer(Input):
+    """Texto escrito en `AWAITING_*`, ya validado por el enrutador contra el tipo esperado.
+    `valid=False`: no es una respuesta admitida; `value` no cuenta."""
+
+    value: object = None
+    valid: bool = True
+
+
+@dataclass(frozen=True)
+class DialogueTimeout(Input):
+    """Han pasado los segundos de espera sin respuesta (RN-38)."""
 
 
 # --- Efectos ---------------------------------------------------------------------------------
@@ -170,6 +213,48 @@ class ExitProcess(Effect):
     """Terminar el proceso."""
 
 
+@dataclass(frozen=True)
+class OpenDialogue(Effect):
+    """Publicar `DialogueOpened`, decir la pregunta e iniciar el tiempo de espera al
+    terminarla."""
+
+    dialogue: DialogueContext
+
+
+@dataclass(frozen=True)
+class RejectDialogue(Effect):
+    """La pregunta llega cuando no se puede atender (sin escucha): se resuelve como cancelada,
+    sin voz ni eventos."""
+
+    dialogue: DialogueContext
+
+
+@dataclass(frozen=True)
+class RepeatQuestion(Effect):
+    """Decir «No le he entendido.» y repetir la pregunta; reiniciar el tiempo de espera."""
+
+
+@dataclass(frozen=True)
+class RestartDialogueTimer(Effect):
+    """Reiniciar el tiempo de espera de la pregunta, si ya ha empezado a correr."""
+
+
+@dataclass(frozen=True)
+class ResolveDialogue(Effect):
+    """Resolver la pregunta con la respuesta y publicar `DialogueClosed(answered)`. El módulo
+    continúa su turno."""
+
+    value: object
+
+
+@dataclass(frozen=True)
+class CancelDialogue(Effect):
+    """Resolver la pregunta como cancelada y publicar `DialogueClosed(cancelled)`.
+    `announce`: decir «Operación cancelada.»."""
+
+    announce: bool
+
+
 # --- Máquina ---------------------------------------------------------------------------------
 
 _S = AssistantState
@@ -180,24 +265,32 @@ class StateMachine:
 
     def __init__(self, state: AssistantState = AssistantState.DORMIDO) -> None:
         self.state = state
+        self._dialogue: DialogueContext | None = None
+
+    @property
+    def dialogue(self) -> DialogueContext | None:
+        """La pregunta en curso, en `AWAITING_*`."""
+        return self._dialogue
 
     def handle(self, entry: Input) -> list[Effect]:
         """Aplica `entry` al estado actual y devuelve los efectos, en orden."""
         if self.state is _S.DORMIDO:
             return self._asleep(entry)
         if isinstance(entry, ShutdownRequested):
-            self.state = _S.DORMIDO
+            self.state, self._dialogue = _S.DORMIDO, None
             return [CloseSession(reason="salida", silent=True), ExitProcess()]
         if entry == Control(ControlKind.CERRAR):
-            self.state = _S.DORMIDO
+            self.state, self._dialogue = _S.DORMIDO, None
             return [CloseSession(reason="voz")]
         if self.state is _S.IDLE:
             return self._resting(entry)
         if self.state is _S.LISTENING_COMMAND:
             return self._listening(entry)
-        return []
+        return self._awaiting(entry)
 
     def _asleep(self, entry: Input) -> list[Effect]:
+        if isinstance(entry, DialogueRequested):
+            return [RejectDialogue(entry.dialogue)]
         if isinstance(entry, WakeWord | OpenSessionRequested):
             self.state = _S.LISTENING_COMMAND
             return [
@@ -211,6 +304,8 @@ class StateMachine:
         return []
 
     def _resting(self, entry: Input) -> list[Effect]:
+        if isinstance(entry, DialogueRequested):
+            return [RejectDialogue(entry.dialogue)]
         if isinstance(entry, WakeWord):
             self.state = _S.LISTENING_COMMAND
             return [
@@ -248,4 +343,43 @@ class StateMachine:
                 CancelTurn(announce=False),
                 SayLifecycle("ciclo.reposo", Transition.REST_ENTERED),
             ]
+        if isinstance(entry, DialogueRequested):
+            dialogue = entry.dialogue
+            dialogue.attempts = 0
+            self.state = (
+                _S.AWAITING_CONFIRMATION if dialogue.confirmation else _S.AWAITING_PARAMETER
+            )
+            self._dialogue = dialogue
+            return [OpenDialogue(dialogue)]
         return []
+
+    def _awaiting(self, entry: Input) -> list[Effect]:
+        """`AWAITING_CONFIRMATION` y `AWAITING_PARAMETER`."""
+        dialogue = self._dialogue
+        if isinstance(entry, Answer):
+            if entry.valid:
+                return self._close_dialogue(ResolveDialogue(entry.value))
+            if dialogue is not None and dialogue.attempts == 0:
+                dialogue.attempts += 1
+                return [RepeatQuestion()]
+            return self._close_dialogue(CancelDialogue(announce=True))
+        if isinstance(entry, DialogueTimeout) or entry == Control(ControlKind.CANCELAR):
+            return self._close_dialogue(CancelDialogue(announce=True))
+        if isinstance(entry, WakeWord):
+            return [RestartDialogueTimer()]
+        if entry == Control(ControlKind.REPOSO):
+            self._dialogue = None
+            self.state = _S.IDLE
+            return [
+                CancelDialogue(announce=False),
+                CancelTurn(announce=False),
+                SayLifecycle("ciclo.reposo", Transition.REST_ENTERED),
+            ]
+        if isinstance(entry, DialogueRequested):
+            return [RejectDialogue(entry.dialogue)]  # nunca dos preguntas a la vez
+        return []  # los avisos esperan en su cola (RN-39); las órdenes no se atienden
+
+    def _close_dialogue(self, effect: Effect) -> list[Effect]:
+        self._dialogue = None
+        self.state = _S.LISTENING_COMMAND
+        return [effect]

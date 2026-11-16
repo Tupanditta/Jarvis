@@ -234,13 +234,23 @@ Window {
                 anchors.fill: parent
                 flat: true
                 limit: 6
-                visible: assistant.activePanel.length === 0
+                visible: assistant.activePanel.length === 0 && !dialog.shown
             }
 
             PanelHost {
                 anchors.fill: parent
                 flat: true
                 panel: assistant.activePanel
+                visible: panel.length > 0 && !dialog.shown
+            }
+
+            // Mientras hay una pregunta, se superpone al panel activo.
+            DialogCard {
+                id: dialog
+
+                objectName: "hudDialogCard"
+                width: parent.width
+                flat: true
             }
         }
 
