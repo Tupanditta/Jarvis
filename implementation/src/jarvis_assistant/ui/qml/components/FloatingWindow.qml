@@ -57,6 +57,7 @@ Item {
     signal resized(real fx, real fy, real fw, real fh)
     signal closed()
     signal activated()
+    signal appeared()                    // ha pasado de oculta a visible
 
     width: Math.min(areaWidth, Math.max(minWidth, Math.round(fw * areaWidth)))
     height: Math.min(areaHeight, Math.max(minHeight, Math.round(fh * areaHeight)))
@@ -65,6 +66,11 @@ Item {
 
     readonly property bool shown: open && !held
     property real pop: shown ? 1 : 0.97  // escala al abrir y cerrar a mano
+
+    onShownChanged: {
+        if (shown)
+            appeared()
+    }
 
     visible: opacity > 0
     opacity: shown ? 1 : 0

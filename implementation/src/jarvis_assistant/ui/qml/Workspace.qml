@@ -5,7 +5,11 @@
 // Al abrir sesión (`hold`, luego `release`) las ventanas esperan ocultas a que termine el
 // despertar del orbe y salen de él una a una, de la de abajo a la de arriba. Las que se abren
 // mientras tanto se suman a la cola.
+//
+// Cada ventana que aparece suena con un aviso corto. Si aparecen varias a la vez (sin
+// animaciones), suena una sola vez.
 import QtQuick
+import QtMultimedia
 import "components"
 
 Item {
@@ -59,6 +63,23 @@ Item {
         cancel()
     }
 
+    SoundEffect {
+        id: chime
+
+        property double lastPlayed: 0
+
+        source: Qt.resolvedUrl("../assets/sounds/window_open.wav")
+        volume: 0.6
+
+        function ring() {
+            var now = Date.now()
+            if (now - lastPlayed < 120)
+                return
+            lastPlayed = now
+            play()
+        }
+    }
+
     Timer {
         id: launches
 
@@ -109,6 +130,7 @@ Item {
             onResized: (left, top, wide, tall) => workspace.resize(windowId, left, top, wide, tall)
             onClosed: workspace.close(windowId)
             onActivated: workspace.show(windowId)
+            onAppeared: chime.ring()
 
             Loader {
                 id: loader
