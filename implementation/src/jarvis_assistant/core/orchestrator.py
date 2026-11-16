@@ -25,7 +25,7 @@ import logging
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jarvis_assistant.config import Config, ConfigError, validate_protocols
 from jarvis_assistant.core import events
@@ -35,6 +35,7 @@ from jarvis_assistant.core.action_api import (
     CLOSED_REASON,
     OFFER,
     ActionContext,
+    ActionModule,
     ActionResult,
     DialogueAnswer,
     ExpectedType,
@@ -60,6 +61,7 @@ from jarvis_assistant.intent_router.router import (
     CORE_MODULE,
     HELP,
     HIDE_SCREEN,
+    PRESENT,
     REPEAT,
     RESTORE_WINDOW,
     RESTORE_WINDOWS,
@@ -68,8 +70,12 @@ from jarvis_assistant.intent_router.router import (
     Order,
     ParamError,
 )
-from jarvis_assistant.speaker.phrases import render
+from jarvis_assistant.speaker.phrases import enumeration, render
 from jarvis_assistant.speaker.speaker import Speaker
+
+if TYPE_CHECKING:
+    from jarvis_assistant.core.scheduler import Scheduler
+    from jarvis_assistant.os_adapters.base import PlatformAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +175,12 @@ class Orchestrator:
         speaker: Speaker,
         sessions: Sessions,
         database: Database,
-        platform: Any,
+        platform: "PlatformAdapter",
         workdir: Workdir,
-        modules: Sequence[Any] = (),
+        modules: Sequence[ActionModule] = (),
         reload_config: Reload | None = None,
         on_exit: Callable[[], None] = lambda: None,
-        scheduler: Any = None,
+        scheduler: "Scheduler | None" = None,
     ) -> None:
         """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos."""
         self._machine = machine
@@ -202,7 +208,7 @@ class Orchestrator:
         self._silence_token = 0
         self._level_timer: TimerHandle | None = None
 
-        self._modules: dict[str, Any] = {}
+        self._modules: dict[str, ActionModule] = {}
         self._panels: dict[tuple[str, str], str | None] = {}
         self._jobs: TaskQueue[_Work] = TaskQueue()
         self._queued: tuple[str, ...] = ()  # lo último publicado en `OrderQueueChanged`
@@ -251,7 +257,7 @@ class Orchestrator:
         return self._machine.state
 
     @property
-    def modules(self) -> Mapping[str, Any]:
+    def modules(self) -> Mapping[str, ActionModule]:
         return self._modules
 
     def _panel_activated(self, event: events.PanelActivated) -> None:
@@ -296,7 +302,7 @@ class Orchestrator:
 
     # --- Registro de módulos -----------------------------------------------------------------
 
-    def _register(self, module: Any) -> None:
+    def _register(self, module: ActionModule) -> None:
         """Añade un módulo de acción: sus intenciones al enrutador y sus acciones aquí."""
         self._router.register(module)
         self._modules[module.name] = module
@@ -711,8 +717,30 @@ class Orchestrator:
                 self._announce(Phrase("general.ayuda"))
         elif intent == REPEAT:
             self._announce(self._speaker.last_phrase or Phrase("general.nada_que_repetir"))
+        elif intent == PRESENT:
+            self._announce(*self._presentation())
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
+
+    def _presentation(self) -> tuple[Phrase, ...]:
+        """«Preséntate»: quién es, cómo funciona, sus módulos (los del registro, para que la
+        lista no se desfase) y cómo saber más."""
+        name = self._config.settings.user.name.strip()
+        who = (
+            Phrase("presentacion.quien", {"nombre": name})
+            if name
+            else Phrase("presentacion.quien_anonimo")
+        )
+        modules = [
+            group.title.lower() for group in self._router.help() if group.module != CORE_MODULE
+        ]
+        return (
+            who,
+            Phrase("presentacion.funcionamiento"),
+            Phrase("presentacion.tecnologia"),
+            Phrase("presentacion.modulos", {"modulos": enumeration(modules)}),
+            Phrase("presentacion.cierre"),
+        )
 
     # --- Diálogo ------------------------------------------------------------------------------
 

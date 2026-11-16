@@ -49,6 +49,7 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 | `ui.reduce_motion` | `false` | Sustituye las animaciones por fundidos. |
 | `startup.open_session_on_start` | `false` | Solo desarrollo: abrir sesión al arrancar. |
 | `logging.level` | `"INFO"` | Nivel del registro. |
+| `user.name` | `""` | Nombre del usuario que dice «preséntate». Vacío: no lo dice. |
 
 ### `catalog.toml`
 

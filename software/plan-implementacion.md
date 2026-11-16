@@ -23,7 +23,7 @@ Orden de construcción del asistente. Sustituye a los antiguos `tasks.md` y `alc
 | 4 | Diálogo de varios turnos: Creación, eliminación en Historial, Sesión. | CU-09, CU-10 | 3 |
 | 5 | Recordatorios. | CU-11, CU-12 | 4 |
 | 6 | Protocolos. | CU-13 | 5 |
-| 7 | Endurecimiento: rendimiento, consumo, inicio automático, revisión visual. | todos | 6 |
+| 7 | Endurecimiento: rendimiento, consumo, inicio automático, revisión visual; escalabilidad, mantenibilidad e independencia entre módulos. | todos | 6 |
 | 8 | Adaptador de Linux. | todos | 7 |
 
 Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestra toda la cadena, del texto escrito a la respuesta hablada; a partir de la fase 3, cada fase añade módulos sin tocar el núcleo.
@@ -158,7 +158,7 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 
 ## Fase 7. Endurecimiento
 
-**Objetivo:** que el asistente se pueda usar a diario.
+**Objetivo:** que el asistente se pueda usar a diario y que su código se pueda ampliar sin romperse.
 
 | Tarea | Contenido | Hecho cuando |
 |---|---|---|
@@ -168,6 +168,18 @@ Las fases 0 a 7 forman la versión 1. La fase 1 es el corte mínimo que demuestr
 | T-7.4 | Revisión visual completa y `ui.reduce_motion`, `ui.quality`. | Lista de Interfaz, sección 11. |
 | T-7.5 | Inicio automático, instrucciones de instalación en `implementation/README.md` y comprobación de privacidad con la red desactivada y con un monitor de conexiones. | RNF-01, RNF-02, RF-75. |
 | T-7.6 | Cobertura y limpieza: código muerto fuera, cobertura ≥ 80 % en el núcleo. | RNF-24. |
+| T-7.7 | Escalabilidad, mantenibilidad e independencia entre módulos, sin cambiar funcionalidades ni conceptos (detalle debajo). | Mapa de dependencias en verde; contratos entre paquetes tipados; el resto de pruebas sin cambios. |
+
+### T-7.7. Escalabilidad, mantenibilidad e independencia
+
+Revisión del código con tres criterios. Ningún cambio altera el comportamiento: las pruebas existentes siguen igual y en verde.
+
+- **Independencia entre módulos.** Cada paquete solo importa lo que permite el mapa de dependencias de [arquitectura.md](arquitectura.md), sección 8.1. Lo comprueba `tests/unit/test_architecture.py` (`ALLOWED_DEPENDENCIES`): una dependencia nueva entre paquetes se añade al mapa a propósito, o la prueba falla. Un paquete nuevo sin reglas también la hace fallar.
+- **Mantenibilidad.** Los contratos entre paquetes se anotan con sus `Protocol` en lugar de `Any`: `ActionContext.platform` y `Orchestrator(platform=…)` son `PlatformAdapter`; `scheduler`, `Scheduler`; `modules` y `ACTION_MODULES`, `ActionModule`. Las importaciones que solo sirven para anotar van bajo `TYPE_CHECKING`, sin crear dependencias en tiempo de ejecución.
+- **Escalabilidad.** Añadir un módulo sigue siendo añadirlo a `ACTION_MODULES` (RNF-18). Pendiente, por orden de valor, y siempre sin cambio de comportamiento:
+  1. `core/orchestrator.py` (unas 1 200 líneas) concentra el bucle de turnos, el diálogo y el registro de tareas. Extraer el diálogo (`_ask`, su temporizador y su cierre) a `core/dialogue.py` y el registro de tareas (`run_task`, subtareas, segundo plano) a `core/tasks.py`. `run_task` sigue siendo la única función que ejecuta acciones (AD-13).
+  2. La configuración propia de cada módulo (`Catalog`, `StructureDef`, `ProtocolDef`…) vive en `config.py`: un módulo nuevo con configuración obliga a tocarlo. Si llegan más módulos, cada uno declara su sección y `config.py` solo la carga y valida.
+  3. Los módulos de acción usan funciones puras de texto del enrutador y de la voz (`normalize`, `tokenize`, `slots.datetimes`, `count`, `formats`). Están permitidas en el mapa; si la lista crece, se mueven a un paquete neutro de texto del que dependan los tres.
 
 ---
 

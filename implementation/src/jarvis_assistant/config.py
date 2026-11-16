@@ -100,6 +100,12 @@ class LoggingSettings:
 
 
 @dataclass(frozen=True)
+class UserSettings:
+    # Nombre del usuario, para la presentación del asistente. Vacío: no lo dice.
+    name: str = ""
+
+
+@dataclass(frozen=True)
 class Settings:
     input: InputSettings = field(default_factory=InputSettings)
     tts: TtsSettings = field(default_factory=TtsSettings)
@@ -111,6 +117,7 @@ class Settings:
     ui: UiSettings = field(default_factory=UiSettings)
     startup: StartupSettings = field(default_factory=StartupSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    user: UserSettings = field(default_factory=UserSettings)
 
 
 _NON_EMPTY = "non-empty"

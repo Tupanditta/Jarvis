@@ -21,6 +21,7 @@ Módulo interno `nucleo`. No pertenecen a ningún módulo de acción.
 |---|---|---|
 | `nucleo.ayuda` | ayuda · qué puedes hacer · qué sabes hacer | Activa el panel de ayuda. «Estas son las órdenes disponibles.» |
 | `nucleo.repetir` | repite · repítelo · puedes repetir | Repite la última respuesta. Si no hay: «No hay nada que repetir.» |
+| `nucleo.presentate` | preséntate · quién eres | Se presenta, siempre en primera persona, con cinco frases seguidas: quién es (con `user.name` si está configurado), cómo funciona, en qué se basa (sin IA generativa, modelos de lenguaje ni internet), sus módulos (los títulos del registro de la ayuda) y que escribiendo «ayuda» se ven todas las órdenes. Sin panel. |
 | `nucleo.mostrar_pantalla` | muestra la pantalla · pantalla completa | Pantalla de sesión al frente. Sin voz. |
 | `nucleo.ocultar_pantalla` | oculta la pantalla · minimiza la pantalla | Minimiza la pantalla de sesión. Sin voz. |
 | `nucleo.apartar_ventana` | aparta {ventana} · aparta la ventana de {ventana} | `ventana: CATALOG` (títulos de las ventanas flotantes, que da la interfaz). Aparta esa ventana a un borde si está abierta ([Interfaz](Interfaz/README.md), «Ventanas apartadas»). Sin voz. Si no hay ninguna con ese nombre: «No encuentro {nombre}.» |
@@ -135,6 +136,12 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `general.error` | Ha ocurrido un error. |
 | `general.nada_que_repetir` | No hay nada que repetir. |
 | `general.ayuda` | Estas son las órdenes disponibles. |
+| `presentacion.quien` | Soy Jarvis, el asistente personal de {nombre}. |
+| `presentacion.quien_anonimo` | Soy Jarvis, su asistente personal. |
+| `presentacion.funcionamiento` | Soy una aplicación de escritorio local: leo sus órdenes, las ejecuto y le respondo de viva voz y en pantalla. |
+| `presentacion.tecnologia` | No uso IA generativa, ni modelos de lenguaje, ni internet. Me baso en intenciones, patrones y una máquina de estados. |
+| `presentacion.modulos` | Cuento con estos módulos: {modulos}. |
+| `presentacion.cierre` | Le explico a fondo cada una de mis funciones en cuanto escriba ayuda. |
 | `general.indice_invalido` | No hay ningún elemento {n}. |
 | `general.no_disponible` | No está disponible en este sistema. |
 | `config.error` | Hay un error en la configuración de {archivo}. Uso la anterior. |

@@ -25,6 +25,7 @@ SPEC_DEFAULTS = {
     },
     "startup": {"open_session_on_start": False},
     "logging": {"level": "INFO"},
+    "user": {"name": ""},
 }  # fmt: skip
 
 

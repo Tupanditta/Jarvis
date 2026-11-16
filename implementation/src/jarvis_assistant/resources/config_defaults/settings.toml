@@ -74,3 +74,7 @@ open_session_on_start = false
 [logging]
 # Nivel del registro: "DEBUG", "INFO", "WARNING" o "ERROR".
 level = "INFO"
+
+[user]
+# Nombre del usuario, para la presentación del asistente («preséntate»). Vacío: no lo dice.
+name = ""

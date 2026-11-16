@@ -19,6 +19,7 @@ from jarvis_assistant.speaker.phrases import (
     PRELOADED_IDS,
     PhraseError,
     advance,
+    enumeration,
     parameters,
     render,
     variants,
@@ -72,6 +73,13 @@ def test_las_variantes_se_usan_en_orden_y_vuelven_al_principio(monkeypatch):
         dichas.append(render(Phrase("ciclo.escucha")))
         advance("ciclo.escucha")
     assert dichas == ["Uno, señor.", "Dos, señor.", "Tres, señor.", "Uno, señor."]
+
+
+def test_una_lista_se_dice_con_y_antes_del_ultimo():
+    assert enumeration([]) == ""
+    assert enumeration(["comandos"]) == "comandos"
+    assert enumeration(["comandos", "búsqueda"]) == "comandos y búsqueda"
+    assert enumeration(["a", "b", "c"]) == "a, b y c"
 
 
 def test_frase_desconocida_o_sin_parametro():

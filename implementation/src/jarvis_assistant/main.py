@@ -13,7 +13,6 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
@@ -26,6 +25,7 @@ from jarvis_assistant.action_modules.session_manager import History, SessionMana
 from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
+from jarvis_assistant.core.action_api import ActionModule
 from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
@@ -34,6 +34,7 @@ from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Schedu
 from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
+from jarvis_assistant.os_adapters.base import PlatformAdapter
 from jarvis_assistant.paths import LAYOUT_FILE_NAME, AppPaths, missing_models
 from jarvis_assistant.process.logging_setup import (
     LEVELS,
@@ -55,7 +56,7 @@ _MISSING_MODELS_NOTICE_MS = 6000
 # Módulos de acción registrados. Añadir un módulo es añadir aquí su clase: `build_app` crea
 # una instancia por aplicación. El orden es el de desempate entre patrones. El módulo Sesión
 # va aparte, antes que todos: también lo usa el orquestador para abrir y cerrar la sesión.
-ACTION_MODULES: list[Callable[[], Any]] = [
+ACTION_MODULES: list[Callable[[], ActionModule]] = [
     CommandRunner, AppLauncher, FileSearch, FileCreation, History, ReminderManager,
     ProtocolRunner,
 ]
@@ -65,7 +66,7 @@ ACTION_MODULES: list[Callable[[], Any]] = [
 class Adapters:
     """Todo lo que toca hardware, modelos, reloj o sistema operativo (RES-47)."""
 
-    platform: Any
+    platform: PlatformAdapter
     clock: Clock
     database: Database
     synthesizer: Synthesizer
@@ -152,7 +153,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def create_platform() -> Any:
+def create_platform() -> PlatformAdapter:
     if sys.platform == "win32":
         from jarvis_assistant.os_adapters.windows import WindowsAdapter
 
@@ -160,7 +161,9 @@ def create_platform() -> Any:
     raise RuntimeError(f"Sistema no admitido todavía: {sys.platform}")
 
 
-def real_adapters(config: Config, platform: Any, paths: AppPaths, clock: Clock) -> Adapters:
+def real_adapters(
+    config: Config, platform: PlatformAdapter, paths: AppPaths, clock: Clock
+) -> Adapters:
     """Adaptadores reales. Abre la base de datos: debe llamarse en el hilo del núcleo."""
     from jarvis_assistant.speaker.piper_synth import PiperSynthesizer
     from jarvis_assistant.speaker.player import Player
@@ -286,7 +289,7 @@ def _run_preview(args: argparse.Namespace, paths: AppPaths) -> int:
     return run_preview(config.settings.ui, debug=args.ui_debug)
 
 
-def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
+def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -> int:
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication
 

@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from jarvis_assistant.core.events import Event
     from jarvis_assistant.core.notices import Notice
     from jarvis_assistant.core.repositories import SessionRow
+    from jarvis_assistant.core.scheduler import Scheduler
     from jarvis_assistant.core.workdir import Workdir
+    from jarvis_assistant.os_adapters.base import PlatformAdapter
 
 
 # Recurso compartido entre módulos: el directorio de trabajo (RN-14). Las acciones declaran
@@ -242,7 +244,7 @@ class ActionContext:
     clock: "Clock"
     config: "Config"
     db: "Database"
-    platform: Any
+    platform: "PlatformAdapter"
     places: Mapping[str, Path]
     # Añade una frase a la respuesta de la tarea. La respuesta completa se dice seguida,
     # cuando le llega el turno en la cola de voz: no se mezcla con la de otra tarea.
@@ -253,7 +255,7 @@ class ActionContext:
     # de la tarea y su frase se entrega como aviso (RN-39).
     background: Callable[[Coroutine[Any, Any, ActionResult]], None]
     task_id: int | None = None
-    scheduler: Any = None  # `core/scheduler.py`: trabajos a una fecha
+    scheduler: "Scheduler | None" = None  # `core/scheduler.py`: trabajos a una fecha
     ask: Ask = _no_dialogue
     # El panel destacado de la interfaz: el último `PanelActivated` (RN-25).
     active_panel: str | None = None

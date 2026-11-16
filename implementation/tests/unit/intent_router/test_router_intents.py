@@ -84,6 +84,8 @@ PLAIN = [
     ("qué sabes hacer", "nucleo.ayuda"),
     ("repite", "nucleo.repetir"), ("repítelo", "nucleo.repetir"),
     ("puedes repetir", "nucleo.repetir"),
+    ("preséntate", "nucleo.presentate"), ("presentate", "nucleo.presentate"),
+    ("quién eres", "nucleo.presentate"),
     ("muestra la pantalla", "nucleo.mostrar_pantalla"),
     ("pantalla completa", "nucleo.mostrar_pantalla"),
     ("oculta la pantalla", "nucleo.ocultar_pantalla"),

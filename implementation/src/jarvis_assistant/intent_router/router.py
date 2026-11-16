@@ -72,6 +72,7 @@ SHOW_SCREEN = Intent(CORE_MODULE, "mostrar_pantalla")
 HIDE_SCREEN = Intent(CORE_MODULE, "ocultar_pantalla")
 HELP = Intent(CORE_MODULE, "ayuda")
 REPEAT = Intent(CORE_MODULE, "repetir")
+PRESENT = Intent(CORE_MODULE, "presentate")
 # «aparta {ventana}»: su entidad `ventana` es el título de una ventana flotante.
 ASIDE_WINDOW = "apartar_ventana"
 ASIDE_WINDOWS = Intent(CORE_MODULE, "apartar_ventanas")
@@ -115,6 +116,11 @@ class _CoreIntents:
                 "repetir", ("repite", "repítelo", "puedes repetir"),
                 description="Repetir la última respuesta", example="Repite",
                 in_protocols=False,
+            ),
+            IntentSpec(
+                PRESENT.action, ("preséntate", "quién eres"),
+                description="Presentarse: qué es, cómo funciona y sus módulos",
+                example="Preséntate", in_protocols=False,
             ),
             IntentSpec(
                 "mostrar_pantalla", ("muestra la pantalla", "pantalla completa"),

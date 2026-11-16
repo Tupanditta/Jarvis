@@ -8,6 +8,7 @@ módulo de acción se añaden con su módulo. El asistente trata al usuario de u
 «señor», con un tono cercano, como quien le conoce, pero sin dar por sabidos datos suyos.
 """
 import string
+from collections.abc import Sequence
 
 from jarvis_assistant.core.action_api import Phrase
 
@@ -78,6 +79,37 @@ PHRASES: dict[str, list[str]] = {
         "Con mucho gusto, señor. Aquí tiene todo lo que sé hacer.",
         "Cómo no, señor. Estas son mis órdenes.",
         "Encantado, señor. Eche un vistazo a lo que puedo hacer.",
+    ],
+    # Presentación («preséntate»): se dicen seguidas, en este orden, y siempre en primera
+    # persona. `presentacion.quien` cuando la configuración da el nombre del usuario; si no,
+    # `presentacion.quien_anonimo`.
+    "presentacion.quien": [
+        "Permítame presentarme, señor. Soy Jarvis, el asistente personal de {nombre}.",
+        "Con mucho gusto, señor. Soy Jarvis, el asistente personal de {nombre}.",
+    ],
+    "presentacion.quien_anonimo": [
+        "Permítame presentarme, señor. Soy Jarvis, su asistente personal.",
+        "Con mucho gusto, señor. Soy Jarvis, su asistente personal.",
+    ],
+    "presentacion.funcionamiento": [
+        "Soy una aplicación de escritorio y funciono por completo en su equipo. Leo las"
+        " órdenes que me escribe, las reconozco, las ejecuto y le respondo de viva voz,"
+        " con el resultado en pantalla. Despierto cuando leo Hey Jarvis y guardo cada"
+        " sesión de trabajo en mi historial.",
+    ],
+    "presentacion.tecnologia": [
+        "No uso inteligencia artificial generativa, ni modelos de lenguaje, ni internet:"
+        " ningún dato sale de su equipo. Me baso en intenciones y patrones. Comparo lo que"
+        " me escribe con las frases que conozco, saco de ahí los datos que necesito, como"
+        " fechas, carpetas o nombres, y sigo una máquina de estados. Por eso respondo"
+        " siempre igual a la misma orden y nunca me invento nada.",
+    ],
+    "presentacion.modulos": [
+        "Para ayudarle cuento con estos módulos: {modulos}.",
+    ],
+    "presentacion.cierre": [
+        "Le explico a fondo cada una de mis funciones en cuanto escriba ayuda.",
+        "Si escribe ayuda, le enseño con detalle todas mis órdenes.",
     ],
     "general.indice_invalido": [
         "Me temo que no hay ningún elemento {n}, señor.",
@@ -550,6 +582,13 @@ class PhraseError(Exception):
 def count(n: int, singular: str, plural: str) -> str:
     """Recuento con singular y plural: «1 carpeta», «3 carpetas»."""
     return f"{n} {singular if n == 1 else plural}"
+
+
+def enumeration(items: Sequence[str]) -> str:
+    """Lista dicha en voz alta: «a», «a y b», «a, b y c»."""
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} y {items[-1]}"
 
 
 def parameters(phrase_id: str) -> tuple[str, ...]:

@@ -104,6 +104,88 @@ def test_ninguna_llamada_usa_un_interprete_de_ordenes(path):
         assert not called.endswith("create_subprocess_shell"), f"{relative(path)}:{node.lineno}"
 
 
+# --- Dependencias entre paquetes (T-7.7) -----------------------------------------------------
+
+# Qué puede importar cada paquete de los demás (arquitectura.md, sección 8). Un paquete siempre
+# puede importar sus propios módulos. Una dependencia nueva entre paquetes se añade aquí a
+# propósito, nunca por accidente: así los paquetes siguen siendo independientes y sustituibles.
+ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "config": (),
+    "paths": (),
+    # `os_adapters.base` solo para anotar tipos: el núcleo no llama al sistema operativo.
+    "core": ("config", "os_adapters.base"),
+    "intent_router": ("config", "core.action_api", "core.state_machine", "core.workdir"),
+    "speaker": ("config", "core.action_api", "core.clock", "core.event_bus", "core.events"),
+    # Lo que un módulo de acción conoce: la interfaz común y sus tipos, los repositorios, los
+    # contratos de la plataforma y funciones puras de texto compartidas con el enrutador y la
+    # voz. Nunca el orquestador, la FSM, la cola de órdenes, otro módulo ni la interfaz.
+    "action_modules": (
+        "config",
+        "core.action_api", "core.clock", "core.content", "core.database", "core.event_bus",
+        "core.events", "core.notices", "core.repositories", "core.workdir",
+        "os_adapters.base", "os_adapters.processes",
+        "intent_router.normalizer", "intent_router.slots",
+        "speaker.formats", "speaker.phrases",
+    ),
+    "os_adapters": ("process.single_instance",),
+    "process": ("core.events",),
+    "ui": (
+        "config", "core.action_api", "core.content", "core.event_bus", "core.events",
+        "core.repositories",
+    ),
+}  # fmt: skip
+
+# El orquestador une el enrutador, la voz y los módulos: es el único del núcleo que conoce el
+# enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`.
+HUB_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "core/orchestrator.py": (
+        "intent_router.batch", "intent_router.router", "speaker.phrases", "speaker.speaker",
+    ),
+}  # fmt: skip
+
+# Raíz de composición: conoce todos los paquetes para construir y conectar el grafo.
+COMPOSITION_ROOT = ("main.py", "__main__.py", "__init__.py")
+
+
+def package_of(name: str) -> str:
+    """`core/events.py` → `core`; `config.py` → `config`."""
+    first = name.split("/")[0]
+    return first.removesuffix(".py")
+
+
+def internal_imports(path: Path) -> list[str]:
+    """Lo que importa del propio proyecto, sin el prefijo: `core.events`, `config.Config`…"""
+    found = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names = [f"{node.module}.{alias.name}" for alias in node.names]
+        else:
+            continue
+        found += [
+            name.removeprefix("jarvis_assistant.") for name in names
+            if name.startswith("jarvis_assistant.")
+        ]  # fmt: skip
+    return found
+
+
+def allowed(target: str, prefixes: tuple[str, ...]) -> bool:
+    return any(target == prefix or target.startswith(prefix + ".") for prefix in prefixes)
+
+
+@pytest.mark.parametrize(
+    "path", [path for path in FILES if relative(path) not in COMPOSITION_ROOT], ids=relative
+)
+def test_cada_paquete_solo_depende_de_lo_que_permite_el_mapa_de_dependencias(path):
+    name = relative(path)
+    package = package_of(name)
+    assert package in ALLOWED_DEPENDENCIES, f"paquete nuevo sin reglas: {package}"
+    permitted = (package, *ALLOWED_DEPENDENCIES[package], *HUB_DEPENDENCIES.get(name, ()))
+    forbidden = [target for target in internal_imports(path) if not allowed(target, permitted)]
+    assert forbidden == [], name
+
+
 # --- Registro e interfaz común ---------------------------------------------------------------
 
 

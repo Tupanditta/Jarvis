@@ -284,6 +284,24 @@ implementation/
 
 El código existente en `implementation/` se reutiliza donde ya cumple esta especificación (síntesis, normalizador, instancia única, registro); lo que la contradiga se reescribe. La especificación manda sobre el código.
 
+### 8.1 Dependencias entre paquetes
+
+Cada paquete importa solo lo que permite esta tabla, además de sus propios módulos. La comprueba `tests/unit/test_architecture.py` (`ALLOWED_DEPENDENCIES`). Una dependencia nueva se añade aquí y en la prueba a propósito, nunca por accidente.
+
+| Paquete | Puede importar |
+|---|---|
+| `config`, `paths` | Nada del proyecto. |
+| `core` | `config`; `os_adapters.base` solo para anotar tipos. Además, `core/orchestrator.py`, que une todo, importa `intent_router` y `speaker`. |
+| `intent_router` | `config`, `core.action_api`, `core.state_machine`, `core.workdir`. |
+| `speaker` | `config`, `core.action_api`, `core.clock`, `core.event_bus`, `core.events`. |
+| `action_modules` | `config`; de `core`: `action_api`, `clock`, `content`, `database`, `event_bus`, `events`, `notices`, `repositories`, `workdir`; `os_adapters.base`, `os_adapters.processes`; las funciones puras de texto `intent_router.normalizer`, `intent_router.slots`, `speaker.formats`, `speaker.phrases`. Nunca otro módulo, el orquestador, la FSM ni `ui`. |
+| `os_adapters` | `process.single_instance`. |
+| `process` | `core.events`. |
+| `ui` | `config`, `core.action_api`, `core.content`, `core.event_bus`, `core.events`, `core.repositories`. |
+| `main.py` | Todo: es la raíz de composición. |
+
+Los contratos entre paquetes se anotan con sus `Protocol` (`ActionModule`, `PlatformAdapter`, `Scheduler`), no con `Any`. Las importaciones que solo sirven para anotar van bajo `TYPE_CHECKING`.
+
 ## 9. Dependencias
 
 Todas gratuitas (RES-44). Se instalan siempre en el entorno virtual `implementation/.venv`.
