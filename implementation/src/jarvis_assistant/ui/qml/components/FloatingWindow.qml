@@ -483,12 +483,13 @@ Item {
         }
     }
 
-    // Cualquier pulsación trae la ventana al frente. No consume el evento: sigue hacia el
-    // control que haya debajo.
+    // Cualquier pulsación trae la ventana al frente y, en reposo, despierta al asistente. No
+    // consume el evento: sigue hacia el control que haya debajo.
     MouseArea {
         anchors.fill: parent
         onPressed: (mouse) => {
             win.activated()
+            assistant.windowPressed()
             mouse.accepted = false
         }
     }

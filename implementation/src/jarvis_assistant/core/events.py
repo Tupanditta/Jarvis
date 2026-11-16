@@ -365,6 +365,12 @@ class UserTyping(Event):
 
 
 @dataclass(frozen=True)
+class WindowPressed(Event):
+    """El usuario ha pulsado una ventana flotante: moverla, cambiar su tamaño o un control.
+    En reposo despierta en silencio; en escucha cuenta como actividad."""
+
+
+@dataclass(frozen=True)
 class SilenceRequested(Event):
     """Botón de silencio: calla la locución en curso."""
 

@@ -230,6 +230,7 @@ class Orchestrator:
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
         bus.subscribe(events.TextSubmitted, self.submit)
         bus.subscribe(events.UserTyping, self.submit)
+        bus.subscribe(events.WindowPressed, lambda _e: self.submit(fsm.WindowPressed()))
         bus.subscribe(
             events.ActionRequested,
             lambda e: self.submit(_UserAction(e.module, e.action, e.params)),

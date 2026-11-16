@@ -27,6 +27,7 @@ from jarvis_assistant.core.state_machine import (
     StopInterruptibleSpeech,
     Transition,
     WakeWord,
+    WindowPressed,
 )
 
 S = AssistantState
@@ -77,6 +78,7 @@ def test_abrir_sesion_desde_la_bandeja_no_hace_nada_con_sesion(state):
         ClosingPhraseInIdle(),
         SilenceTimeout(),
         NoticeReady(object(), reminder=True),
+        WindowPressed(),
     ],
 )
 def test_dormido_ignora_cualquier_otra_entrada(entry):
@@ -125,6 +127,26 @@ def test_reposo_con_una_intencion_despierta_en_silencio_y_ejecuta_el_turno():
     effects = fsm.handle(IntentMatched("nucleo.mostrar_pantalla"))
     assert fsm.state is S.LISTENING_COMMAND
     assert effects == [PublishListeningResumed(silent=True), RunTurn("nucleo.mostrar_pantalla")]
+
+
+def test_reposo_al_pulsar_una_ventana_despierta_en_silencio():
+    fsm = machine(S.IDLE)
+    effects = fsm.handle(WindowPressed())
+    assert fsm.state is S.LISTENING_COMMAND
+    assert effects == [PublishListeningResumed(silent=True), RestartSilenceTimer()]
+
+
+def test_escucha_al_pulsar_una_ventana_reinicia_la_cuenta():
+    fsm = machine(S.LISTENING_COMMAND)
+    assert fsm.handle(WindowPressed()) == [RestartSilenceTimer()]
+    assert fsm.state is S.LISTENING_COMMAND
+
+
+@pytest.mark.parametrize("state", (S.AWAITING_CONFIRMATION, S.AWAITING_PARAMETER))
+def test_en_espera_pulsar_una_ventana_no_hace_nada(state):
+    fsm = machine(state)
+    assert fsm.handle(WindowPressed()) == []
+    assert fsm.state is state
 
 
 def test_reposo_con_frase_no_reconocida_despierta_en_silencio_y_la_publica():

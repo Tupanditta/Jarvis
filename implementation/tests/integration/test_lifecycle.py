@@ -92,6 +92,11 @@ class Rig:
         self.app.bus.publish(events.UserTyping())
         await settle()
 
+    async def press_window(self) -> None:
+        """El usuario pulsa una ventana flotante: la mueve, la redimensiona o usa un control."""
+        self.app.bus.publish(events.WindowPressed())
+        await settle()
+
     async def wake(self) -> None:
         await self.write("Hey Jarvis")
 
@@ -394,6 +399,34 @@ async def test_cu04_en_reposo_una_orden_despierta_en_silencio_y_se_ejecuta(rig):
     assert rig.of(events.ShowScreenRequested) == [events.ShowScreenRequested(visible=True)]
     await rig.advance(30.5)
     assert rig.state is S.IDLE
+
+
+async def test_cu04_en_reposo_pulsar_una_ventana_despierta_en_silencio(rig):
+    await rig.open_session()
+    await rig.write("gracias jarvis")
+    await rig.advance(1.0)
+    rig.clear()
+    await rig.press_window()
+    assert rig.state is S.LISTENING_COMMAND
+    assert rig.spoken() == []
+    assert rig.of(events.ListeningResumed) == [events.ListeningResumed(silent=True)]
+    await rig.advance(30.5)
+    assert rig.state is S.IDLE
+
+
+async def test_cu04_pulsar_una_ventana_en_escucha_reinicia_la_cuenta(rig):
+    await rig.open_session()
+    await rig.advance(20.0)
+    await rig.press_window()
+    await rig.advance(20.0)
+    assert rig.state is S.LISTENING_COMMAND
+    await rig.advance(10.5)
+    assert rig.state is S.IDLE
+
+
+async def test_cu04_pulsar_una_ventana_en_dormido_no_tiene_efecto(rig):
+    await rig.press_window()
+    assert rig.state is S.DORMIDO and rig.spoken() == []
 
 
 async def test_cu04_en_reposo_un_texto_no_reconocido_despierta_y_se_muestra(rig):

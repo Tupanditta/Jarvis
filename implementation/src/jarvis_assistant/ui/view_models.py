@@ -154,6 +154,11 @@ class AssistantModel(QObject):
             self._publish(events.UserTyping())
 
     @Slot()
+    def windowPressed(self) -> None:
+        """Pulsación en una ventana flotante: en reposo despierta al asistente."""
+        self._publish(events.WindowPressed())
+
+    @Slot()
     def silence(self) -> None:
         """Botón de silencio."""
         self._publish(events.SilenceRequested())

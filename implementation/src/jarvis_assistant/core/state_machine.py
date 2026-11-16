@@ -90,6 +90,11 @@ class ClosingPhraseInIdle(Input):
 
 
 @dataclass(frozen=True)
+class WindowPressed(Input):
+    """El usuario ha pulsado una ventana flotante (moverla, cambiar su tamaño o un control)."""
+
+
+@dataclass(frozen=True)
 class SilenceTimeout(Input):
     """Han pasado los segundos sin escribir que llevan a reposo (RF-78)."""
 
@@ -319,6 +324,10 @@ class StateMachine:
             # Cualquier texto despierta en silencio y se atiende como en escucha.
             self.state = _S.LISTENING_COMMAND
             return [PublishListeningResumed(silent=True), *self._listening(entry)]
+        if isinstance(entry, WindowPressed):
+            # Tocar una ventana flotante también despierta en silencio.
+            self.state = _S.LISTENING_COMMAND
+            return [PublishListeningResumed(silent=True), RestartSilenceTimer()]
         if isinstance(entry, NoticeReady) and entry.reminder:
             self.state = _S.LISTENING_COMMAND
             return [
@@ -335,6 +344,8 @@ class StateMachine:
             return [PublishUnrecognized(entry.text), RestartSilenceTimer()]
         if isinstance(entry, WakeWord):
             return [StopInterruptibleSpeech(), RestartSilenceTimer()]
+        if isinstance(entry, WindowPressed):
+            return [RestartSilenceTimer()]  # usar las ventanas cuenta como actividad
         if entry == Control(ControlKind.CANCELAR):
             return [CancelTurn(announce=True)]
         if entry == Control(ControlKind.REPOSO) or isinstance(entry, SilenceTimeout):

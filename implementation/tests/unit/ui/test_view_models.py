@@ -139,6 +139,12 @@ def test_teclear_avisa_como_mucho_una_vez_por_segundo():
     assert published[-2:] == [events.TextSubmitted("abre el navegador"), events.UserTyping()]
 
 
+def test_pulsar_una_ventana_publica_su_aviso():
+    published = []
+    AssistantModel(publish=published.append).windowPressed()
+    assert published == [events.WindowPressed()]
+
+
 def test_el_boton_de_silencio_publica_su_accion():
     published = []
     AssistantModel(publish=published.append).silence()

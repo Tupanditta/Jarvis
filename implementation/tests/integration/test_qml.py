@@ -341,6 +341,18 @@ def test_pulsar_una_ventana_la_trae_al_frente(desk, qtbot):
     assert activity.z() > floating(ui, "historial").z()
 
 
+def test_pulsar_una_ventana_avisa_al_nucleo(desk, qtbot):
+    ui, published = desk
+    window = floating(ui, "actividad")
+    published.clear()
+    drag(ui, scene(window, 120, 18), 40, 20)  # mover la cabecera también cuenta
+    click(ui, window, 60, window.height() - 30)
+    assert [e for e in published if isinstance(e, events.WindowPressed)] == [
+        events.WindowPressed(), events.WindowPressed(),
+    ]  # fmt: skip
+    assert ui.warnings == []
+
+
 def test_la_barra_de_herramientas_de_comandos_pide_las_acciones_del_modulo(desk, qtbot):
     ui, published = desk
     ui.on_event(events.WorkdirChanged(str(Path("C:/Users/usuario/Proyectos"))))
