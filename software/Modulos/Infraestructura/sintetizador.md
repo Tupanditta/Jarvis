@@ -13,7 +13,7 @@ Decir las respuestas del asistente con una voz neuronal local de español de Esp
 
 - Todas las frases están en un catálogo único, `speaker/phrases.py`: un identificador y una plantilla con parámetros (`"comandos.cd.ok": "Directorio cambiado a {carpeta}."`). No hay generación libre de texto.
 - Los módulos nunca escriben texto de voz: devuelven `Phrase(id, params)`.
-- El asistente trata al usuario de usted.
+- El asistente trata al usuario de usted y le llama «señor». El tono es cercano, como el de alguien que le conoce, pero las frases no dan por sabidos datos del usuario.
 - `phrases.py` incluye formateadores para decir valores de forma natural: fechas («mañana a las nueve y media», «el cinco de diciembre a las doce»), duraciones («dentro de diez minutos»), recuentos con singular y plural («1 carpeta», «3 carpetas»).
 - Una prueba comprueba que cada identificador usado en el código existe en el catálogo y recibe todos sus parámetros.
 

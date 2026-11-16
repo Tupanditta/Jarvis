@@ -29,6 +29,9 @@ WORKDIR = "workdir"
 CANCELLED_REASON = "cancelada"
 # Motivo de una tarea que no llega a ejecutarse porque la sesión se cierra (RN-46).
 CLOSED_REASON = "sesión cerrada"
+# Clave de `metadata` en `ctx.ask`: la pregunta es un ofrecimiento («¿Se los dicto?»). Si se
+# cancela o se agota el tiempo, no se dice «Operación cancelada.»: no había nada en marcha.
+OFFER = "oferta"
 
 
 class SlotType(Enum):

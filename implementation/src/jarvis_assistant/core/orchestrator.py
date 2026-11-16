@@ -33,6 +33,7 @@ from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import (
     CANCELLED_REASON,
     CLOSED_REASON,
+    OFFER,
     ActionContext,
     ActionResult,
     DialogueAnswer,
@@ -466,9 +467,10 @@ class Orchestrator:
                 self._close_dialogue(DialogueAnswer(cancelled=True), "cancelled")
                 # «¿Quiere añadir otro aviso…?» cancelada no cancela nada: el recordatorio se
                 # guarda con lo que tiene (recordatorio.md, «Creación con una orden»).
-                keeps = (
-                    dialogue is not None
-                    and dialogue.expected_type is ExpectedType.REMINDER_ACTION
+                # Tampoco un ofrecimiento sin respuesta (`OFFER`): no había nada en marcha.
+                keeps = dialogue is not None and (
+                    dialogue.expected_type is ExpectedType.REMINDER_ACTION
+                    or bool(dialogue.metadata.get(OFFER))
                 )
                 if announce and not keeps:
                     self._announce(Phrase("general.operacion_cancelada"))

@@ -16,8 +16,10 @@ Las órdenes se escriben en la caja de texto de la ventana y se envían con Ente
 
 - [ ] `.\.venv\Scripts\pythonw.exe -m jarvis_assistant` arranca sin ventana de consola.
 - [ ] Aparece la ventana de fondo oscuro con el estado «Dormido» y la caja de texto con el foco
-      y la ayuda «Escriba «Hey Jarvis» para iniciar la sesión».
+      y la ayuda «Escriba el código de activación para iniciar la sesión».
 - [ ] La ventana no tiene ningún botón.
+- [ ] Dormido, lo escrito en la caja se ve como asteriscos; «hy jarvs» + Enter abre la sesión.
+- [ ] Con la sesión abierta, lo escrito se ve tal cual.
 - [ ] El registro dice «Listo en N s» con N ≤ 10 (RNF-25).
 - [ ] Lanzarlo por segunda vez no hace nada; el registro dice «Ya hay otra instancia».
 - [ ] El texto emergente del icono de la bandeja es «Jarvis: dormido».

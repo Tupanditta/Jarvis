@@ -103,7 +103,9 @@ def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
     # Una parte con el HUD a la vista, como si el usuario hubiera pasado a otra ventana.
     qtbot.wait(150)
     ui._execute(ui.controller.screen_active_changed(False))
-    qtbot.waitUntil(lambda: driver.finished_rounds == 1, timeout=20_000)
+    # El plazo es solo una red de seguridad: con calidad alta y todo el movimiento, el
+    # renderizado sin pantalla retrasa los temporizadores y el recorrido ronda los 20 s.
+    qtbot.waitUntil(lambda: driver.finished_rounds == 1, timeout=60_000)
     qtbot.wait(150)
     assert seen == {activity.value for activity in Activity}
     assert ui.warnings == []
@@ -186,6 +188,38 @@ def test_el_boton_del_hud_abre_la_pantalla(make_ui, qtbot):
     assert button is not None and button.property("visible")
     button.clicked.emit()
     assert ui.screen.isVisible() and not ui.hud_window.isVisible()
+
+
+def test_mostrar_pantalla_tras_minimizarla_la_restaura_antes_de_pantalla_completa(
+    make_ui, qtbot, monkeypatch
+):
+    # En Windows, pasar de minimizada a pantalla completa sin restaurar antes deja la
+    # ventana con un tamaño intermedio: solo se veía parte de la pantalla. La plataforma
+    # `offscreen` de las pruebas no lo reproduce, así que se comprueba el orden de llamadas.
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-14"))
+    ui.on_event(events.ShowScreenRequested(False))
+    assert ui.screen.visibility() == ui.screen.Visibility.Minimized
+    calls: list[str] = []
+    for name in ("showNormal", "showFullScreen"):
+        original = getattr(ui.screen, name)
+        monkeypatch.setattr(ui.screen, name,
+                            lambda n=name, f=original: (calls.append(n), f())[1])
+    ui.hudOpenScreen()
+    assert calls == ["showNormal", "showFullScreen"]
+    assert ui.screen.visibility() == ui.screen.Visibility.FullScreen
+
+
+def test_mostrar_pantalla_sin_minimizar_no_la_restaura(make_ui, qtbot, monkeypatch):
+    # Restaurar a tamaño normal sin necesidad haría parpadear la ventana.
+    ui, _ = make_ui()
+    ui.start()
+    calls: list[str] = []
+    monkeypatch.setattr(ui.screen, "showNormal", lambda: calls.append("showNormal"))
+    ui.on_event(events.ShowScreenRequested(True))
+    assert calls == []
+    assert ui.screen.visibility() == ui.screen.Visibility.FullScreen
 
 
 def test_al_salir_la_pantalla_acepta_el_cierre(make_ui, qtbot):
@@ -469,6 +503,20 @@ def test_el_texto_de_ayuda_sigue_al_estado(make_ui, qtbot):
         ui.on_event(events.AssistantActivityChanged(state, value))
         texts = [item.property("text") for item in ui.screen.findChildren(QQuickItem)]
         assert placeholder in texts
+
+
+def test_dormido_el_codigo_de_activacion_se_oculta_como_una_contrasena(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    box = input_of(ui.screen)
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    box.setProperty("text", "hy jarvs")
+    assert box.property("text") == "hy jarvs"
+    assert box.property("displayText") == "********"
+    ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.ESCUCHANDO))
+    assert box.property("displayText") == "hy jarvs"
+    ui.on_event(events.AssistantActivityChanged("IDLE", Activity.REPOSO))
+    assert box.property("displayText") == "hy jarvs"
 
 
 def test_la_vista_previa_tiene_todos_los_estados():

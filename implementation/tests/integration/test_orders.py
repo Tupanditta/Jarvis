@@ -704,10 +704,16 @@ async def test_cu08_a3_busqueda_limitada(rig):
     await rig.advance(1.0)
     (shown,) = rig.of(events.SearchResultsReady)
     assert shown.limited and [r.name for r in shown.results] == ["Jarvis"]
+    # Un solo resultado: tras los avisos, ofrece abrirlo.
     assert rig.spoken() == [
         said("busqueda.uno", consulta="jarvis", nombre="Jarvis", carpeta="Proyectos"),
         PHRASES["busqueda.limitada"][0], PHRASES["busqueda.instalar"][0],
+        PHRASES["busqueda.ofrecer_abrir"][0],
     ]  # fmt: skip
+    assert rig.state is S.AWAITING_CONFIRMATION
+    await rig.order("sí")
+    assert rig.platform.calls[-1][0] == "open_folder"
+    assert rig.spoken()[-1] == said("apertura.abriendo", nombre="Jarvis")
     assert rig.tasks()[-1] == ("busqueda", "buscar jarvis", "completado")
 
 

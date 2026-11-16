@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, tzinfo
 from functools import partial
 
 from jarvis_assistant.core.action_api import (
+    OFFER,
     ActionContext,
     ActionResult,
     ExpectedType,
@@ -24,7 +25,7 @@ from jarvis_assistant.core.action_api import (
     SlotType,
 )
 from jarvis_assistant.core.content import ReminderItem
-from jarvis_assistant.core.events import PanelActivated, RemindersChanged
+from jarvis_assistant.core.events import ActionRequested, PanelActivated, RemindersChanged
 from jarvis_assistant.core.notices import Notice
 from jarvis_assistant.core.repositories import ReminderRepository, ReminderRow
 from jarvis_assistant.intent_router.normalizer import normalize, tokenize
@@ -91,6 +92,13 @@ class ReminderManager:
             IntentSpec(
                 "leer", ("lee el recordatorio {n}", "recordatorio {n}", "lee el {n}"),
                 (index,), "Leer un recordatorio", "Lee el recordatorio uno", PANEL,
+                in_protocols=False,
+            ),
+            # También tras un aviso, que la pide con los avisados en `avisados` (`_offer`).
+            IntentSpec(
+                "dictar", ("léeme los recordatorios", "lee los recordatorios",
+                           "díctame los recordatorios", "dicta los recordatorios"),
+                (), "Dictar todos los recordatorios", "Léeme los recordatorios", PANEL,
                 in_protocols=False,
             ),
             # Sin panel: confirmar mira si el panel ya está activo antes de activarlo (RN-25).
@@ -169,6 +177,11 @@ class ReminderManager:
                 return self._show(ctx)
             case "leer":
                 return self._read(_index(params["n"]), ctx)
+            case "dictar":
+                notified = params.get("avisados")
+                return await self._dictate(
+                    None if notified is None else _sequence(notified), ctx  # type: ignore[arg-type]
+                )
             case "confirmar":
                 n = params.get("n")
                 return self._confirm(None if n is None else _index(n), ctx)
@@ -327,6 +340,55 @@ class ReminderManager:
         on_spoken = partial(self._start_autoconfirm, reminder.id) if last_one else None
         return ActionResult("completado", phrase, on_spoken=on_spoken)
 
+    async def _dictate(self, notified: Sequence[int] | None, ctx: ActionContext) -> ActionResult:
+        """Dice seguidos los textos, cada uno con su muletilla («El primero…», «El siguiente…»,
+        «Y por último…»); de un vencido, también su fecha límite.
+
+        `notified`: los que acaba de avisar un aviso. Antes se pregunta si se dictan (BOOLEAN);
+        los ya confirmados o eliminados entretanto no se dicen. Sin `notified` (la orden
+        «léeme los recordatorios»), todos los del panel, sin preguntar. Como al leer uno, no
+        confirma nada y empieza el plazo de RN-29 de los que ya no tienen avisos pendientes."""
+        description = "Dictar los recordatorios"
+        wanted = None if notified is None else set(notified)
+        if wanted is not None:
+            chosen = [r for r in ReminderRepository(ctx.db).listable() if r.id in wanted]
+            if not chosen:
+                return ActionResult("completado", description=description)  # ya atendidos
+            question = (
+                Phrase("recordatorio.ofrecer_uno") if len(chosen) == 1
+                else Phrase("recordatorio.ofrecer_varios")
+            )  # fmt: skip
+            answer = await ctx.ask(question, ExpectedType.BOOLEAN, metadata={OFFER: True})
+            if answer.cancelled:
+                return ActionResult.cancelled(description=description)
+            if answer.value is not True:
+                return ActionResult(
+                    "completado", Phrase("recordatorio.no_dictar"), description=description
+                )
+        listed = ReminderRepository(ctx.db).listable()  # pudo cambiar mientras se preguntaba
+        chosen = [r for r in listed if wanted is None or r.id in wanted]
+        if not chosen:
+            return ActionResult(
+                "completado", Phrase("recordatorio.ninguno"), description=description
+            )
+        self._last, self._highlighted = chosen[-1].id, frozenset(r.id for r in chosen)
+        self._publish(ctx)
+        phrases: list[Phrase] = []
+        for position, reminder in enumerate(chosen):
+            phrase_id = _dictation_id(position, len(chosen))
+            phrases.append(Phrase(phrase_id, {"texto": reminder.content}))
+            if reminder.status == OVERDUE and reminder.deadline is not None:
+                phrases.append(Phrase(
+                    "recordatorio.dictado_vencido", {"fecha": self._moment(reminder.deadline, ctx)}
+                ))  # fmt: skip
+        for phrase in phrases[:-1]:
+            await ctx.say(phrase)
+        finished = [r.id for r in chosen if r.status == OVERDUE or not r.pending]
+        return ActionResult(
+            "completado", phrases[-1], description=description,
+            on_spoken=partial(self._start_autoconfirms, finished) if finished else None,
+        )  # fmt: skip
+
     # --- Confirmar, posponer, eliminar ---------------------------------------------------------
 
     def _confirm(self, n: int | None, ctx: ActionContext) -> ActionResult:
@@ -454,7 +516,8 @@ class ReminderManager:
 
     def _notify_fired(self, reminder_ids: Sequence[int]) -> None:
         """Un solo aviso para todos: «Tiene N recordatorios.», sin fechas ni textos (RN-23).
-        Al decirlo se activa el panel, con ellos destacados."""
+        Al decirlo se activa el panel, con ellos destacados; al terminar, se ofrece
+        dictarlos (`_offer`)."""
         ctx = self._ctx
         if ctx is None:
             return
@@ -464,8 +527,15 @@ class ReminderManager:
             Phrase("recordatorio.aviso_uno") if total == 1
             else Phrase("recordatorio.aviso_varios", {"n": total})
         )  # fmt: skip
-        ctx.notify(Notice(phrase, panel=PANEL, reminder=True))
+        ctx.notify(Notice(phrase, panel=PANEL, reminder=True,
+                          on_delivered=partial(self._offer, tuple(reminder_ids))))  # fmt: skip
         self._publish()
+
+    def _offer(self, reminder_ids: tuple[int, ...]) -> None:
+        """Dicho el aviso, la acción `dictar` entra en la cola como una orden: pregunta si se
+        dictan y, con un sí, los dice."""
+        if self._ctx is not None:
+            self._ctx.publish(ActionRequested(self.name, "dictar", {"avisados": reminder_ids}))
 
     def _deadline_due(self, reminder_id: int) -> None:
         ctx = self._ctx
@@ -521,6 +591,10 @@ class ReminderManager:
             ctx.clock.now() + timedelta(seconds=seconds),
             partial(self._autoconfirm, reminder_id),
         )
+
+    def _start_autoconfirms(self, reminder_ids: Sequence[int]) -> None:
+        for reminder_id in reminder_ids:
+            self._start_autoconfirm(reminder_id)
 
     def _cancel_autoconfirm(self, reminder_id: int) -> None:
         if self._ctx is not None and self._ctx.scheduler is not None:
@@ -606,6 +680,17 @@ class ReminderManager:
 
 def _index(value: object) -> int:
     return int(value)  # type: ignore[call-overload]
+
+
+def _dictation_id(position: int, total: int) -> str:
+    """La frase de cada recordatorio al dictar: su muletilla depende del lugar que ocupa."""
+    if total == 1:
+        return "recordatorio.dictado_unico"
+    if position == 0:
+        return "recordatorio.dictado_primero"
+    if position == total - 1:
+        return "recordatorio.dictado_ultimo"
+    return "recordatorio.dictado_siguiente"
 
 
 def _no_item(n: int) -> ActionResult:

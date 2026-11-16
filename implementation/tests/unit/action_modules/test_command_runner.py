@@ -11,6 +11,7 @@ from jarvis_assistant.action_modules.command_runner import CommandRunner, build_
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import CommandLine, Phrase
 from jarvis_assistant.core.content import Entry, TreeNode
+from jarvis_assistant.os_adapters import processes
 
 GIT_STATUS = CommandLine("git", "git", ("status",))
 
@@ -381,7 +382,21 @@ async def test_ejecutar_real_python_version(rig):
 
 async def test_el_lanzador_real_no_encuentra_un_programa_inexistente(tmp_path):
     with pytest.raises(FileNotFoundError):
-        await command_runner.launch_process("no-existe-este-programa-jarvis", (), tmp_path)
+        await processes.launch_process("no-existe-este-programa-jarvis", (), tmp_path)
+
+
+async def test_el_lanzador_real_no_abre_ventana_de_consola_en_windows(tmp_path, monkeypatch):
+    """En Windows, un binario de consola lanzado desde la interfaz no muestra su ventana."""
+    seen: dict[str, object] = {}
+
+    async def fake_exec(*args, **kwargs):
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(processes.sys, "platform", "win32")
+    monkeypatch.setattr(processes.asyncio, "create_subprocess_exec", fake_exec)
+    await processes.launch_process(sys.executable, ("--version",), tmp_path)
+    assert seen["creationflags"] == processes.CREATE_NO_WINDOW
 
 
 # --- Consola ---------------------------------------------------------------------------------

@@ -42,6 +42,13 @@ Nunca se recorre el disco completo (RES-31).
 - **Voz:** sin resultados, «No he encontrado nada para {consulta}.» (tarea `completado`); con uno, su nombre y carpeta; con varios, el número y el nombre y la carpeta del primero.
 - El módulo guarda la última lista de resultados en memoria; los índices de `abrir_resultado` y `abrir_ubicacion` se refieren a ella (RN-50). Se vacía al cerrar la sesión.
 
+### Un solo resultado: ofrecer abrirlo
+
+- Si la búsqueda da exactamente una coincidencia, tras decir el resumen (y los avisos de búsqueda limitada) pregunta «¿Quiere que lo abra?» (`BOOLEAN`, ofrecimiento `OFFER`).
+- Con un sí, lo abre como `abrir_resultado 1`; la tarea conserva la descripción «buscar {consulta}» y responde «Abriendo {nombre}.» (o el error de apertura).
+- Con un no, «cancelar» o tiempo agotado, la búsqueda queda `completado` sin decir nada más: no se dice «Operación cancelada.».
+- No se pregunta en un protocolo (`origin = "protocolo"`) ni con varios resultados.
+
 ### Abrir un resultado
 
 - `abrir_resultado`: `ctx.platform.open_with_default(path)`; para una carpeta, `open_folder`.
@@ -63,6 +70,7 @@ Con `FakePlatform` y un sistema de archivos temporal:
 - Filtro por tipo; orden de presentación; límite de 10 mostrados con total.
 - Búsqueda limitada: profundidad, carpetas omitidas, corte por tiempo con reloj falso, marca `limited`.
 - `abrir_resultado` y `abrir_ubicacion`: índice válido, fuera de rango, sin búsqueda previa, archivo desaparecido.
+- Un solo resultado: se ofrece abrirlo; sí abre (archivo o carpeta), no y cancelar dejan la búsqueda `completado`; sin pregunta en protocolos ni con varios resultados.
 - Con marcador `hardware`: búsqueda real con `es.exe`, dentro de RNF-09.
 
 ## Prohibiciones

@@ -265,6 +265,10 @@ class UiApp(QObject):
 
     def _bring_screen_to_front(self) -> None:
         """La pantalla pasa al frente y pide el foco para la caja; el foco no se fuerza."""
+        if self.screen.windowStates() & Qt.WindowState.WindowMinimized:
+            # En Windows, pasar de minimizada a pantalla completa sin restaurar antes deja
+            # la ventana con un tamaño intermedio y solo se ve parte de la pantalla.
+            self.screen.showNormal()
         self.screen.showFullScreen()
         self.screen.raise_()
         if self._platform is not None:

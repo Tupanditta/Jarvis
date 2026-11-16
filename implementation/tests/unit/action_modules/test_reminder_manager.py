@@ -15,8 +15,8 @@ from jarvis_assistant.action_modules import reminder_manager
 from jarvis_assistant.action_modules.reminder_manager import PANEL, ReminderManager, reminder_text
 from jarvis_assistant.config import Config, RemindersSettings, Settings
 from jarvis_assistant.core import repositories
-from jarvis_assistant.core.action_api import ExpectedType, Phrase, ReminderAction
-from jarvis_assistant.core.events import PanelActivated, RemindersChanged
+from jarvis_assistant.core.action_api import OFFER, ExpectedType, Phrase, ReminderAction
+from jarvis_assistant.core.events import ActionRequested, PanelActivated, RemindersChanged
 from jarvis_assistant.core.repositories import ReminderRepository
 from jarvis_assistant.core.scheduler import ClockScheduler
 
@@ -316,6 +316,100 @@ async def test_vencimiento_sin_sesion_y_un_vencido_no_vuelve_a_avisar(tmp_path):
     result = await world.run("posponer", n=1)
     assert result.speech == Phrase("recordatorio.limite_vencido")
     world.rig.close()
+
+
+# --- Dictar tras el aviso --------------------------------------------------------------------
+
+
+async def test_dicho_el_aviso_se_pide_dictarlos(tmp_path):
+    world = World(tmp_path)
+    first = world.add(later(minutes=1))
+    second = world.add(later(minutes=1))
+    await world.open()
+    await world.advance(60)
+    (notice,) = world.notices
+    notice.on_delivered()
+    assert world.rig.last(ActionRequested) == ActionRequested(
+        "recordatorio", "dictar", {"avisados": (first, second)}
+    )
+    world.rig.close()
+
+
+async def test_con_un_si_los_dicta_seguidos_con_muletillas(tmp_path):
+    world = World(tmp_path)
+    ids = [world.add(later(hours=1), text=text) for text in ("Regar", "Pagar", "Llamar a Ana")]
+    await world.open()
+    world.answers.append(True)
+    result = await world.run("dictar", avisados=tuple(ids))
+    (asked,) = world.rig.asked
+    assert asked.question == Phrase("recordatorio.ofrecer_varios")
+    assert (asked.expected_type, asked.metadata) == (ExpectedType.BOOLEAN, {OFFER: True})
+    assert world.rig.said == [
+        Phrase("recordatorio.dictado_primero", {"texto": "Regar"}),
+        Phrase("recordatorio.dictado_siguiente", {"texto": "Pagar"}),
+    ]
+    assert result.status == "completado"
+    assert result.speech == Phrase("recordatorio.dictado_ultimo", {"texto": "Llamar a Ana"})
+    assert result.on_spoken is None  # aún tienen avisos pendientes
+    assert [world.status(i) for i in ids] == ["activo"] * 3  # dictar no confirma (RN-24)
+    assert [item.highlighted for item in world.panel().items] == [True] * 3
+    world.rig.close()
+
+
+async def test_con_un_no_no_dicta_nada(world):
+    reminder_id = world.add(later(hours=1))
+    world.answers.append(False)
+    result = await world.run("dictar", avisados=(reminder_id,))
+    assert world.rig.asked[0].question == Phrase("recordatorio.ofrecer_uno")
+    assert (result.status, result.speech) == ("completado", Phrase("recordatorio.no_dictar"))
+    assert world.rig.said == []
+
+
+async def test_cancelar_el_ofrecimiento(world):
+    reminder_id = world.add(later(hours=1))
+    world.answers.append(CANCEL)
+    result = await world.run("dictar", avisados=(reminder_id,))
+    assert (result.status, result.detail, result.speech) == ("error", "cancelada", None)
+    assert world.rig.said == []
+
+
+async def test_solo_se_dictan_los_avisados_que_siguen_en_el_panel(world):
+    kept = world.add(later(hours=1), text="Regar")
+    gone = world.add(later(hours=1), text="Pagar")
+    world.add(later(hours=1), text="Otro")  # no avisado
+    world.repo.set_status(gone, "eliminado")
+    world.answers.append(True)
+    result = await world.run("dictar", avisados=(kept, gone))
+    assert world.rig.asked[0].question == Phrase("recordatorio.ofrecer_uno")
+    assert result.speech == Phrase("recordatorio.dictado_unico", {"texto": "Regar"})
+    assert world.rig.said == []
+
+
+async def test_si_ya_no_queda_ninguno_no_pregunta(world):
+    reminder_id = world.add(later(hours=1))
+    world.repo.set_status(reminder_id, "eliminado")
+    result = await world.run("dictar", avisados=(reminder_id,))
+    assert (result.status, result.speech, world.rig.asked) == ("completado", None, [])
+
+
+async def test_por_voz_dicta_todos_sin_preguntar_y_un_vencido_dice_su_fecha(tmp_path):
+    world = World(tmp_path)
+    reminder_id = world.add(later(hours=-3), deadline=later(hours=-1), text="Pagar")
+    world.repo.mark_fired(world.repo.get(reminder_id).triggers[0].id)
+    world.repo.set_status(reminder_id, "vencido")
+    await world.open()
+    result = await world.run("dictar")
+    assert world.rig.asked == []
+    assert world.rig.said == [Phrase("recordatorio.dictado_unico", {"texto": "Pagar"})]
+    assert result.speech == Phrase("recordatorio.dictado_vencido", {"fecha": "hoy a las 11"})
+    result.on_spoken()  # sin avisos pendientes: empieza el plazo de RN-29
+    assert f"autoconfirm:{reminder_id}" in world.jobs()
+    world.rig.close()
+
+
+async def test_por_voz_sin_recordatorios(world):
+    result = await world.run("dictar")
+    assert result.speech == Phrase("recordatorio.ninguno")
 
 
 # --- Leer, confirmar (RN-24, RN-25) ----------------------------------------------------------

@@ -4,7 +4,8 @@ No hay generación libre de texto: cada frase es un identificador y una lista de
 (variantes). Cada vez que se dice una frase se usa la siguiente variante de su lista; al llegar
 al final se vuelve a la primera. Para añadir una variante basta con añadir otra cadena a la
 lista; todas las variantes de una frase deben usar los mismos parámetros. Las frases de cada
-módulo de acción se añaden con su módulo. El asistente trata al usuario de usted.
+módulo de acción se añaden con su módulo. El asistente trata al usuario de usted y le llama
+«señor», con un tono cercano, como quien le conoce, pero sin dar por sabidos datos suyos.
 """
 import string
 
@@ -12,92 +13,92 @@ from jarvis_assistant.core.action_api import Phrase
 
 PHRASES: dict[str, list[str]] = {
     "ciclo.apertura": [
-        "Es un placer tenerle de nuevo por aquí, señor. Todo está listo. ¿En qué puedo ayudarle?",
-        "Sesión iniciada, señor. Cuando quiera, podemos empezar. ¿Cuál es nuestra primera tarea?",
-        "Qué alegría tenerle de vuelta, señor. Estoy a su disposición. ¿Por dónde empezamos?",
+        "Bienvenido de nuevo, señor. Ya lo tengo todo listo. ¿Qué tenemos hoy?",
+        "Me alegra verle otra vez por aquí, señor. ¿Por dónde quiere que empecemos?",
+        "Aquí estoy, señor, como siempre. Usted dirá qué hacemos hoy.",
     ],
     "ciclo.escucha": [
-        "Le escucho, señor.",
-        "Dígame, señor.",
-        "Adelante, señor. Estoy escuchando.",
-        "Hola de nuevo, señor.",
+        "Dígame, señor. Soy todo oídos.",
+        "Aquí me tiene, señor.",
+        "Usted dirá, señor.",
+        "De vuelta con usted, señor. ¿Qué necesita?",
     ],
     "ciclo.reposo": [
-        "Permaneceré a su disposición, señor.",
-        "De acuerdo, señor. Quedo atento.",
-        "Muy bien, señor. Aquí estaré cuando me necesite.",
-        "Ha sido un placer, señor. Me mantengo a la espera.",
-        "Perfecto, señor. Puede llamarme cuando quiera.",
+        "Muy bien, señor. Me quedo por aquí, por si me necesita.",
+        "Entendido, señor. Estaré atento.",
+        "Le dejo tranquilo, señor. Ya sabe dónde encontrarme.",
+        "Como quiera, señor. Aquí sigo para lo que haga falta.",
+        "Perfecto, señor. Llámeme cuando quiera.",
     ],
     "ciclo.cierre": [
-        "Buenas noches, señor. Cierro la sesión. Que descanse.",
-        "Hasta luego, señor. La sesión queda cerrada. Que descanse.",
-        "De acuerdo, señor. Apago la sesión por ahora. Buenas noches.",
-        "Sesión cerrada, señor. Ha sido un placer ayudarle.",
-        "Que descanse, señor. Estaré aquí cuando vuelva.",
+        "Buenas noches, señor. Cierro la sesión. Descanse, que se lo ha ganado.",
+        "Hasta la próxima, señor. Dejo la sesión cerrada. Que descanse.",
+        "Por hoy es suficiente, señor. Cierro la sesión. Buenas noches.",
+        "Sesión cerrada, señor. Da gusto trabajar con usted.",
+        "Que descanse, señor. Aquí le espero cuando vuelva.",
     ],
     "general.cancelado": [
-        "De acuerdo, señor. He cancelado la acción.",
-        "Entendido, señor. Lo dejo cancelado.",
-        "Muy bien, señor. No continuaré con esa acción.",
-        "Cancelado, señor. No se ha realizado ningún cambio.",
-        "Sin problema, señor. La acción queda anulada.",
+        "Sin problema, señor. Lo dejamos estar.",
+        "Entendido, señor. Queda cancelado.",
+        "Como prefiera, señor. No sigo con eso.",
+        "Cancelado, señor. No he tocado nada.",
+        "Tranquilo, señor. Lo dejamos aquí.",
     ],
     "general.operacion_cancelada": [
-        "La operación ha sido cancelada correctamente, señor.",
-        "De acuerdo, señor. La operación queda cancelada.",
-        "Listo, señor. He detenido la operación.",
-        "Ya está, señor. No continuaré con ese proceso.",
-        "Operación cancelada, señor. Todo queda como estaba.",
+        "Operación cancelada, señor. Todo sigue como estaba.",
+        "Entendido, señor. Paro la operación.",
+        "Listo, señor. La he detenido.",
+        "Ya está, señor. No sigo con ese proceso.",
+        "Sin problema, señor. La operación queda cancelada.",
     ],
     "general.no_entendido": [
-        "Disculpe, señor. No he conseguido entenderle. ¿Podría repetirlo?",
-        "No estoy seguro de haberle entendido, señor. ¿Puede intentarlo de nuevo?",
-        "Perdón, señor. Esa orden no me ha quedado clara.",
-        "No he captado bien lo que necesita, señor. ¿Me lo repite?",
-        "Creo que se me ha escapado algo, señor. ¿Puede decirlo de otra manera?",
+        "Perdone, señor, no le he seguido. ¿Me lo repite?",
+        "Creo que no le he entendido bien, señor. ¿Lo intentamos otra vez?",
+        "Esa se me ha escapado, señor. ¿Me lo dice de otra forma?",
+        "Disculpe, señor, no lo he captado. ¿Puede repetirlo?",
+        "Me he perdido, señor. ¿Me lo vuelve a decir?",
     ],
     "general.error": [
-        "Lo lamento, señor. Se ha producido un error.",
-        "Disculpe, señor. Algo no ha salido como esperaba.",
-        "Ha ocurrido un problema, señor. No he podido completar la operación.",
-        "Lo siento, señor. La operación no se ha podido realizar.",
-        "Parece que he encontrado un inconveniente, señor. Puede intentarlo de nuevo.",
+        "Vaya, señor. Algo ha fallado.",
+        "Lo siento, señor. Esto no ha salido como esperaba.",
+        "Me temo que ha habido un problema, señor. No he podido terminar.",
+        "Disculpe, señor. No he conseguido hacerlo.",
+        "Algo se ha torcido, señor. Si quiere, lo intentamos de nuevo.",
     ],
     "general.nada_que_repetir": [
-        "No hay ningún mensaje anterior que pueda repetir, señor.",
-        "Todavía no tengo nada que repetir, señor.",
-        "No encuentro una respuesta anterior para repetir, señor.",
-        "Aún no le he dado ninguna respuesta que pueda repetir, señor.",
-        "No hay una respuesta previa disponible, señor.",
+        "Aún no le he dicho nada que pueda repetir, señor.",
+        "Todavía no tengo nada que repetirle, señor.",
+        "No tengo ninguna respuesta anterior a mano, señor.",
+        "Me temo que no hay nada que repetir todavía, señor.",
+        "No hay nada anterior que repetir, señor.",
     ],
     "general.ayuda": [
-        "Por supuesto, señor. Estas son las órdenes que tengo disponibles.",
-        "Claro que sí, señor. Le muestro lo que puedo hacer.",
-        "Será un placer ayudarle, señor. Estas son mis opciones.",
-        "Por supuesto, señor. Aquí tiene las funciones que conozco.",
-        "Con mucho gusto, señor. Le explico las órdenes disponibles.",
+        "Claro, señor. Esto es lo que puedo hacer por usted.",
+        "Por supuesto, señor. Le enseño las órdenes que conozco.",
+        "Con mucho gusto, señor. Aquí tiene todo lo que sé hacer.",
+        "Cómo no, señor. Estas son mis órdenes.",
+        "Encantado, señor. Eche un vistazo a lo que puedo hacer.",
     ],
     "general.indice_invalido": [
-        "Disculpe, señor. No existe ningún elemento con el número {n}.",
-        "No encuentro ningún elemento con el índice {n}, señor.",
-        "El número {n} no corresponde a ningún resultado, señor.",
-        "Ese índice no es válido, señor. No hay ningún elemento {n}.",
-        "No hay un resultado número {n}, señor. Revise el índice indicado.",
+        "Me temo que no hay ningún elemento {n}, señor.",
+        "No encuentro el número {n}, señor. ¿Puede revisarlo?",
+        "El {n} no corresponde a nada, señor.",
+        "Ese número no me cuadra, señor. No hay ningún elemento {n}.",
+        "No tengo un resultado {n}, señor. Eche un vistazo al índice.",
     ],
     "general.no_disponible": [
-        "Lo siento, señor. Esta función no está disponible en el sistema.",
-        "Disculpe, señor. Esa función todavía no está disponible.",
-        "No puedo ofrecerle esa función ahora mismo, señor.",
-        "Esa opción no está disponible por el momento, señor.",
-        "Aún no puedo hacer eso, señor. Disculpe las molestias.",
+        "Lo siento, señor. Eso todavía no lo sé hacer.",
+        "Me temo que esa función aún no está disponible, señor.",
+        "Eso se me escapa por ahora, señor.",
+        "Todavía no puedo ayudarle con eso, señor.",
+        "Esa opción aún no la tengo, señor. Disculpe.",
     ],
     "config.error": [
-        "He detectado un problema en la configuración de {archivo}, señor. Usaré la última válida.",
-        "La configuración de {archivo} tiene un problema, señor. Mantendré la anterior.",
-        "No he podido cargar correctamente {archivo}, señor. Continuaré con la configuración previa.",
-        "Hay un error en {archivo}, señor. Para evitar problemas, conservaré la última versión válida.",
-        "La configuración de {archivo} no es válida, señor. Seguiré usando la configuración anterior.",
+        "Señor, algo no cuadra en {archivo}. Sigo con la última configuración válida.",
+        "La configuración de {archivo} tiene un problema, señor. Me quedo con la anterior.",
+        "No he podido cargar bien {archivo}, señor. De momento sigo como estaba.",
+        "Hay un error en {archivo}, señor. Por si acaso, conservo la última versión válida.",
+        "Señor, {archivo} no es válido. Sigo usando la configuración anterior.",
     ],
     "entidad.numero": [
         "No he conseguido identificar el número indicado, señor.",
@@ -201,14 +202,14 @@ PHRASES: dict[str, list[str]] = {
     ],
     # Sesión
     "sesion.nombrada": [
-        "Sesión renombrada a {nombre}, señor.",
-        "A partir de ahora, esta sesión se llama {nombre}, señor.",
-        "He llamado a la sesión {nombre}, señor.",
+        "Hecho, señor. La sesión se llama ahora {nombre}.",
+        "Desde ahora, esta sesión es {nombre}, señor.",
+        "Le he puesto {nombre} a la sesión, señor.",
     ],
     "sesion.importante": [
-        "Sesión marcada como importante, señor.",
         "Entendido, señor. Esta sesión queda marcada como importante.",
-        "He marcado la sesión como importante, señor.",
+        "Hecho, señor. La marco como importante.",
+        "Anotado, señor. Esta sesión es importante.",
     ],
     "sesion.no_importante": [
         "Sesión marcada como no importante, señor.",
@@ -227,9 +228,9 @@ PHRASES: dict[str, list[str]] = {
     ],
     # Creación
     "creacion.creado": [
-        "He creado {tipo} {nombre} en {carpeta}, señor.",
         "Listo, señor. Ya tiene {tipo} {nombre} en {carpeta}.",
         "Hecho, señor. He creado {tipo} {nombre} en {carpeta}.",
+        "Ya está, señor: {tipo} {nombre}, en {carpeta}.",
     ],
     "creacion.colision": [
         "Ya existe {nombre}, señor. Escriba otro nombre o cancelar.",
@@ -282,16 +283,16 @@ PHRASES: dict[str, list[str]] = {
         "Ya estoy ejecutando {comando}, señor.",
     ],
     "comandos.ok": [
-        "{comando} ha terminado correctamente, señor.",
-        "Listo, señor. {comando} ha finalizado sin problemas.",
-        "Todo correcto, señor. {comando} se ha completado.",
-        "{comando} ya ha terminado, señor. No se han producido errores.",
+        "{comando} ha terminado bien, señor.",
+        "Listo, señor. {comando} ha ido sin problemas.",
+        "Todo en orden, señor. {comando} ha terminado.",
+        "{comando} ya está, señor. Sin errores.",
     ],
     "comandos.fallo": [
-        "No se ha podido completar {comando}, señor.",
-        "{comando} ha terminado con un error, señor.",
-        "Ha surgido un problema al ejecutar {comando}, señor.",
-        "Lo siento, señor. {comando} no ha podido finalizar correctamente.",
+        "Vaya, señor. {comando} no ha terminado bien.",
+        "{comando} ha dado un error, señor.",
+        "Me temo que {comando} ha fallado, señor.",
+        "Lo siento, señor. {comando} no ha podido terminar.",
     ],
     "comandos.no_permitido": [
         "Ese comando no lo tengo permitido, señor.",
@@ -311,15 +312,15 @@ PHRASES: dict[str, list[str]] = {
         "El comando se ha demorado más de lo permitido, señor.",
     ],
     "comandos.ocupado": [
-        "Ya hay un comando en ejecución, señor.",
-        "Estoy ocupado con otro comando, señor.",
-        "Un momento, señor. Todavía estoy ejecutando otra orden.",
-        "Hay otra operación en curso, señor. Espere un momento.",
+        "Deme un momento, señor. Aún estoy con otro comando.",
+        "Estoy terminando otro comando, señor.",
+        "Un segundo, señor. Todavía estoy con la orden anterior.",
+        "Hay otra operación en marcha, señor. Enseguida estoy con usted.",
     ],
     "comandos.consola": [
-        "Abriendo una terminal, señor.",
-        "Ahora abro una terminal, señor.",
-        "Terminal abriendose, señor.",
+        "Le abro una terminal, señor.",
+        "Ahora mismo le abro una terminal, señor.",
+        "Terminal en camino, señor.",
     ],
     # Apertura y Búsqueda
     "apertura.abriendo": [
@@ -358,6 +359,11 @@ PHRASES: dict[str, list[str]] = {
         " en {carpeta}.",
         "Tengo {n} resultados para {consulta}, señor. El primero es {nombre}, en {carpeta}.",
     ],
+    "busqueda.ofrecer_abrir": [
+        "¿Quiere que lo abra, señor?",
+        "¿Se lo abro, señor?",
+        "¿Desea que lo abra ahora, señor?",
+    ],
     "busqueda.limitada": [
         "La búsqueda se ha limitado a sus carpetas, señor.",
         "Solo he buscado dentro de sus carpetas, señor.",
@@ -375,19 +381,19 @@ PHRASES: dict[str, list[str]] = {
     # --- Recordatorio ------------------------------------------------------------------------
     "recordatorio.cuando": [
         "¿Cuándo quiere que se lo recuerde, señor?",
-        "¿Para cuándo se lo recuerdo, señor?",
+        "¿Para cuándo se lo apunto, señor?",
     ],
     "recordatorio.mas": [
-        "¿Quiere añadir otro aviso o una fecha límite, señor?",
-        "¿Desea otro aviso o una fecha límite, señor?",
+        "¿Le añado otro aviso o una fecha límite, señor?",
+        "¿Quiere otro aviso, o le pongo una fecha límite, señor?",
     ],
     "recordatorio.creado": [
-        "Recordatorio creado para {fecha}, señor.",
-        "Hecho, señor. Se lo recordaré {fecha}.",
+        "Apuntado, señor. Se lo recordaré {fecha}.",
+        "Hecho, señor. No se me olvidará: se lo recuerdo {fecha}.",
     ],
     "recordatorio.vacio": [
-        "No he entendido qué quiere que le recuerde, señor.",
-        "Disculpe, señor. ¿Qué es lo que quiere que le recuerde?",
+        "Perdone, señor, ¿qué es lo que quiere que le recuerde?",
+        "No me ha quedado claro qué debo recordarle, señor.",
     ],
     "recordatorio.limite_anterior": [
         "La fecha límite no puede ser anterior a un aviso, señor.",
@@ -398,12 +404,56 @@ PHRASES: dict[str, list[str]] = {
         "Ese recordatorio ya tiene todos los avisos posibles, señor.",
     ],
     "recordatorio.aviso_uno": [
-        "Tiene un recordatorio, señor.",
-        "Señor, tiene un recordatorio pendiente.",
+        "Señor, tengo un recordatorio para usted.",
+        "Perdone que le interrumpa, señor. Tiene un recordatorio.",
     ],
     "recordatorio.aviso_varios": [
-        "Tiene {n} recordatorios, señor.",
-        "Señor, tiene {n} recordatorios pendientes.",
+        "Señor, tengo {n} recordatorios para usted.",
+        "Perdone que le interrumpa, señor. Tiene {n} recordatorios.",
+    ],
+    # Tras el aviso: se ofrece dictarlos. Con un sí, se dicen seguidos, cada uno con su
+    # muletilla; al rotar las variantes, dos seguidos no empiezan igual.
+    "recordatorio.ofrecer_uno": [
+        "¿Quiere que se lo lea, señor?",
+        "¿Se lo dicto, señor?",
+        "¿Le digo qué es, señor?",
+    ],
+    "recordatorio.ofrecer_varios": [
+        "¿Quiere que se los dicte, señor?",
+        "¿Se los voy leyendo, señor?",
+        "¿Le digo cuáles son, señor?",
+    ],
+    "recordatorio.no_dictar": [
+        "Como quiera, señor. Lo tiene todo en el panel.",
+        "De acuerdo, señor. Ahí lo tiene, en el panel, para cuando quiera.",
+    ],
+    "recordatorio.dictado_unico": [
+        "Dice así: {texto}.",
+        "Es este, señor: {texto}.",
+        "Se lo leo: {texto}.",
+    ],
+    "recordatorio.dictado_primero": [
+        "El primero: {texto}.",
+        "Empiezo por este: {texto}.",
+        "Para empezar: {texto}.",
+        "En primer lugar: {texto}.",
+    ],
+    "recordatorio.dictado_siguiente": [
+        "El siguiente: {texto}.",
+        "También está este: {texto}.",
+        "Luego tiene este otro: {texto}.",
+        "Además: {texto}.",
+        "Otro más: {texto}.",
+    ],
+    "recordatorio.dictado_ultimo": [
+        "Y por último: {texto}.",
+        "Y el último: {texto}.",
+        "Para terminar: {texto}.",
+        "Y ya para acabar: {texto}.",
+    ],
+    "recordatorio.dictado_vencido": [
+        "Venció {fecha}.",
+        "Su fecha límite era {fecha}.",
     ],
     "recordatorio.vencido": [
         "El recordatorio {n} ha vencido, señor. Su fecha límite era {fecha}.",
@@ -414,8 +464,8 @@ PHRASES: dict[str, list[str]] = {
         "Aquí tiene sus recordatorios, señor: {recordatorios}.",
     ],
     "recordatorio.ninguno": [
-        "No tiene recordatorios, señor.",
-        "No hay ningún recordatorio, señor.",
+        "No tiene ningún recordatorio, señor. Todo despejado.",
+        "Nada pendiente, señor. No hay recordatorios.",
     ],
     "recordatorio.lectura": [
         "{texto}",
@@ -432,8 +482,8 @@ PHRASES: dict[str, list[str]] = {
         "He confirmado el recordatorio {n}, señor.",
     ],
     "recordatorio.pospuesto": [
-        "Pospuesto, señor. Le avisaré dentro de {duracion}.",
-        "De acuerdo, señor. Se lo recuerdo dentro de {duracion}.",
+        "De acuerdo, señor. Se lo vuelvo a recordar dentro de {duracion}.",
+        "Pospuesto, señor. Le aviso otra vez dentro de {duracion}.",
     ],
     "recordatorio.sin_aviso": [
         "Ese recordatorio aún no ha avisado, señor.",
@@ -460,12 +510,12 @@ PHRASES: dict[str, list[str]] = {
     ],
     # {n} de `protocolos.con_errores` y `protocolos.lista` ya es un recuento: «1 error».
     "protocolos.inicio": [
-        "Iniciando el protocolo {nombre}, señor.",
-        "Muy bien, señor. Inicio el protocolo {nombre}.",
+        "Vamos allá, señor. Inicio el protocolo {nombre}.",
+        "Muy bien, señor. Pongo en marcha el protocolo {nombre}.",
     ],
     "protocolos.completado": [
-        "Protocolo {nombre} completado, señor.",
-        "El protocolo {nombre} ha terminado sin errores, señor.",
+        "Protocolo {nombre} completado, señor. Todo en orden.",
+        "Listo, señor. El protocolo {nombre} ha terminado sin errores.",
     ],
     "protocolos.con_errores": [
         "Protocolo {nombre} terminado con {n}, señor.",

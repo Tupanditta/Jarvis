@@ -92,6 +92,9 @@ Rectangle {
         font.pixelSize: Theme.sizeText
         clip: true
         selectByMouse: true
+        // Dormido, lo escrito es el código de activación: se oculta como una contraseña.
+        echoMode: box.asleep ? TextInput.Password : TextInput.Normal
+        passwordCharacter: "*"
 
         onAccepted: {
             assistant.submit(text)

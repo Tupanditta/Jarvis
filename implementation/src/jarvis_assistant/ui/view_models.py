@@ -33,7 +33,7 @@ ACTIVITY_LABELS = {
     Activity.ESPERANDO: "Esperando",
 }
 
-PLACEHOLDER_ASLEEP = "Escriba «Hey Jarvis» para iniciar la sesión"
+PLACEHOLDER_ASLEEP = "Escriba el código de activación para iniciar la sesión"
 PLACEHOLDER_RESTING = "En reposo. Escriba una orden"
 PLACEHOLDER_ATTENDING = "Escriba una orden"
 _PLACEHOLDERS = {"DORMIDO": PLACEHOLDER_ASLEEP, "IDLE": PLACEHOLDER_RESTING}

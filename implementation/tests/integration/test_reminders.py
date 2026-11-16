@@ -11,7 +11,8 @@ from integration.test_orders import Rig, said
 from jarvis_assistant.core import events
 from jarvis_assistant.core.repositories import ReminderRepository
 from jarvis_assistant.core.state_machine import AssistantState
-from jarvis_assistant.speaker import formats
+from jarvis_assistant.speaker import formats, phrases, speaker
+from jarvis_assistant.speaker.phrases import PHRASES
 
 S = AssistantState
 EXTRA = (events.DialogueOpened, events.DialogueClosed, events.RemindersChanged)
@@ -125,6 +126,11 @@ async def test_cu12_flujo_principal(rig):
     assert said("recordatorio.aviso_uno") in rig.spoken()
     assert events.PanelActivated("recordatorios") in rig.of(events.PanelActivated)
     assert rig.of(events.RemindersChanged)[-1].items[0].highlighted
+    assert said("recordatorio.ofrecer_uno") in rig.spoken()  # ¿Se lo leo?
+    assert rig.state is S.AWAITING_CONFIRMATION
+    rig.events.clear()
+    await rig.order("no")
+    assert rig.spoken() == [said("recordatorio.no_dictar")]
     rig.events.clear()
     await rig.order("lee el recordatorio uno")
     assert rig.spoken() == [said("recordatorio.lectura", texto="Regar las plantas")]
@@ -139,6 +145,7 @@ async def test_cu12_flujo_principal(rig):
 async def test_cu12_a1_posponer(rig):
     await create_in_a_minute(rig)
     await rig.advance(60.0)
+    await rig.order("no")
     rig.events.clear()
     await rig.order("posponer media hora")
     assert rig.spoken() == [said("recordatorio.pospuesto", duracion="media hora")]
@@ -149,6 +156,7 @@ async def test_cu12_a1_posponer(rig):
 async def test_cu12_a3_autoconfirmacion_tras_leer_el_ultimo_aviso(rig):
     await create_in_a_minute(rig)
     await rig.advance(60.0)
+    await rig.order("no")
     await rig.order("lee el recordatorio uno")
     await rig.advance(298.0)
     assert statuses(rig) == ["activo"]
@@ -159,6 +167,7 @@ async def test_cu12_a3_autoconfirmacion_tras_leer_el_ultimo_aviso(rig):
 async def test_cu12_a2_callar_la_lectura_y_posponer(rig):
     await create_in_a_minute(rig)
     await rig.advance(60.0)
+    await rig.order("no")
     await rig.write("lee el recordatorio uno")
     await rig.advance(0.25)  # la lectura está sonando
     await rig.write("Hey Jarvis")
@@ -191,7 +200,8 @@ async def test_cu12_a5_avisos_sin_sesion_tras_la_frase_de_apertura(tmp_path, mon
     await rig.advance(3.0)
     spoken = rig.spoken()
     assert spoken[0] == said("ciclo.apertura")
-    assert spoken[1:] == [said("recordatorio.aviso_varios", n=2)]
+    assert spoken[1:] == [said("recordatorio.aviso_varios", n=2),
+                          said("recordatorio.ofrecer_varios")]
     await rig.stop()
 
 
@@ -222,12 +232,63 @@ async def test_cu12_a8_el_aviso_espera_al_dialogo(rig):
     assert said("recordatorio.aviso_uno") in rig.spoken()
 
 
+async def opened_with_due(tmp_path, monkeypatch, *texts: str) -> Rig:
+    """Recordatorios cuyo aviso venció sin sesión: se avisan tras la frase de apertura."""
+    rig = await started(tmp_path, monkeypatch)
+    now = rig.clock.now()
+    for text in texts:
+        reminders(rig).create(text, [now - timedelta(hours=1)], None, now - timedelta(days=1))
+    await rig.write("Hey Jarvis")
+    await rig.until(lambda: rig.app.orchestrator.modules["apertura"]._discovery.done())
+    await rig.advance(3.0)
+    return rig
+
+
+async def test_tras_el_aviso_con_un_si_los_dicta_variando_las_muletillas(tmp_path, monkeypatch):
+    monkeypatch.setattr(speaker, "advance", phrases.advance)  # aquí sí rotan las variantes
+    rig = await opened_with_due(tmp_path, monkeypatch, "Regar", "Pagar", "Llamar a Ana", "Ir")
+    assert rig.spoken()[-1] == PHRASES["recordatorio.ofrecer_varios"][0]
+    assert rig.state is S.AWAITING_CONFIRMATION
+    rig.events.clear()
+    await rig.order("sí")
+    await rig.advance(2.0)
+    assert rig.spoken() == [
+        PHRASES["recordatorio.dictado_primero"][0].format(texto="Regar"),
+        PHRASES["recordatorio.dictado_siguiente"][0].format(texto="Pagar"),
+        PHRASES["recordatorio.dictado_siguiente"][1].format(texto="Llamar a Ana"),
+        PHRASES["recordatorio.dictado_ultimo"][0].format(texto="Ir"),
+    ]
+    assert statuses(rig) == ["activo"] * 4
+    await rig.advance(305.0)  # sin avisos pendientes: RN-29 al terminar de dictarlos
+    assert statuses(rig) == ["eliminado"] * 4
+    await rig.stop()
+
+
+async def test_si_no_contesta_al_ofrecimiento_no_dice_operacion_cancelada(rig):
+    await create_in_a_minute(rig)
+    await rig.advance(60.0)
+    assert rig.state is S.AWAITING_CONFIRMATION
+    await rig.advance(21.0)
+    assert rig.state is not S.AWAITING_CONFIRMATION
+    assert not set(PHRASES["general.operacion_cancelada"]) & set(rig.spoken())
+    assert statuses(rig) == ["activo"]
+
+
+async def test_leeme_los_recordatorios_los_dicta_sin_preguntar(rig):
+    await create_in_a_minute(rig)
+    await rig.order("léeme los recordatorios")
+    assert rig.of(events.DialogueOpened) == []
+    assert rig.spoken() == [
+        PHRASES["recordatorio.dictado_unico"][0].format(texto="Regar las plantas")
+    ]
+
+
 async def test_rn39_en_reposo_un_aviso_pone_en_escucha(rig):
     await create_in_a_minute(rig)
     await rig.advance(35.0)
     assert rig.state is S.IDLE
     await rig.advance(30.0)
-    assert rig.state is S.LISTENING_COMMAND
+    assert rig.state is S.AWAITING_CONFIRMATION  # en escucha, y ya le pregunta
     assert said("recordatorio.aviso_uno") in rig.spoken()
 
 

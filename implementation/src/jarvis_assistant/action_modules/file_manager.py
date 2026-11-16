@@ -8,6 +8,7 @@ La creación nunca sobrescribe, mueve ni borra nada que ya exista (RN-18): la co
 comprueba con `exists()` y la creación misma falla si el destino aparece entretanto.
 """
 import asyncio
+import dataclasses
 import logging
 import os
 import stat
@@ -19,6 +20,7 @@ from pathlib import Path, PurePath
 from jarvis_assistant.config import StructureDef
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import (
+    OFFER,
     WORKDIR,
     ActionContext,
     ActionResult,
@@ -217,6 +219,7 @@ class FileSearch:
                 limited,
             )
         )
+        description = f"buscar {query}"
         speech = self._summary(query, shown, total)
         if limited:
             await ctx.say(speech)
@@ -225,7 +228,22 @@ class FileSearch:
                 self._install_hint_given = True
                 await ctx.say(speech)
                 speech = Phrase("busqueda.instalar")
-        return ActionResult("completado", speech, description=f"buscar {query}")
+        if total == 1 and len(shown) == 1 and ctx.origin == "voz":
+            await ctx.say(speech)
+            return await self._offer_open(ctx, description)
+        return ActionResult("completado", speech, description=description)
+
+    async def _offer_open(self, ctx: ActionContext, description: str) -> ActionResult:
+        """Una sola coincidencia: ofrece abrirla (BOOLEAN). Con un sí, como
+        `abrir_resultado 1`; con un no, una cancelación o sin respuesta, la búsqueda queda
+        hecha. En un protocolo no se pregunta."""
+        answer = await ctx.ask(
+            Phrase("busqueda.ofrecer_abrir"), ExpectedType.BOOLEAN, metadata={OFFER: True}
+        )
+        if answer.cancelled or answer.value is not True:
+            return ActionResult("completado", description=description)
+        opened = await self._open(1, ctx, location=False)
+        return dataclasses.replace(opened, description=description)
 
     @staticmethod
     def _summary(query: str, shown: Sequence[Found], total: int) -> Phrase:

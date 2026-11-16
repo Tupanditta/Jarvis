@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from fakes.context import ContextRig
+from fakes.context import CANCEL, ContextRig
 from jarvis_assistant.action_modules.file_manager import (
     FileSearch,
     Found,
@@ -12,7 +12,7 @@ from jarvis_assistant.action_modules.file_manager import (
 )
 from jarvis_assistant.config import Config, SearchSettings, Settings
 from jarvis_assistant.core import events
-from jarvis_assistant.core.action_api import Phrase
+from jarvis_assistant.core.action_api import OFFER, ExpectedType, Phrase
 from jarvis_assistant.os_adapters.base import SearchKind, SearchOutcome
 
 
@@ -71,14 +71,80 @@ async def test_sin_resultados_es_una_tarea_completada(rig, module):
 async def test_un_resultado_dice_su_nombre_y_su_carpeta(rig, module):
     (path,) = make(rig.home, "Facturas/enero.pdf")
     rig.platform.search_outcome = SearchOutcome((path,), 1)
+    rig.answers.append(False)
     result = await module.execute("buscar", {"consulta": "enero", "tipo": "archivos"}, rig.ctx)
-    assert result.speech == Phrase(
+    assert rig.said == [Phrase(
         "busqueda.uno", {"consulta": "enero", "nombre": "enero.pdf", "carpeta": "Facturas"}
-    )
+    )]  # fmt: skip
     (shown,) = results(rig).results
     assert (shown.index, shown.name, shown.is_dir, shown.folder, shown.path) == (
         1, "enero.pdf", False, str(path.parent), str(path),
     )  # fmt: skip
+    # Con un no, la búsqueda queda hecha y no se abre nada.
+    assert (result.status, result.speech, result.description) == (
+        "completado", None, "buscar enero",
+    )  # fmt: skip
+    assert [call[0] for call in rig.platform.calls] == ["indexed_search"]
+
+
+# --- Un solo resultado: ofrecer abrirlo -------------------------------------------------------
+
+
+async def test_un_resultado_ofrece_abrirlo_y_con_un_si_lo_abre(rig, module):
+    (path,) = make(rig.home, "Facturas/enero.pdf")
+    rig.platform.search_outcome = SearchOutcome((path,), 1)
+    rig.answers.append(True)
+    result = await module.execute("buscar", {"consulta": "enero", "tipo": "ambos"}, rig.ctx)
+    (asked,) = rig.asked
+    assert asked.question == Phrase("busqueda.ofrecer_abrir")
+    assert (asked.expected_type, asked.metadata) == (ExpectedType.BOOLEAN, {OFFER: True})
+    assert rig.platform.calls[-1] == ("open_with_default", (path,))
+    assert (result.status, result.speech, result.description) == (
+        "completado", Phrase("apertura.abriendo", {"nombre": "enero.pdf"}), "buscar enero",
+    )  # fmt: skip
+
+
+async def test_una_carpeta_unica_se_abre_en_el_gestor(rig, module):
+    (folder,) = make(rig.home, "Facturas/")
+    rig.platform.search_outcome = SearchOutcome((folder,), 1)
+    rig.answers.append(True)
+    await module.execute("buscar", {"consulta": "facturas", "tipo": "carpetas"}, rig.ctx)
+    assert rig.platform.calls[-1] == ("open_folder", (folder,))
+
+
+async def test_ofrecimiento_cancelado_deja_la_busqueda_completada(rig, module):
+    (path,) = make(rig.home, "Facturas/enero.pdf")
+    rig.platform.search_outcome = SearchOutcome((path,), 1)
+    rig.answers.append(CANCEL)
+    result = await module.execute("buscar", {"consulta": "enero", "tipo": "ambos"}, rig.ctx)
+    assert (result.status, result.speech) == ("completado", None)
+    assert [call[0] for call in rig.platform.calls] == ["indexed_search"]
+
+
+async def test_con_varios_resultados_no_se_ofrece_abrir(rig, module):
+    (path,) = make(rig.home, "Facturas/enero.pdf")
+    rig.platform.search_outcome = SearchOutcome((path,), 3)  # más coincidencias que mostradas
+    result = await module.execute("buscar", {"consulta": "enero", "tipo": "ambos"}, rig.ctx)
+    assert rig.asked == [] and result.speech.id == "busqueda.varios"
+
+
+async def test_en_un_protocolo_no_se_ofrece_abrir(tmp_path, module):
+    rig = ContextRig(tmp_path, origin="protocolo")
+    (path,) = make(rig.home, "Facturas/enero.pdf")
+    rig.platform.search_outcome = SearchOutcome((path,), 1)
+    result = await module.execute("buscar", {"consulta": "enero", "tipo": "ambos"}, rig.ctx)
+    assert rig.asked == [] and result.speech.id == "busqueda.uno"
+    rig.close()
+
+
+async def test_busqueda_limitada_con_un_resultado_pregunta_tras_los_avisos(rig, module):
+    make(rig.home, "apuntes/redes.txt")
+    rig.answers.append(False)
+    await module.execute("buscar", {"consulta": "redes", "tipo": "ambos"}, rig.ctx)
+    assert [phrase.id for phrase in rig.said] == [
+        "busqueda.uno", "busqueda.limitada", "busqueda.instalar",
+    ]  # fmt: skip
+    assert [asked.question.id for asked in rig.asked] == ["busqueda.ofrecer_abrir"]
 
 
 async def test_varios_resultados_orden_de_presentacion_y_limite(rig, module):

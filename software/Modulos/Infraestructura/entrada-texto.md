@@ -20,9 +20,11 @@ Recibir las órdenes del usuario. El usuario no habla al asistente: escribe en u
 
 | Estado | Texto de ayuda |
 |---|---|
-| `DORMIDO` | Escriba «Hey Jarvis» para iniciar la sesión |
+| `DORMIDO` | Escriba el código de activación para iniciar la sesión |
 | `IDLE` | En reposo. Escriba «Hey Jarvis» |
 | `LISTENING_COMMAND` y `AWAITING_*` | Escriba una orden |
+
+- En `DORMIDO` lo escrito es el código de activación y la caja lo oculta como una contraseña: cada carácter se muestra como `*`. Solo cambia lo que se ve; el texto se publica igual y el enrutador lo reconoce con la misma tolerancia a erratas. En el resto de estados el texto se ve tal cual.
 
 - No hay botones de órdenes. Los únicos controles de ratón de la interfaz son los de [hud.md](hud.md), sección 3.
 

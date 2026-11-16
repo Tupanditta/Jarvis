@@ -6,7 +6,6 @@ salen de la lista permitida (RN-45) y se lanzan sin intérprete de órdenes.
 import asyncio
 import logging
 import os
-import shutil
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,6 +25,7 @@ from jarvis_assistant.core.action_api import (
 )
 from jarvis_assistant.core.content import Entry, TreeNode
 from jarvis_assistant.core.workdir import folder_name, invalid_folder
+from jarvis_assistant.os_adapters.processes import launch_process
 from jarvis_assistant.speaker.phrases import count
 
 logger = logging.getLogger(__name__)
@@ -36,20 +36,8 @@ TREE_MAX_DEPTH = 3
 TREE_MAX_ENTRIES = 200
 OUTPUT_BATCH_SECONDS = 0.2
 
+# El lanzador por defecto es `os_adapters/processes.py`: depende del sistema.
 Launcher = Callable[[str, Sequence[str], Path], Awaitable[Any]]
-
-
-async def launch_process(executable: str, args: Sequence[str], cwd: Path) -> Any:
-    """Lanza el binario sin intérprete de órdenes. `FileNotFoundError` si no existe."""
-    resolved = shutil.which(executable)
-    if resolved is None:
-        raise FileNotFoundError(executable)
-    return await asyncio.create_subprocess_exec(
-        resolved, *args, cwd=str(cwd),
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )  # fmt: skip
 
 
 def kill_process_tree(pid: int) -> None:
