@@ -8,6 +8,11 @@
 // corre más en la ventana que está encima, se enciende al paso del latido del orbe (`beat`)
 // y se apaga en reposo.
 //
+// Apartada (`aside`), sale lanzada hacia su pestaña (`tabX`, `tabY`), en un borde o una
+// esquina, y se encoge por el camino hasta quedar en la cabecera: icono, título y cerrar. Se
+// aparta con un triple clic en la cabecera; un clic en la pestaña la devuelve a su sitio y a
+// su tamaño. Apartada no se mueve ni cambia de tamaño.
+//
 // No guarda su disposición: la recibe en fracciones del área de trabajo (`fx`, `fy`, `fw`,
 // `fh`) y pide los cambios con sus señales. El dueño es `workspace` (`ui/workspace.py`).
 import QtQuick
@@ -38,6 +43,9 @@ Item {
     property real originX: 0             // centro del orbe, en coordenadas del área de trabajo
     property real originY: 0
     property real launch: 1              // salida desde el orbe: 0 en su centro, 1 en su sitio
+    property bool aside: false           // apartada a un borde: solo se ve la cabecera
+    property real tabX: 0                // sitio de la pestaña al estar apartada
+    property real tabY: 0
     default property alias content: body.data
 
     readonly property var outline: Outline.corners(frameStyle)
@@ -58,11 +66,52 @@ Item {
     signal closed()
     signal activated()
     signal appeared()                    // ha pasado de oculta a visible
+    signal asideRequested()              // triple clic en la cabecera
+    signal restored()                    // clic en la pestaña de una ventana apartada
 
-    width: Math.min(areaWidth, Math.max(minWidth, Math.round(fw * areaWidth)))
-    height: Math.min(areaHeight, Math.max(minHeight, Math.round(fh * areaHeight)))
-    x: Math.max(0, Math.min(areaWidth - width, Math.round(fx * areaWidth)))
-    y: Math.max(0, Math.min(areaHeight - height, Math.round(fy * areaHeight)))
+    // Su rectángulo sin apartar. Al apartarla se conserva: es adonde vuelve.
+    readonly property real fullWidth:
+        Math.min(areaWidth, Math.max(minWidth, Math.round(fw * areaWidth)))
+    readonly property real fullHeight:
+        Math.min(areaHeight, Math.max(minHeight, Math.round(fh * areaHeight)))
+    readonly property real fullX:
+        Math.max(0, Math.min(areaWidth - fullWidth, Math.round(fx * areaWidth)))
+    readonly property real fullY:
+        Math.max(0, Math.min(areaHeight - fullHeight, Math.round(fy * areaHeight)))
+    readonly property int tabWidth: Theme.windowTab
+    readonly property int tabHeight: Theme.windowHeader + 2
+
+    // Avance del apartado: 0 en su sitio, 1 en su pestaña. Al apartarse pasa un poco de 1 al
+    // llegar, como si chocara con el borde. Oculta no se anima: se abre ya en su forma.
+    property real tuck: aside ? 1 : 0
+    // El contenido se apaga en el primer tramo del viaje y se enciende en el último.
+    readonly property real fold: Math.max(0, Math.min(1, tuck * 2.2))
+
+    Behavior on tuck {
+        enabled: win.visible && !ui.reduceMotion
+        NumberAnimation {
+            duration: Theme.motionAside
+            easing.type: win.aside ? Easing.OutBack : Easing.OutCubic
+            easing.overshoot: 0.9
+        }
+    }
+    // Una pestaña ya apartada se desliza si las de su borde se recolocan.
+    Behavior on tabX {
+        enabled: win.aside && win.tuck >= 1 && !ui.reduceMotion
+        NumberAnimation { duration: Theme.motionPanel; easing.type: Easing.OutCubic }
+    }
+    Behavior on tabY {
+        enabled: win.aside && win.tuck >= 1 && !ui.reduceMotion
+        NumberAnimation { duration: Theme.motionPanel; easing.type: Easing.OutCubic }
+    }
+
+    width: Math.round(fullWidth + (tabWidth - fullWidth) * tuck)
+    height: Math.round(fullHeight + (tabHeight - fullHeight) * tuck)
+    x: Math.round(fullX + (tabX - fullX) * tuck)
+    y: Math.round(fullY + (tabY - fullY) * tuck)
+    // Un leve giro hacia donde va mientras viaja: se lanza, no se desliza.
+    rotation: ui.reduceMotion || tuck <= 0 || tuck >= 1 ? 0
+              : 3 * Math.sin(Math.PI * tuck) * (tabX >= fullX ? 1 : -1)
 
     readonly property bool shown: open && !held
     property real pop: shown ? 1 : 0.97  // escala al abrir y cerrar a mano
@@ -331,15 +380,43 @@ Item {
             property real offsetY: 0
 
             anchors.fill: parent
-            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            property int clicks: 0           // pulsaciones seguidas, para el triple clic
+            property double lastPress: 0
+            property point lastPoint
+            property bool thrown: false      // esta pulsación ha apartado la ventana
+
+            cursorShape: win.aside ? Qt.PointingHandCursor
+                                   : pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
             onPressed: (mouse) => {
                 var point = mapToItem(win.parent, mouse.x, mouse.y)
                 offsetX = point.x - win.x
                 offsetY = point.y - win.y
+                thrown = false
+                if (win.aside) {
+                    clicks = 0
+                    return
+                }
+                var now = Date.now()
+                var near = Math.abs(mouse.x - lastPoint.x) < 8
+                           && Math.abs(mouse.y - lastPoint.y) < 8
+                clicks = near && now - lastPress <= Qt.styleHints.mouseDoubleClickInterval
+                         ? clicks + 1 : 1
+                lastPress = now
+                lastPoint = Qt.point(mouse.x, mouse.y)
+                if (clicks >= 3) {
+                    clicks = 0
+                    thrown = true
+                    win.asideRequested()
+                }
+            }
+            onClicked: {
+                // El clic que la aparta no la recupera.
+                if (win.aside && !thrown)
+                    win.restored()
             }
             onPositionChanged: (mouse) => {
-                if (!pressed || win.areaWidth <= 0 || win.areaHeight <= 0)
+                if (!pressed || win.aside || win.areaWidth <= 0 || win.areaHeight <= 0)
                     return
                 var point = mapToItem(win.parent, mouse.x, mouse.y)
                 var left = Math.max(0, Math.min(win.areaWidth - win.width, point.x - offsetX))
@@ -375,6 +452,7 @@ Item {
         Text {
             x: caption.x + caption.width + Theme.space12
             width: Math.max(0, close.x - x - Theme.space8)
+            opacity: 1 - win.fold
             text: win.subtitle
             color: Theme.textMuted
             font.family: Theme.fontBody
@@ -400,6 +478,7 @@ Item {
         width: parent.width - 2
         height: 1
         color: Theme.lineSoft
+        opacity: 1 - win.fold
     }
 
     // Trazo de acento bajo el título: marca la ventana que está encima.
@@ -409,7 +488,7 @@ Item {
         width: 40
         height: 1
         color: Theme.primary
-        opacity: win.focused ? 1 : 0
+        opacity: win.focused ? 1 - win.fold : 0
 
         Behavior on opacity {
             NumberAnimation { duration: Theme.motionWindow }
@@ -427,6 +506,8 @@ Item {
         anchors.rightMargin: Theme.space12
         anchors.bottomMargin: Theme.space12
         clip: true
+        opacity: 1 - win.fold
+        visible: opacity > 0
     }
 
     // --- Asas de tamaño: cuatro bordes y cuatro esquinas -------------------------------------
@@ -444,6 +525,7 @@ Item {
             property point origin
             property rect start
 
+            enabled: !win.aside
             width: hx === 0 ? win.width - 2 * corner : hy === 0 ? Theme.windowGrip : corner
             height: hy === 0 ? win.height - 2 * corner : hx === 0 ? Theme.windowGrip : corner
             x: hx < 0 ? 0 : hx === 0 ? corner : win.width - width
@@ -467,12 +549,12 @@ Item {
 
     // Marca del asa de la esquina inferior derecha. Con chaflán, el propio corte hace de asa.
     Canvas {
-        visible: win.outline[2][0] !== "cut"
+        visible: win.outline[2][0] !== "cut" && !win.aside
         x: win.width - width - 4
         y: win.height - height - 4
         width: 9
         height: 9
-        opacity: win.focused ? 0.8 : 0.35
+        opacity: (win.focused ? 0.8 : 0.35) * (1 - win.fold)
 
         onPaint: {
             var ctx = getContext("2d")

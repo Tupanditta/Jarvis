@@ -95,11 +95,13 @@ def build_app(
     on_exit: Callable[[], None] = lambda: None,
     home: Path | None = None,
     reload_config: Reload | None = None,
+    windows: Sequence[str] = (),
 ) -> App:
     """Construye el grafo completo sin lanzar hilos ni abrir dispositivos.
 
     `home`: carpeta del usuario, donde empieza el directorio de trabajo de cada sesión.
     `reload_config`: relee la configuración al abrir cada sesión (RF-96).
+    `windows`: títulos de las ventanas flotantes de la interfaz, para «aparta {ventana}».
     """
     settings = config.settings
     bus = bus or EventBus()
@@ -113,7 +115,8 @@ def build_app(
     )
     workdir = Workdir(home or Path.home())
     router = IntentRouter(
-        settings.router, config.aliases, workdir=workdir, now=adapters.clock.now
+        settings.router, config.aliases, workdir=workdir, now=adapters.clock.now,
+        windows=windows,
     )
     sessions = SessionManager(adapters.database, adapters.clock, bus)
     orchestrator = Orchestrator(
@@ -185,8 +188,10 @@ class CoreThread:
         make_adapters: Callable[[], Adapters],
         on_exit: Callable[[], None],
         reload_config: Reload | None = None,
+        windows: Sequence[str] = (),
     ) -> None:
         self._config = config
+        self._windows = tuple(windows)
         self._bus = bus
         self._make_adapters = make_adapters
         self._on_exit = on_exit
@@ -222,7 +227,8 @@ class CoreThread:
         started = time.monotonic()
         adapters = self._make_adapters()
         app = build_app(
-            self._config, adapters, bus=self._bus, reload_config=self._reload_config
+            self._config, adapters, bus=self._bus, reload_config=self._reload_config,
+            windows=self._windows,
         )
         self.app = app
         try:
@@ -287,6 +293,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
     from jarvis_assistant.process.tray import TrayController
     from jarvis_assistant.ui.app import UiApp
     from jarvis_assistant.ui.bridge import UiBridge
+    from jarvis_assistant.ui.workspace import WINDOWS
 
     config = _load_config(args, paths)
 
@@ -352,6 +359,7 @@ def _run(args: argparse.Namespace, platform: Any, paths: AppPaths) -> int:
         make_adapters=lambda: real_adapters(config, platform, paths, clock),
         on_exit=bridge.exitRequested.emit,
         reload_config=lambda previous: config_module.load(paths.config_dir, previous=previous),
+        windows=[spec.title for spec in WINDOWS],
     )
     core.start()
     tray.show()

@@ -68,6 +68,7 @@ Tamaños (px lógicos): 11 (etiquetas), 13 (texto secundario), 15 (texto), 18 (s
 | `motion.transition` | 2000 ms | Animaciones de despertar y dormirse (RF-80, RF-81). |
 | `motion.panel` | 220 ms, salida suave | Aparición y cambio de panel, expansión del HUD. |
 | `motion.state` | 400 ms | Cambio de color o brillo por cambio de actividad. |
+| `motion.aside` | 440 ms, salida con rebote leve al apartar | Una ventana flotante se aparta a su pestaña o vuelve a su sitio. |
 | `motion.level` | 80 ms | Suavizado del nivel de audio. |
 
 Con ⚙ `ui.reduce_motion`, las transiciones del orbe se sustituyen por un fundido de 400 ms y se detienen los giros.
@@ -261,6 +262,23 @@ Cada ventana declara su forma de marco en el registro (`ui/workspace.py`, campo 
 | `bracket` | Recto, con cuatro esquinas marcadas por fuera que se abren con el latido. | Trama diagonal en la esquina inferior izquierda. | Ayuda |
 
 Un trazo de neón recorre el borde de cada ventana: más rápido y brillante en la que está encima, encendido al paso del latido y de las ondas de la voz, apagado en reposo. La esquina superior derecha nunca va en chaflán: ahí está el botón de cerrar. Sin aceleración gráfica el marco es un rectángulo liso y el neón no avanza.
+
+### Ventanas apartadas
+
+Una ventana abierta se puede apartar: sale lanzada hacia un borde o una esquina y, mientras viaja, se encoge hasta quedar en una pestaña de 184 × 40 px con su icono, su título y el botón de cerrar. El contenido se apaga en el primer tramo del viaje y la ventana gira un poco hacia donde va. Al llegar se pasa un poco de largo, como si chocara con el borde (`motion.aside`, 440 ms). Un clic en la pestaña la devuelve a su sitio y a su tamaño anteriores, con el movimiento inverso; su botón la cierra del todo.
+
+Solo se llega a la pestaña apartando la ventana. Cambiar el tamaño sigue limitado por el mínimo, y una ventana apartada no se mueve ni cambia de tamaño.
+
+| Cómo se aparta | Qué aparta |
+|---|---|
+| Botón del selector, antes de «Restablecer disposición» | Si hay más ventanas apartadas que a la vista, devuelve las apartadas («Devolver ventanas», con la flecha girada); si no, también a la par, aparta las que están a la vista («Apartar ventanas»). Atenuado si no hay ninguna abierta. |
+| Triple clic en la cabecera | Esa ventana. |
+| «Aparta {ventana}» · «Aparta módulos» (catálogo de intenciones, sección 2) | La ventana de ese módulo, si está abierta; o todas las abiertas. |
+| «Desaparta {ventana}» · «Desaparta módulos» | Devuelve a su sitio la ventana de ese módulo, si está apartada; o todas las apartadas. |
+
+Destino: el centro de la ventana decide. En el tercio de una esquina, la pestaña va a esa esquina; si no, al borde más cercano, a la altura de la ventana. Las esquinas pertenecen a las filas de arriba y de abajo; las columnas de los lados empiezan por debajo. Las pestañas de un mismo borde se ponen en fila sin taparse, lo más cerca posible de donde irían. En la fila de arriba dejan libre el hueco del selector. Si no caben, pasan a una segunda fila, más hacia dentro. Las pestañas quedan por encima de las ventanas sin apartar.
+
+El selector y un módulo que activa su panel recuperan la ventana apartada. Cerrar una pestaña la cierra; al volver a abrirla, se abre entera. El estado apartado se guarda con la disposición y «Restablecer disposición» lo deshace.
 
 ### Fondo vivo
 

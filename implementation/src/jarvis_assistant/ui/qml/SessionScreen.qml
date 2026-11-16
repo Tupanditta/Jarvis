@@ -156,9 +156,14 @@ Window {
         conductor: orb
         centerX: orb.x + orb.width / 2 - x
         centerY: orb.y + orb.height / 2 - y
+        // Las pestañas de las ventanas apartadas no tapan el selector.
+        reserveLeft: dock.x - x
+        reserveRight: dock.x + dock.width - x
     }
 
     Dock {
+        id: dock
+
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.space12
         z: 1

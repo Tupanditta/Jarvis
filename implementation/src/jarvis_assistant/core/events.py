@@ -196,6 +196,16 @@ class PanelActivated(Event):
     panel: str
 
 
+@dataclass(frozen=True)
+class WindowAsideRequested(Event):
+    """«Aparta …»: la ventana flotante `window` (su título) se aparta a un borde si está
+    abierta. Sin ventana, se apartan todas las abiertas. Con `aside` falso es «desaparta …»:
+    vuelven a su sitio las apartadas."""
+
+    window: str | None = None
+    aside: bool = True
+
+
 # --- Contenido de los paneles ----------------------------------------------------------------
 
 

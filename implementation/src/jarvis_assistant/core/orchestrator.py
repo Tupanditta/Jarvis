@@ -55,10 +55,14 @@ from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.batch import split_orders
 from jarvis_assistant.intent_router.router import (
+    ASIDE_WINDOW,
+    ASIDE_WINDOWS,
     CORE_MODULE,
     HELP,
     HIDE_SCREEN,
     REPEAT,
+    RESTORE_WINDOW,
+    RESTORE_WINDOWS,
     SHOW_SCREEN,
     IntentRouter,
     Order,
@@ -690,6 +694,16 @@ class Orchestrator:
         if intent in (SHOW_SCREEN, HIDE_SCREEN):
             # Sin voz: solo la interfaz cambia (catalogo-intenciones.md, sección 2).
             self._bus.publish(events.ShowScreenRequested(visible=intent == SHOW_SCREEN))
+        elif intent.action in (ASIDE_WINDOW, RESTORE_WINDOW):
+            # Sin voz, salvo si no hay ninguna ventana con ese nombre.
+            if intent.error is not None:
+                self._announce(intent.error)
+            else:
+                self._bus.publish(events.WindowAsideRequested(
+                    str(intent.params["ventana"]), aside=intent.action == ASIDE_WINDOW
+                ))  # fmt: skip
+        elif intent in (ASIDE_WINDOWS, RESTORE_WINDOWS):
+            self._bus.publish(events.WindowAsideRequested(aside=intent == ASIDE_WINDOWS))
         elif intent == HELP:
             self._bus.publish(events.HelpShown(self._router.help()))
             self._bus.publish(events.PanelActivated(HELP_PANEL))

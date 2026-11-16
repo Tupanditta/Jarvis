@@ -36,6 +36,8 @@ from jarvis_assistant.main import ACTION_MODULES
 from jarvis_assistant.os_adapters.base import DiscoveredApp
 
 S = AssistantState
+WINDOW_TITLES = ("Actividad", "Comandos", "Aperturas", "Búsqueda", "Historial", "Ayuda",
+                 "Recordatorios", "Protocolo")  # fmt: skip
 ALIASES = {"ce de": "cd", "ele ese": "ls", "guit": "git"}
 
 
@@ -52,7 +54,9 @@ def home(tmp_path):
 def router(home):
     workdir = Workdir(home)
     places = {"documentos": home / "Documentos", "descargas": home / "Descargas"}
-    router = IntentRouter(RouterSettings(), ALIASES, places=places, workdir=workdir)
+    router = IntentRouter(
+        RouterSettings(), ALIASES, places=places, workdir=workdir, windows=WINDOW_TITLES
+    )
     for create in ACTION_MODULES:
         module = create()
         if isinstance(module, AppLauncher):
@@ -84,6 +88,12 @@ PLAIN = [
     ("pantalla completa", "nucleo.mostrar_pantalla"),
     ("oculta la pantalla", "nucleo.ocultar_pantalla"),
     ("minimiza la pantalla", "nucleo.ocultar_pantalla"),
+    ("aparta módulos", "nucleo.apartar_ventanas"),
+    ("aparta los módulos", "nucleo.apartar_ventanas"),
+    ("aparta todas las ventanas", "nucleo.apartar_ventanas"),
+    ("desaparta módulos", "nucleo.desapartar_ventanas"),
+    ("desaparta los módulos", "nucleo.desapartar_ventanas"),
+    ("desaparta todas las ventanas", "nucleo.desapartar_ventanas"),
     # Historial
     ("muestra el historial", "historial.mostrar"), ("historial de sesiones", "historial.mostrar"),
     ("enséñame el historial", "historial.mostrar"),
@@ -116,6 +126,13 @@ def test_patrones_sin_entidades(router, text, key):
 def with_entities(home):
     code = CommandLine("git", "git", ("status",))
     return [
+        ("aparta comandos", "nucleo.apartar_ventana", {"ventana": "Comandos"}),
+        ("aparta busqueda", "nucleo.apartar_ventana", {"ventana": "Búsqueda"}),
+        ("aparta la ventana de recordatorios", "nucleo.apartar_ventana",
+         {"ventana": "Recordatorios"}),
+        ("desaparta comandos", "nucleo.desapartar_ventana", {"ventana": "Comandos"}),
+        ("desaparta la ventana de búsqueda", "nucleo.desapartar_ventana",
+         {"ventana": "Búsqueda"}),
         ("actividades de la sesión doce", "historial.actividades", {"id": 12}),
         ("muestra las actividades de la sesión 3", "historial.actividades", {"id": 3}),
         ("qué hice en la sesión doce", "historial.actividades", {"id": 12}),

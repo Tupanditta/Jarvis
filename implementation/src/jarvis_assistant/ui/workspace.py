@@ -5,6 +5,10 @@ añadir la ventana de un módulo nuevo es añadir aquí su `WindowSpec` y su arc
 `qml/panels/`. `WorkspaceModel` guarda la disposición (abierta o cerrada, posición, tamaño y
 orden de apilado) y la expone a QML; `LayoutStore` la conserva entre ejecuciones.
 
+Una ventana abierta puede estar apartada: reducida a una pestaña con su título, pegada al
+borde o la esquina más cercanos. Conserva su posición y su tamaño, a los que vuelve al
+recuperarla. Dónde queda la pestaña lo calcula QML (`Workspace.qml`).
+
 La posición y el tamaño son fracciones del área de trabajo, no píxeles: la disposición vale
 igual en cualquier resolución. QML aplica los tamaños mínimos, que sí son píxeles.
 """
@@ -91,6 +95,7 @@ class Placement:
     width: float
     height: float
     order: int  # apilado: la mayor queda encima
+    aside: bool = False  # apartada a un borde; al abrirla de nuevo deja de estarlo
 
     def bounded(self) -> "Placement":
         """La misma disposición, dentro del área de trabajo."""
@@ -143,6 +148,7 @@ def _restored(spec: WindowSpec, order: int, saved: Mapping[str, Any] | None) -> 
             bool(saved["open"]),
             float(saved["x"]), float(saved["y"]), float(saved["width"]), float(saved["height"]),
             int(saved["order"]),
+            bool(saved.get("aside", False)),
         ).bounded()  # fmt: skip
     except (KeyError, TypeError, ValueError):
         return initial
@@ -154,7 +160,7 @@ class WorkspaceModel(QAbstractListModel):
     changed = Signal()
 
     ROLES = ("windowId", "title", "icon", "component", "open", "fx", "fy", "fw", "fh",
-             "order", "focused", "minWidth", "minHeight", "style")  # fmt: skip
+             "order", "focused", "aside", "minWidth", "minHeight", "style")  # fmt: skip
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(
@@ -212,6 +218,8 @@ class WorkspaceModel(QAbstractListModel):
                 return placement.order
             case "focused":
                 return placement.open and spec.id == self._front()
+            case "aside":
+                return placement.aside
             case "minWidth":
                 return spec.min_width
             case "minHeight":
@@ -222,8 +230,10 @@ class WorkspaceModel(QAbstractListModel):
         return self._placements[window_id]
 
     def _front(self) -> str | None:
-        """La ventana abierta que queda encima de las demás."""
-        opened = [(p.order, key) for key, p in self._placements.items() if p.open]
+        """La ventana abierta, sin apartar, que queda encima de las demás."""
+        opened = [
+            (p.order, key) for key, p in self._placements.items() if p.open and not p.aside
+        ]
         return max(opened)[1] if opened else None
 
     def _set(self, window_id: str, placement: Placement, *, everything: bool = False) -> None:
@@ -245,31 +255,104 @@ class WorkspaceModel(QAbstractListModel):
     # --- Eventos del núcleo ------------------------------------------------------------------
 
     def apply(self, event: object) -> None:
-        """Un módulo que muestra algo abre su ventana y la trae al frente."""
+        """Un módulo que muestra algo abre su ventana y la trae al frente. «Aparta …» aparta
+        una ventana por su título o, sin título, todas; «desaparta …» las devuelve."""
         if isinstance(event, events.PanelActivated) and event.panel in self._rows:
             self.show(event.panel)
+        elif isinstance(event, events.WindowAsideRequested):
+            if event.window is None:
+                if event.aside:
+                    self.set_aside_all()
+                else:
+                    self.restore_all()
+                return
+            window_id = self._find(event.window)
+            if window_id is not None:
+                if event.aside:
+                    self.set_aside(window_id)
+                else:
+                    self.restore(window_id)
+
+    def _find(self, name: str) -> str | None:
+        """La ventana con ese título o ese identificador, sin distinguir mayúsculas."""
+        wanted = name.casefold()
+        return next(
+            (spec.id for spec in self._specs if wanted in (spec.title.casefold(), spec.id)), None
+        )
 
     # --- Acciones del usuario ----------------------------------------------------------------
 
     @Slot(str)
     def show(self, window_id: str) -> None:
-        """Abre la ventana, si no lo está, y la pone encima."""
+        """Abre la ventana, si no lo está, la recupera si estaba apartada y la pone encima."""
         current = self._placements.get(window_id)
         if current is None:
             return
         if current.open and window_id == self._front():
             return
-        self._set(window_id, replace(current, open=True, order=self._top()), everything=True)
+        self._set(
+            window_id, replace(current, open=True, aside=False, order=self._top()), everything=True
+        )
+
+    @Slot(str)
+    def raise_window(self, window_id: str) -> None:
+        """Pone la ventana encima sin cambiar nada más: una apartada sigue apartada."""
+        current = self._placements.get(window_id)
+        if current is None or not current.open:
+            return
+        if not current.aside:
+            self.show(window_id)
+        elif current.order != self._top() - 1:
+            self._set(window_id, replace(current, order=self._top()))
 
     @Slot(str)
     def close(self, window_id: str) -> None:
+        """Cierra la ventana. Una apartada se desvanece como pestaña; al volver a abrirla ya
+        no está apartada (`show`)."""
         current = self._placements.get(window_id)
         if current is not None:
             self._set(window_id, replace(current, open=False), everything=True)
 
     @Slot(str)
+    def set_aside(self, window_id: str) -> None:
+        """Aparta la ventana a un borde, si está abierta."""
+        current = self._placements.get(window_id)
+        if current is not None and current.open and not current.aside:
+            self._set(window_id, replace(current, aside=True), everything=True)
+
+    @Slot()
+    def set_aside_all(self) -> None:
+        """Aparta todas las ventanas abiertas."""
+        for spec in self._specs:
+            self.set_aside(spec.id)
+
+    @Slot(str)
+    def restore(self, window_id: str) -> None:
+        """Recupera una ventana apartada: vuelve a su sitio y a su tamaño, encima."""
+        current = self._placements.get(window_id)
+        if current is not None and current.open and current.aside:
+            self.show(window_id)
+
+    @Slot()
+    def restore_all(self) -> None:
+        """Devuelve todas las apartadas. Conservan entre ellas su orden de apilado."""
+        ordered = sorted(self._placements.items(), key=lambda item: item[1].order)
+        for window_id, _placement in ordered:
+            self.restore(window_id)
+
+    @Slot()
+    def toggle_aside_all(self) -> None:
+        """Botón del selector: si hay más ventanas apartadas que a la vista, las devuelve;
+        si no (también a la par), aparta las que están a la vista."""
+        if self.asideCount > self.spreadCount:
+            self.restore_all()
+        else:
+            self.set_aside_all()
+
+    @Slot(str)
     def toggle(self, window_id: str) -> None:
-        """Botón del selector: abre la ventana, la trae al frente o, si ya lo está, la cierra."""
+        """Botón del selector: abre la ventana, la recupera si estaba apartada, la trae al
+        frente o, si ya lo está, la cierra."""
         current = self._placements.get(window_id)
         if current is None:
             return
@@ -317,3 +400,13 @@ class WorkspaceModel(QAbstractListModel):
     @Property(int, notify=changed)
     def openCount(self) -> int:
         return sum(placement.open for placement in self._placements.values())
+
+    @Property(int, notify=changed)
+    def spreadCount(self) -> int:
+        """Ventanas abiertas sin apartar."""
+        return sum(p.open and not p.aside for p in self._placements.values())
+
+    @Property(int, notify=changed)
+    def asideCount(self) -> int:
+        """Ventanas abiertas y apartadas."""
+        return sum(p.open and p.aside for p in self._placements.values())

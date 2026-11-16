@@ -365,6 +365,91 @@ def test_una_ventana_se_cierra_con_su_boton_y_vuelve_desde_el_selector(desk, qtb
     assert ui.warnings == []
 
 
+TAB = (184, 40)  # una ventana apartada: solo su cabecera
+
+
+def test_triple_clic_en_la_cabecera_aparta_la_ventana_y_un_clic_la_recupera(desk, qtbot):
+    ui, _ = desk
+    window = floating(ui, "actividad")
+    size = (window.width(), window.height())
+    place = (window.x(), window.y())
+    for _ in range(3):
+        click(ui, window, 120, 18)
+    assert ui.workspace.placement("actividad").aside
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    # Arriba a la izquierda: se aparta a esa esquina.
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    drag(ui, scene(window, TAB[0] - 3, TAB[1] - 3), 200, 200)  # apartada no cambia de tamaño
+    assert (window.width(), window.height()) == TAB
+    click(ui, window, 60, 20)
+    assert not ui.workspace.placement("actividad").aside
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == size, timeout=2000)
+    assert (window.x(), window.y()) == place
+    assert ui.warnings == []
+
+
+def test_el_boton_del_selector_aparta_todas_sin_que_se_tapen(desk, qtbot):
+    ui, _ = desk
+    for window_id in ("historial", "busqueda", "comandos"):
+        ui.workspace.show(window_id)
+    ui.workspace.move("historial", 0.0, 0.0)  # dos en la misma esquina
+    click(ui, visual(ui, "dock-apartar"), 20, 18)
+    windows = [floating(ui, name) for name in ("actividad", "historial", "busqueda", "comandos")]
+    assert all(ui.workspace.placement(w.property("windowId")).aside for w in windows)
+    qtbot.waitUntil(
+        lambda: all((w.width(), w.height()) == TAB for w in windows), timeout=2000
+    )
+    qtbot.wait(50)
+    boxes = [(w.x(), w.y(), w.x() + w.width(), w.y() + w.height()) for w in windows]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (a, b)
+    assert ui.warnings == []
+
+
+def test_el_mismo_boton_devuelve_si_hay_mas_apartadas(desk, qtbot):
+    ui, _ = desk
+    ui.workspace.show("busqueda")
+    button = visual(ui, "dock-apartar")
+    click(ui, button, 20, 18)  # 2 a la vista: aparta
+    assert ui.workspace.asideCount == 2
+    window = floating(ui, "actividad")
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    click(ui, button, 20, 18)  # 2 apartadas: devuelve
+    assert ui.workspace.asideCount == 0
+    qtbot.waitUntil(lambda: window.width() > TAB[0], timeout=2000)
+    assert ui.warnings == []
+
+
+def test_aparta_por_orden_escrita(desk, qtbot):
+    ui, _ = desk
+    ui.on_event(events.WindowAsideRequested("Actividad"))
+    window = floating(ui, "actividad")
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    click(ui, window, TAB[0] - 18, 20)  # su botón la cierra del todo
+    qtbot.waitUntil(lambda: not window.isVisible(), timeout=2000)
+    assert not ui.workspace.placement("actividad").open
+    assert ui.warnings == []
+
+
+def test_con_animaciones_la_ventana_viaja_hasta_su_pestana_y_vuelve(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-16"))
+    window = floating(ui, "actividad")
+    qtbot.waitUntil(lambda: window.isVisible() and window.property("launch") == 1, timeout=5000)
+    size = (window.width(), window.height())
+    ui.workspace.set_aside("actividad")
+    qtbot.wait(100)
+    assert TAB[0] < window.width() < size[0]  # a medio camino
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    assert window.rotation() == 0
+    ui.workspace.restore("actividad")
+    qtbot.waitUntil(lambda: (window.width(), window.height()) == size, timeout=2000)
+    assert ui.warnings == []
+
+
 def test_pulsar_una_ventana_la_trae_al_frente(desk, qtbot):
     ui, _ = desk
     ui.workspace.show("historial")

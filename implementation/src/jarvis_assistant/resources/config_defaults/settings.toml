@@ -5,7 +5,7 @@
 
 [input]
 # Segundos sin escribir tras los que el asistente pasa a reposo.
-inactivity_to_idle_seconds = 30
+inactivity_to_idle_seconds = 120
 
 [tts]
 # Voz de Piper (archivo de models/piper, sin extensión).

@@ -28,6 +28,7 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.DialogueOpened,
     events.DialogueClosed,
     events.PanelActivated,
+    events.WindowAsideRequested,
     # Contenido de los paneles
     events.WorkdirChanged,
     events.DirectoryListed,

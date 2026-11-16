@@ -53,6 +53,7 @@ QtObject {
     readonly property int radiusWindow: 12
     readonly property int windowHeader: 38
     readonly property int windowGrip: 6
+    readonly property int windowTab: 184   // ancho de una ventana apartada
     readonly property int cornerMark: 12
     readonly property real iconStroke: 1.5
     readonly property int inputHeight: 40
@@ -67,6 +68,7 @@ QtObject {
     readonly property int motionLevel: 80
     readonly property int motionEmerge: 520  // una ventana sale del orbe hasta su sitio
     readonly property int motionEmergeGap: 300 // entre una ventana y la siguiente al abrir sesión
+    readonly property int motionAside: 440  // una ventana se aparta a un borde o vuelve
 
     function statusColor(status) {
         if (status === "pendiente")

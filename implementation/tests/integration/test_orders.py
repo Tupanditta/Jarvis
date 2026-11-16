@@ -42,6 +42,7 @@ RECORDED = (
     events.DirectoryTreeBuilt, events.CommandOutputAppended, events.OpenedItemsChanged,
     events.SearchResultsReady, events.HistoryShown, events.SessionActivitiesShown,
     events.HelpShown, events.ConfigReloadFailed, events.ShowScreenRequested,
+    events.WindowAsideRequested,
 )  # fmt: skip
 
 CONFIG = Config(catalog=Catalog(pages=(PageEntry("GitHub", "https://github.com"),)))
@@ -149,7 +150,10 @@ class Rig:
             platform=self.platform, clock=self.clock, database=self.database,
             synthesizer=FakeSynthesizer(), player=self.player,
         )  # fmt: skip
-        self.app = build_app(config, adapters, home=self.home, reload_config=reload)
+        self.app = build_app(
+            config, adapters, home=self.home, reload_config=reload,
+            windows=("Comandos", "Búsqueda"),
+        )  # fmt: skip
         self.app.speaker._executor.shutdown()
         self.app.speaker._executor = InlineExecutor()
         self.events: list[events.Event] = []
@@ -430,6 +434,31 @@ async def test_mostrar_y_ocultar_la_pantalla_sin_voz(rig):
         events.ShowScreenRequested(visible=False), events.ShowScreenRequested(visible=True),
     ]  # fmt: skip
     assert rig.spoken() == []
+
+
+async def test_apartar_ventanas_sin_voz(rig):
+    await rig.order("aparta comandos")
+    await rig.order("aparta módulos")
+    assert rig.of(events.WindowAsideRequested) == [
+        events.WindowAsideRequested("Comandos"), events.WindowAsideRequested(None),
+    ]  # fmt: skip
+    assert rig.spoken() == []
+
+
+async def test_desapartar_ventanas_sin_voz(rig):
+    await rig.order("desaparta búsqueda")
+    await rig.order("desaparta módulos")
+    assert rig.of(events.WindowAsideRequested) == [
+        events.WindowAsideRequested("Búsqueda", aside=False),
+        events.WindowAsideRequested(None, aside=False),
+    ]  # fmt: skip
+    assert rig.spoken() == []
+
+
+async def test_apartar_una_ventana_que_no_existe_lo_dice(rig):
+    await rig.order("aparta el calendario")
+    assert rig.of(events.WindowAsideRequested) == []
+    assert rig.spoken() == [said("entidad.no_encontrado", nombre="el calendario")]
 
 
 # --- T-3.6. Avisos (RN-39) -------------------------------------------------------------------

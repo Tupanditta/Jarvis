@@ -23,6 +23,10 @@ Módulo interno `nucleo`. No pertenecen a ningún módulo de acción.
 | `nucleo.repetir` | repite · repítelo · puedes repetir | Repite la última respuesta. Si no hay: «No hay nada que repetir.» |
 | `nucleo.mostrar_pantalla` | muestra la pantalla · pantalla completa | Pantalla de sesión al frente. Sin voz. |
 | `nucleo.ocultar_pantalla` | oculta la pantalla · minimiza la pantalla | Minimiza la pantalla de sesión. Sin voz. |
+| `nucleo.apartar_ventana` | aparta {ventana} · aparta la ventana de {ventana} | `ventana: CATALOG` (títulos de las ventanas flotantes, que da la interfaz). Aparta esa ventana a un borde si está abierta ([Interfaz](Interfaz/README.md), «Ventanas apartadas»). Sin voz. Si no hay ninguna con ese nombre: «No encuentro {nombre}.» |
+| `nucleo.apartar_ventanas` | aparta módulos · aparta los módulos · aparta todas las ventanas | Aparta todas las ventanas abiertas. Sin voz. |
+| `nucleo.desapartar_ventana` | desaparta {ventana} · desaparta la ventana de {ventana} | `ventana: CATALOG`, como en `nucleo.apartar_ventana`. Devuelve esa ventana a su sitio si está apartada. Sin voz. Si no hay ninguna con ese nombre: «No encuentro {nombre}.» |
+| `nucleo.desapartar_ventanas` | desaparta módulos · desaparta los módulos · desaparta todas las ventanas | Devuelve a su sitio todas las ventanas apartadas. Sin voz. |
 
 ## 3. Intenciones de los módulos de acción
 

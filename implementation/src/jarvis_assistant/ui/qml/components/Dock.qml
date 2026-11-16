@@ -1,6 +1,7 @@
 // Selector de ventanas: un botón por ventana flotante. Abre la ventana, la trae al frente o,
-// si ya está encima, la cierra. El punto bajo el icono marca las abiertas. El último botón
-// devuelve todas a su disposición inicial.
+// si ya está encima, la cierra. El punto bajo el icono marca las abiertas. Tras ellos, un
+// botón aparta a los bordes las ventanas a la vista o, si hay más apartadas que a la vista,
+// devuelve las apartadas. El último devuelve todas a su disposición inicial.
 import QtQuick
 import ".."
 
@@ -102,6 +103,65 @@ Rectangle {
                 width: 1
                 height: 18
                 color: Theme.lineSoft
+            }
+        }
+
+        Item {
+            id: setAside
+
+            // A la par, aparta (`workspace.toggle_aside_all`).
+            readonly property bool restoring: workspace.asideCount > workspace.spreadCount
+            readonly property string label: restoring ? "Devolver ventanas" : "Apartar ventanas"
+            readonly property bool usable: workspace.openCount > 0
+
+            onLabelChanged: {
+                if (asideHover.hovered)
+                    dock.hint = label
+            }
+
+            objectName: "dock-apartar"
+            width: 40
+            height: 36
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 2
+                radius: Theme.radiusCard + 2
+                color: asideHover.hovered && setAside.usable ? Theme.bgHover : "transparent"
+            }
+
+            Image {
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                sourceSize.width: 36
+                sourceSize.height: 36
+                source: Theme.icon("apartar")
+                opacity: setAside.usable ? 0.7 : 0.3
+                // Devolver es el gesto inverso: la misma flecha, de vuelta.
+                rotation: setAside.restoring ? 180 : 0
+
+                Behavior on rotation {
+                    NumberAnimation {
+                        duration: ui.reduceMotion ? 0 : Theme.motionPanel
+                        easing.type: Easing.OutCubic
+                    }
+                }
+            }
+
+            HoverHandler {
+                id: asideHover
+                cursorShape: setAside.usable ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onHoveredChanged: {
+                    if (hovered)
+                        dock.hint = setAside.label
+                    else if (dock.hint === setAside.label)
+                        dock.hint = ""
+                }
+            }
+
+            TapHandler {
+                onTapped: workspace.toggle_aside_all()
             }
         }
 

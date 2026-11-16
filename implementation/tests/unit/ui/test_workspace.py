@@ -128,6 +128,122 @@ def test_restablecer_vuelve_a_la_disposicion_inicial(model, qtbot):
     assert rows(model, "open") == [True, False, False]
 
 
+# --- Apartar --------------------------------------------------------------------------------
+
+
+def test_apartar_conserva_la_disposicion_y_pasa_el_frente_a_otra(model):
+    model.show("comandos")
+    before = geometry(model, "comandos")
+    model.set_aside("comandos")
+    assert rows(model, "aside") == [False, True, False]
+    assert rows(model, "open") == [True, True, False]
+    assert rows(model, "focused") == [True, False, False]
+    assert geometry(model, "comandos") == before
+    assert model.spreadCount == 1
+
+
+def test_solo_se_aparta_una_ventana_abierta(model, qtbot):
+    with qtbot.assertNotEmitted(model.changed):
+        model.set_aside("busqueda")
+        model.set_aside("nadie")
+    assert rows(model, "aside") == [False, False, False]
+
+
+def test_recuperar_una_apartada_la_devuelve_a_su_sitio_encima(model):
+    model.show("comandos")
+    model.set_aside("comandos")
+    model.restore("comandos")
+    assert rows(model, "aside") == [False, False, False]
+    assert rows(model, "focused") == [False, True, False]
+
+
+def test_pulsar_una_apartada_la_pone_encima_sin_recuperarla(model):
+    model.show("comandos")
+    model.set_aside("comandos")
+    model.raise_window("comandos")
+    assert rows(model, "aside") == [False, True, False]
+    assert model.placement("comandos").order > model.placement("actividad").order
+    assert rows(model, "focused") == [True, False, False]
+
+
+def test_apartar_todas_aparta_solo_las_abiertas(model):
+    model.show("comandos")
+    model.set_aside_all()
+    assert rows(model, "aside") == [True, True, False]
+    assert rows(model, "focused") == [False, False, False]
+    assert model.spreadCount == 0 and model.openCount == 2
+
+
+def test_cerrar_una_apartada_y_volver_a_abrirla_la_abre_entera(model):
+    model.set_aside("actividad")
+    model.close("actividad")
+    assert model.openCount == 0
+    model.toggle("actividad")
+    assert rows(model, "open") == [True, False, False]
+    assert rows(model, "aside") == [False, False, False]
+
+
+def test_el_selector_y_un_modulo_que_muestra_algo_recuperan_la_apartada(model):
+    model.set_aside("actividad")
+    model.toggle("actividad")
+    assert rows(model, "aside") == [False, False, False]
+    assert rows(model, "open") == [True, False, False]
+    model.set_aside("actividad")
+    model.apply(events.PanelActivated("actividad"))
+    assert rows(model, "aside") == [False, False, False]
+
+
+def test_aparta_por_titulo_o_todas(model):
+    model.show("busqueda")
+    model.apply(events.WindowAsideRequested("Búsqueda"))
+    assert rows(model, "aside") == [False, False, True]
+    model.apply(events.WindowAsideRequested("Comandos"))  # cerrada: nada
+    model.apply(events.WindowAsideRequested("Nadie"))
+    assert rows(model, "aside") == [False, False, True]
+    model.apply(events.WindowAsideRequested())
+    assert rows(model, "aside") == [True, False, True]
+
+
+def test_devolver_todas_recupera_las_apartadas_en_su_orden(model):
+    model.show("comandos")
+    model.show("busqueda")
+    model.set_aside_all()
+    model.restore_all()
+    assert rows(model, "aside") == [False, False, False]
+    assert rows(model, "focused") == [False, False, True]  # la que estaba encima, encima
+    assert model.asideCount == 0 and model.spreadCount == 3
+
+
+def test_el_boton_aparta_si_no_hay_mas_apartadas_que_a_la_vista(model):
+    model.show("comandos")  # 2 a la vista, 0 apartadas: aparta
+    model.toggle_aside_all()
+    assert rows(model, "aside") == [True, True, False]
+    model.show("busqueda")  # 1 a la vista, 2 apartadas: devuelve
+    model.toggle_aside_all()
+    assert rows(model, "aside") == [False, False, False]
+    model.set_aside("actividad")
+    model.show("busqueda")
+    model.close("comandos")  # 1 a la vista, 1 apartada: a la par, aparta
+    assert (model.spreadCount, model.asideCount) == (1, 1)
+    model.toggle_aside_all()
+    assert rows(model, "aside") == [True, False, True]
+
+
+def test_desaparta_por_titulo_o_todas(model):
+    model.show("comandos")
+    model.set_aside_all()
+    model.apply(events.WindowAsideRequested("Comandos", aside=False))
+    assert rows(model, "aside") == [True, False, False]
+    model.apply(events.WindowAsideRequested(aside=False))
+    assert rows(model, "aside") == [False, False, False]
+
+
+def test_restablecer_recupera_las_apartadas(model):
+    model.set_aside("actividad")
+    model.reset()
+    assert rows(model, "aside") == [False, False, False]
+
+
 # --- Guardado --------------------------------------------------------------------------------
 
 
@@ -181,6 +297,22 @@ def test_una_disposicion_guardada_fuera_del_area_se_recoloca_y_una_ventana_nueva
     model = WorkspaceModel(SPECS, LayoutStore(path))
     assert geometry(model, "comandos") == (0.5, 0.0, 0.5, 0.5)
     assert geometry(model, "busqueda") == (0.0, 0.5, 0.2, 0.5)  # no estaba en el archivo
+
+
+def test_una_ventana_apartada_sigue_apartada_al_volver(tmp_path):
+    path = tmp_path / "ventanas.json"
+    model = WorkspaceModel(SPECS, LayoutStore(path))
+    model.set_aside("actividad")
+    model.save()
+    again = WorkspaceModel(SPECS, LayoutStore(path))
+    assert rows(again, "aside") == [True, False, False]
+
+
+def test_una_disposicion_guardada_sin_apartar_se_lee_como_no_apartada(tmp_path):
+    path = tmp_path / "ventanas.json"
+    saved = {"open": True, "x": 0.1, "y": 0.1, "width": 0.3, "height": 0.3, "order": 0}
+    path.write_text(json.dumps({"windows": {"actividad": saved}}), encoding="utf-8")
+    assert rows(WorkspaceModel(SPECS, LayoutStore(path)), "aside") == [False, False, False]
 
 
 def test_sin_archivo_no_se_guarda_nada(model):

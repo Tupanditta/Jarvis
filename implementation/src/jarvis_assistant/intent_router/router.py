@@ -72,6 +72,12 @@ SHOW_SCREEN = Intent(CORE_MODULE, "mostrar_pantalla")
 HIDE_SCREEN = Intent(CORE_MODULE, "ocultar_pantalla")
 HELP = Intent(CORE_MODULE, "ayuda")
 REPEAT = Intent(CORE_MODULE, "repetir")
+# «aparta {ventana}»: su entidad `ventana` es el título de una ventana flotante.
+ASIDE_WINDOW = "apartar_ventana"
+ASIDE_WINDOWS = Intent(CORE_MODULE, "apartar_ventanas")
+RESTORE_WINDOW = "desapartar_ventana"  # también con la entidad `ventana`
+RESTORE_WINDOWS = Intent(CORE_MODULE, "desapartar_ventanas")
+WINDOWS_CATALOG = "ventanas"
 
 SAME_SCORE_MARGIN = 3  # puntos por debajo de los cuales dos candidatos empatan
 _TEXT_EDGES = " .,;:!?¿¡\"'«»"
@@ -91,6 +97,12 @@ class _CoreIntents:
 
     name = CORE_MODULE
     title = "Asistente"
+
+    def __init__(self, windows: Provider) -> None:
+        self._windows = windows
+
+    def catalogs(self) -> Mapping[str, tuple[Provider, ...]]:
+        return {WINDOWS_CATALOG: (self._windows,)}
 
     def intents(self) -> Sequence[IntentSpec]:
         return (
@@ -113,6 +125,31 @@ class _CoreIntents:
                 "ocultar_pantalla", ("oculta la pantalla", "minimiza la pantalla"),
                 description="Minimizar la pantalla de sesión", example="Oculta la pantalla",
                 in_protocols=False,
+            ),
+            IntentSpec(
+                ASIDE_WINDOW, ("aparta {ventana}", "aparta la ventana de {ventana}"),
+                slots=(Slot("ventana", SlotType.CATALOG, catalog=WINDOWS_CATALOG),),
+                description="Apartar la ventana de un módulo a un borde",
+                example="Aparta comandos", in_protocols=False,
+            ),
+            IntentSpec(
+                ASIDE_WINDOWS.action,
+                ("aparta módulos", "aparta los módulos", "aparta todas las ventanas"),
+                description="Apartar todas las ventanas abiertas",
+                example="Aparta módulos", in_protocols=False,
+            ),
+            IntentSpec(
+                RESTORE_WINDOW,
+                ("desaparta {ventana}", "desaparta la ventana de {ventana}"),
+                slots=(Slot("ventana", SlotType.CATALOG, catalog=WINDOWS_CATALOG),),
+                description="Devolver a su sitio la ventana apartada de un módulo",
+                example="Desaparta comandos", in_protocols=False,
+            ),
+            IntentSpec(
+                RESTORE_WINDOWS.action,
+                ("desaparta módulos", "desaparta los módulos", "desaparta todas las ventanas"),
+                description="Devolver a su sitio todas las ventanas apartadas",
+                example="Desaparta módulos", in_protocols=False,
             ),
         )  # fmt: skip
 
@@ -170,9 +207,12 @@ class IntentRouter:
         workdir: Workdir | None = None,
         now: Callable[[], datetime] | None = None,
         local_tz: tzinfo | None = None,
+        windows: Sequence[str] = (),
     ) -> None:
         """`now`: el reloj del núcleo, para las fechas (`DATETIME`). `local_tz`: la zona
-        horaria en la que se interpretan; None, la del sistema."""
+        horaria en la que se interpretan; None, la del sistema. `windows`: títulos de las
+        ventanas flotantes, para «aparta {ventana}»; los da la interfaz (sin ella, ninguno)."""
+        self._windows = tuple(windows)
         self._workdir = workdir or Workdir(Path.home())
         self._now = now or (lambda: datetime.now(UTC))
         self._tz = local_tz
@@ -182,7 +222,7 @@ class IntentRouter:
         self._titles: dict[str, str] = {}
         self._catalogs: dict[str, tuple[Provider, ...]] = {}
         self.configure(settings, aliases, binaries=binaries, places=places)
-        self.register(_CoreIntents())
+        self.register(_CoreIntents(lambda: self._windows))
 
     def configure(
         self,
