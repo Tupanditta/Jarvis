@@ -9,6 +9,7 @@
 1. Nunca configures Claude como autor o committer, ni cambies `git config user.name` o `git config user.email`.
 2. No crees commits. El propietario del repositorio crea y sube todos los commits.
 3. No modifiques autores existentes ni reescribas el historial.
+4. No cambien el branch actual, a menos que yo te lo pida expresamente
 
 ## Datos personales y secretos
 
@@ -21,3 +22,7 @@
 
 - No uses subagentes salvo que el propietario lo pida.
 - Una tarea por sesión (salvo que yo te pida otra cosa). Lee solo los archivos que la tarea necesita.
+
+## Documentación
+
+- Solo debes actualizar los archivos.md de la raíz cuando yo te lo pida
