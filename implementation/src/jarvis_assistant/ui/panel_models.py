@@ -589,3 +589,79 @@ class HelpModel(QObject):
     @Property("QVariantList", notify=changed)
     def rows(self) -> list:
         return self._rows
+
+
+class AdminModel(QObject):
+    """Ventanas del Acedor: Permisos (tabla perfil × módulo), Credenciales y Perfiles.
+
+    Las contraseñas solo se guardan mientras dura la sesión del Acedor: al cerrarla se olvidan.
+    Cada una se muestra en su ventana solo cuando el usuario lo pide (lo decide QML)."""
+
+    permissionsChanged = Signal()
+    credentialsChanged = Signal()
+    profilesChanged = Signal()
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._modules: list[dict[str, str]] = []
+        self._matrix: list[dict[str, Any]] = []
+        self._credentials: list[dict[str, Any]] = []
+        self._profiles: list[dict[str, str]] = []
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.PermissionsShown):
+            self._modules = [{"id": m.id, "name": m.name} for m in event.modules]
+            self._matrix = [
+                {"id": p.id, "name": p.name,
+                 "allowed": [(p.id, m.id) not in event.restricted for m in event.modules]}
+                for p in event.profiles
+            ]  # fmt: skip
+            self.permissionsChanged.emit()
+        elif isinstance(event, events.CredentialsShown):
+            self._credentials = [
+                {"id": item.profile_id, "name": item.profile_name,
+                 "password": item.password or "", "available": item.password is not None}
+                for item in event.items
+            ]  # fmt: skip
+            self.credentialsChanged.emit()
+        elif isinstance(event, events.ProfilesListed):
+            self._profiles = [{"id": p.id, "name": p.name} for p in event.profiles]
+            self.profilesChanged.emit()
+        elif isinstance(event, events.SessionClosed):
+            self._credentials = []
+            self.credentialsChanged.emit()
+
+    @Slot(str, str, bool)
+    def setPermission(self, profile_id: str, module: str, allowed: bool) -> None:
+        self._publish(events.PermissionChangeRequested(profile_id, module, allowed))
+
+    @Slot()
+    def showPermissions(self) -> None:
+        self._publish(events.ActionRequested("permisos", "ver"))
+
+    @Slot()
+    def showCredentials(self) -> None:
+        self._publish(events.ActionRequested("credenciales", "ver"))
+
+    @Slot(str)
+    def removeProfile(self, profile_id: str) -> None:
+        self._publish(events.ProfileRemovalRequested(profile_id))
+
+    @Property("QVariantList", notify=permissionsChanged)
+    def modules(self) -> list:
+        return self._modules
+
+    @Property("QVariantList", notify=permissionsChanged)
+    def matrix(self) -> list:
+        return self._matrix
+
+    @Property("QVariantList", notify=credentialsChanged)
+    def credentials(self) -> list:
+        return self._credentials
+
+    @Property("QVariantList", notify=profilesChanged)
+    def profiles(self) -> list:
+        return self._profiles

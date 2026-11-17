@@ -568,9 +568,55 @@ PHRASES: dict[str, list[str]] = {
         "Alerta de seguridad, señor. Alguien intentó acceder a este entorno sin autorización"
         " {cuando}. Introdujo una clave incorrecta {intentos} veces seguidas.",
     ],
+    "seguridad.intrusion_acedor": [
+        "Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a los"
+        " perfiles desde su última visita. El último, {cuando}. Tiene los detalles en pantalla.",
+    ],
     "seguridad.intrusiones": [
         "Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a este"
         " entorno desde su última visita. El último, {cuando}. Tiene los detalles en pantalla.",
+    ],
+    # --- Permisos y Acedor ---
+    "permisos.denegado": [
+        "No tiene autorización para usar {modulo} en este entorno, señor.",
+    ],
+    "permisos.solo_acedor": [
+        "Esa función solo está al alcance del Acedor, señor.",
+    ],
+    "permisos.no_encontrado": [
+        "No encuentro ese perfil o ese módulo, señor.",
+    ],
+    "permisos.concedido": [
+        "Hecho, señor. {perfil} ya puede usar {modulo}.",
+        "Concedido, señor. {modulo} queda disponible para {perfil}.",
+    ],
+    "permisos.restringido": [
+        "Hecho, señor. {perfil} ya no puede usar {modulo}.",
+        "Restringido, señor. {modulo} deja de estar disponible para {perfil}.",
+    ],
+    "permisos.mostrados": [
+        "Aquí tiene los permisos de cada perfil, señor.",
+    ],
+    "credenciales.mostradas": [
+        "Aquí tiene las credenciales, señor. Están ocultas hasta que decida mostrarlas.",
+    ],
+    "credenciales.ninguna": [
+        "Ningún perfil tiene contraseña, señor.",
+    ],
+    "perfiles.mostrados": [
+        "Aquí tiene los perfiles, señor.",
+    ],
+    "perfiles.confirmar": [
+        "¿Elimino el perfil {perfil}, señor? Se perderán sus recordatorios.",
+    ],
+    "perfiles.eliminado": [
+        "Perfil {perfil} eliminado, señor.",
+    ],
+    "perfiles.ultimo": [
+        "No puedo eliminar el último perfil, señor.",
+    ],
+    "perfiles.no_eliminado": [
+        "No he podido eliminar el perfil, señor.",
     ],
     "protocolos.ninguno": [
         "No hay ningún protocolo definido, señor.",

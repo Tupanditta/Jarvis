@@ -2,7 +2,7 @@
 
 Son valores inmutables: cada evento de contenido lleva la lista completa de su panel.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -93,3 +93,22 @@ class IntrusionItem:
     at: datetime  # UTC
     attempts: int
     origin: str  # 'inicio' o 'configuracion'
+    profile_name: str = ""  # para el Acedor, que recibe los de todos los perfiles
+
+
+@dataclass(frozen=True)
+class NamedItem:
+    """Algo con id y nombre: un perfil, un módulo."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class CredentialItem:
+    """La contraseña de un perfil protegido, para la ventana Credenciales del Acedor. `None`:
+    todavía no se puede ver (se custodia la próxima vez que su dueño entre)."""
+
+    profile_id: str
+    profile_name: str
+    password: str | None = field(default=None, repr=False)

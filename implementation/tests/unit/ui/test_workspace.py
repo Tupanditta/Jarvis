@@ -47,8 +47,9 @@ def model():
 def test_hay_una_ventana_por_modulo_con_su_panel_y_caben_en_el_area():
     assert [spec.id for spec in WINDOWS] == [
         "actividad", "comandos", "aperturas", "busqueda", "historial", "ayuda", "recordatorios",
-        "protocolo",
+        "protocolo", "permisos", "credenciales", "perfiles",
     ]  # fmt: skip
+    assert [spec.id for spec in WINDOWS if spec.admin] == ["permisos", "credenciales", "perfiles"]
     for spec in WINDOWS:
         assert spec.title and spec.icon and spec.component.endswith("Panel.qml")
         assert spec.x >= 0 and spec.x + spec.width <= 1

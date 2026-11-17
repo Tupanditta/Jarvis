@@ -13,7 +13,8 @@ import tomlkit
 from tomlkit import TOMLDocument
 from tomlkit.exceptions import TOMLKitError
 
-from jarvis_assistant.config.loader import DEFAULTS_DIR
+from jarvis_assistant.config.loader import DEFAULTS_DIR, load
+from jarvis_assistant.config.profiles import dump_profiles
 
 
 class WriteError(Exception):
@@ -59,3 +60,14 @@ def write_documents(config_dir: Path, documents: Mapping[str, TOMLDocument]) -> 
                 raise
         except OSError as error:
             raise WriteError(name, str(error)) from error
+
+
+def remove_profile(config_dir: Path, profile_id: str) -> None:
+    """Quita un perfil de `profiles.toml`, conservando los comentarios. Lo usa el Acedor."""
+    config, _errors = load(config_dir)
+    remaining = [profile for profile in config.profiles if profile.id != profile_id]
+    if len(remaining) == len(config.profiles):
+        return
+    document = read_document(config_dir, "profiles.toml")
+    dump_profiles(document, remaining)
+    write_documents(config_dir, {"profiles.toml": document})

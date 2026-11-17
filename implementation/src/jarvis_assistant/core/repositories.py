@@ -407,3 +407,36 @@ class ReminderRepository:
             status=row["status"],
             triggers=tuple(_trigger(trigger) for trigger in triggers),
         )
+
+
+class PermissionRepository:
+    """Tabla `profile_permissions`: qué módulos tiene restringidos cada perfil. Sin fila, el
+    módulo está permitido (los permisos por defecto). Solo el Acedor los cambia."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def restricted(self, profile_id: str) -> frozenset[str]:
+        rows = self._db.conn.execute(
+            "SELECT module FROM profile_permissions WHERE profile_id = ? AND allowed = 0",
+            (profile_id,),
+        ).fetchall()
+        return frozenset(row["module"] for row in rows)
+
+    def all_restricted(self) -> dict[str, frozenset[str]]:
+        """Perfil → módulos restringidos (solo los perfiles con alguno)."""
+        found: dict[str, set[str]] = {}
+        for row in self._db.conn.execute(
+            "SELECT profile_id, module FROM profile_permissions WHERE allowed = 0"
+        ).fetchall():
+            found.setdefault(row["profile_id"], set()).add(row["module"])
+        return {profile: frozenset(modules) for profile, modules in found.items()}
+
+    def set_allowed(self, profile_id: str, module: str, allowed: bool, at: datetime) -> None:
+        with self._db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO profile_permissions (profile_id, module, allowed, updated_at)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT (profile_id, module) DO UPDATE SET"
+                " allowed = excluded.allowed, updated_at = excluded.updated_at",
+                (profile_id, module, int(allowed), to_db(at)),
+            )

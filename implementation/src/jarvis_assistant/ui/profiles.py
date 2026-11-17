@@ -25,7 +25,7 @@ from PySide6.QtCore import (
     Slot,
 )
 
-from jarvis_assistant.config import Profile
+from jarvis_assistant.config import Profile, admin_profile
 from jarvis_assistant.core import events
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,8 @@ class ProfilesModel(QAbstractListModel):
         self._current = -1
         self._published: str | None = None
         self._protected: frozenset[str] = frozenset()
+        self._configured: tuple[Profile, ...] = ()
+        self._admin_active = False
 
     def roleNames(self) -> dict[int, QByteArray]:
         return {
@@ -112,17 +114,24 @@ class ProfilesModel(QAbstractListModel):
 
     def apply(self, event: object) -> None:
         if isinstance(event, events.ConfigApplied):
-            self._set_profiles(event.config.all_profiles())
+            self._configured = event.config.all_profiles()
+            self._set_profiles(self._offered())
         elif isinstance(event, events.SessionOpened) and event.profile_id:
             self._memory.save(event.profile_id)
-        elif (
-            isinstance(event, events.ProtectedProfilesChanged)
-            and event.profile_ids != self._protected
-        ):
-            self._protected = event.profile_ids
-            if self._profiles:
-                self.dataChanged.emit(self.index(0), self.index(len(self._profiles) - 1))
-            self.changed.emit()
+        elif isinstance(event, events.ProtectedProfilesChanged):
+            admin_changed = event.admin_active != self._admin_active
+            self._admin_active = event.admin_active
+            if admin_changed:
+                self._set_profiles(self._offered())
+            if event.profile_ids != self._protected:
+                self._protected = event.profile_ids
+                if self._profiles:
+                    self.dataChanged.emit(self.index(0), self.index(len(self._profiles) - 1))
+                self.changed.emit()
+
+    def _offered(self) -> tuple[Profile, ...]:
+        """Los de la configuración y, si está activado, el Acedor al final."""
+        return (*self._configured, admin_profile()) if self._admin_active else self._configured
 
     def _set_profiles(self, profiles: tuple[Profile, ...]) -> None:
         wanted = self.currentId or self._memory.load()

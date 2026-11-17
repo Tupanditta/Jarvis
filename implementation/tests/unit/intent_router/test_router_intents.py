@@ -404,7 +404,7 @@ def test_la_ayuda_sale_del_registro(router):
     groups = router.help()
     assert [group.module for group in groups] == [
         "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
-        "protocolos", "nucleo",
+        "protocolos", "permisos", "credenciales", "perfiles", "nucleo",
     ]  # fmt: skip
     assert groups[0].title == "Comandos"
     for group in groups:
@@ -435,3 +435,12 @@ def test_los_parametros_de_un_protocolo_se_resuelven_igual(router, home):
         router.resolve_params("comandos", "cd", {"ruta": "fotos"})
     with pytest.raises(KeyError):
         router.resolve_params("comandos", "volar", {})
+
+
+def test_con_permisos_la_ayuda_solo_lista_los_modulos_permitidos(router):
+    router.set_scope(frozenset({"apertura", "nucleo"}))
+    assert [group.module for group in router.help()] == ["apertura", "nucleo"]
+    # Una orden de un módulo no permitido sigue reconociéndose: `run_task` la rechaza.
+    assert intent_of(router, "ejecuta git status").module == "comandos"
+    router.set_scope(None)
+    assert "comandos" in [group.module for group in router.help()]

@@ -274,8 +274,11 @@ Window {
                         required property string windowId
                         required property string title
                         required property bool open
+                        required property bool available  // las del Acedor no van en plantillas
 
                         objectName: "show-" + windowId
+                        visible: available
+                        height: available ? implicitHeight : 0
                         width: parent.width
                         text: title
                         checked: open

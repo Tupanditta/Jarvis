@@ -59,9 +59,9 @@ Rectangle {
         Text {
             width: parent.width
             text: access.alerts.length === 1
-                  ? "Alguien intentó acceder a este entorno sin autorización."
+                  ? "Alguien intentó acceder sin autorización."
                   : "Ha habido " + access.alerts.length
-                    + " intentos de acceso no autorizado a este entorno desde su última visita."
+                    + " intentos de acceso no autorizado desde su última visita."
             color: Theme.textPrimary
             font.family: Theme.fontBody
             font.pixelSize: Theme.sizeText
@@ -91,6 +91,14 @@ Rectangle {
                         x: Theme.space12
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space16
+
+                        Text {
+                            visible: modelData.profile.length > 0
+                            text: modelData.profile
+                            color: Theme.statusError
+                            font.family: Theme.fontBody
+                            font.pixelSize: Theme.sizeSecondary
+                        }
 
                         Text {
                             text: modelData.date + "  " + modelData.time

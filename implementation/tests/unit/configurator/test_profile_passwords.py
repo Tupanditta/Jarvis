@@ -70,11 +70,10 @@ def test_un_perfil_protegido_aparece_bloqueado(rig):
     assert (rig.item("trabajo")["protected"], rig.item("trabajo")["unlocked"]) == (False, True)
 
 
-def test_bloqueado_no_se_edita_ni_se_duplica_ni_se_elimina(rig):
+def test_bloqueado_no_se_edita_ni_se_duplica(rig):
     row = rig.row("secreto")
     rig.profiles.setName(row, "Otro nombre")
     assert rig.profiles.duplicate(row) == -1
-    rig.profiles.remove(row)
     rig.profiles.clearPassword(row)
     assert rig.profiles.setPassword(row, "nueva-clave", "nueva-clave") != ""
     assert rig.item("secreto")["name"] == "Confidencial"
@@ -130,14 +129,13 @@ def test_quitar_la_contrasena_pide_desbloquear_y_se_aplica_al_guardar(rig):
     assert not rig.vault.is_protected("secreto")
 
 
-def test_eliminar_un_perfil_desbloqueado_retira_sus_datos(rig, db):
+def test_un_perfil_quitado_de_la_lista_no_se_retira_desde_la_configuracion(rig, db):
+    """Eliminar es cosa del Acedor: la configuración no retira datos de nadie."""
     ReminderRepository(db, "secreto").create("Clave", [], None, rig_now())
-    row = rig.row("secreto")
-    rig.profiles.unlock(row, PASSWORD)
-    rig.profiles.remove(row)
+    rig.profiles.setName(rig.row("trabajo"), "Oficina")
     assert rig.draft.save().saved
-    assert not rig.vault.is_protected("secreto")
-    assert ReminderRepository(db, "secreto").listable() == []
+    assert rig.vault.is_protected("secreto")
+    assert [r.content for r in ReminderRepository(db, "secreto").listable()] == ["Clave"]
 
 
 def test_duplicar_un_perfil_protegido_no_copia_la_contrasena(rig):
@@ -160,3 +158,52 @@ def test_un_perfil_nuevo_no_reutiliza_el_id_de_uno_protegido_que_ya_no_esta(tmp_
 
 def rig_now():
     return datetime(2026, 1, 1, tzinfo=UTC)
+
+
+# --- Acedor ----------------------------------------------------------------------------------
+
+ADMIN_PASSWORD = "maestra-1234"
+
+
+def test_activar_al_acedor_se_aplica_al_guardar(rig):
+    assert not rig.profiles.adminActive
+    assert rig.profiles.activateAdmin("abc", "abc") != ""
+    assert rig.profiles.activateAdmin(ADMIN_PASSWORD, "otra") != ""
+    assert rig.profiles.activateAdmin(ADMIN_PASSWORD, ADMIN_PASSWORD) == ""
+    assert rig.profiles.adminActive and not rig.vault.admin_active()
+    assert rig.draft.save().saved
+    assert rig.vault.admin_active()
+    assert rig.vault.open_admin(ADMIN_PASSWORD) is not None
+    assert rig.profiles.activateAdmin("otra-clave", "otra-clave") != ""  # ya activado
+
+
+def test_una_contrasena_puesta_con_el_acedor_activo_se_puede_ver(rig):
+    rig.profiles.activateAdmin(ADMIN_PASSWORD, ADMIN_PASSWORD)
+    rig.profiles.setPassword(rig.row("trabajo"), "abcd", "abcd")
+    assert rig.draft.save().saved
+    key = rig.vault.open_admin(ADMIN_PASSWORD)
+    assert rig.vault.custody.reveal(key, ["trabajo", "secreto"]) == {
+        "trabajo": "abcd", "secreto": None,  # la de «secreto» es anterior al Acedor
+    }  # fmt: skip
+
+
+def test_cambiar_la_contrasena_del_acedor_pide_la_actual_y_conserva_lo_custodiado(rig, db):
+    rig.profiles.activateAdmin(ADMIN_PASSWORD, ADMIN_PASSWORD)
+    rig.profiles.setPassword(rig.row("trabajo"), "abcd", "abcd")
+    assert rig.draft.save().saved
+    assert rig.profiles.changeAdminPassword("mala", "nueva-maestra", "nueva-maestra") != ""
+    assert len(rig.vault.pending_alerts("acedor")) == 0  # un fallo no es aviso todavía
+    assert rig.profiles.changeAdminPassword(
+        ADMIN_PASSWORD, "nueva-maestra", "nueva-maestra"
+    ) == ""
+    assert rig.draft.save().saved
+    assert rig.vault.open_admin(ADMIN_PASSWORD) is None
+    key = rig.vault.open_admin("nueva-maestra")
+    assert rig.vault.custody.reveal(key, ["trabajo"]) == {"trabajo": "abcd"}
+
+
+def test_el_nombre_del_acedor_esta_reservado(rig):
+    rig.profiles.setName(rig.row("trabajo"), "acedor")
+    assert rig.draft.save().problems == ["El nombre «Acedor» está reservado."]
+    row = rig.profiles.add()
+    assert rig.profiles.items[row]["id"] != "acedor"

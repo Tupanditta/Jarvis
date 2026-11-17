@@ -24,7 +24,13 @@ from jarvis_assistant.config.loader import (
     install_defaults,
     load,
 )
-from jarvis_assistant.config.profiles import Profile
+from jarvis_assistant.config.profiles import (
+    ADMIN_PROFILE_ID,
+    ADMIN_PROFILE_NAME,
+    Profile,
+    admin_profile,
+    is_reserved_name,
+)
 from jarvis_assistant.config.protocols import ProtocolDef, ProtocolTask, validate_protocols
 from jarvis_assistant.config.reader import ConfigError
 from jarvis_assistant.config.settings import (
@@ -45,11 +51,44 @@ from jarvis_assistant.config.settings import (
 from jarvis_assistant.config.structures import StructureDef
 
 __all__ = [
-    "CONFIG_FILES", "DEFAULTS_DIR", "DEFAULT_BINARIES", "FACTORY_LAYOUT", "FACTORY_LAYOUT_ID",
-    "AppEntry", "BarPosition", "Binary", "Catalog", "CommandsSettings", "Config", "ConfigError",
-    "DialogueSettings", "InputSettings", "LoggingSettings", "PageEntry", "Profile",
-    "ProtocolDef", "ProtocolTask", "RemindersSettings", "RouterSettings", "ScreenLayout",
-    "SearchSettings", "Settings", "SoundSettings", "StartupSettings", "StructureDef",
-    "TtsSettings", "UiSettings", "UserSettings", "WindowPlacement",
-    "check", "default_config", "install_defaults", "load", "validate_protocols",
+    "ADMIN_PROFILE_ID",
+    "ADMIN_PROFILE_NAME",
+    "CONFIG_FILES",
+    "DEFAULTS_DIR",
+    "DEFAULT_BINARIES",
+    "FACTORY_LAYOUT",
+    "FACTORY_LAYOUT_ID",
+    "AppEntry",
+    "BarPosition",
+    "Binary",
+    "Catalog",
+    "CommandsSettings",
+    "Config",
+    "ConfigError",
+    "DialogueSettings",
+    "InputSettings",
+    "LoggingSettings",
+    "PageEntry",
+    "Profile",
+    "ProtocolDef",
+    "ProtocolTask",
+    "RemindersSettings",
+    "RouterSettings",
+    "ScreenLayout",
+    "SearchSettings",
+    "Settings",
+    "SoundSettings",
+    "StartupSettings",
+    "StructureDef",
+    "TtsSettings",
+    "UiSettings",
+    "UserSettings",
+    "WindowPlacement",
+    "admin_profile",
+    "check",
+    "default_config",
+    "install_defaults",
+    "is_reserved_name",
+    "load",
+    "validate_protocols",
 ]  # fmt: skip

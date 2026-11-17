@@ -383,6 +383,7 @@ class AccessModel(QObject):
                     "time": item.at.astimezone().strftime("%H:%M:%S"),
                     "attempts": item.attempts,
                     "origin": self.ORIGINS.get(item.origin, item.origin),
+                    "profile": item.profile_name,
                 }
                 for item in event.alerts
             ]

@@ -206,3 +206,22 @@ def test_un_perfil_no_cambia_los_recordatorios_de_otro(db):
     reminder = work.get(mine)
     assert reminder is not None
     assert (reminder.status, reminder.deadline) == ("activo", None)
+
+
+# --- Permisos --------------------------------------------------------------------------------
+
+
+def test_sin_filas_todo_esta_permitido_y_restringir_se_puede_deshacer(db):
+    from jarvis_assistant.core.repositories import PermissionRepository
+
+    permissions = PermissionRepository(db)
+    assert permissions.restricted("casa") == frozenset()
+    permissions.set_allowed("casa", "comandos", False, NOW)
+    permissions.set_allowed("casa", "busqueda", False, NOW)
+    permissions.set_allowed("trabajo", "comandos", False, NOW)
+    assert permissions.restricted("casa") == {"comandos", "busqueda"}
+    permissions.set_allowed("casa", "comandos", True, NOW)
+    assert permissions.restricted("casa") == {"busqueda"}
+    assert permissions.all_restricted() == {
+        "casa": frozenset({"busqueda"}), "trabajo": frozenset({"comandos"}),
+    }  # fmt: skip

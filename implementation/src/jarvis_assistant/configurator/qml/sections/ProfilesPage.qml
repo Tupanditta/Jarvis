@@ -1,6 +1,7 @@
 // Apartado Perfiles: una tarjeta por perfil con su nombre, el nombre del usuario, la
 // plantilla que usa y su contraseña. Siempre queda al menos uno. Un perfil protegido aparece
-// bloqueado: se desbloquea con su contraseña y queda editable hasta cerrar la ventana.
+// bloqueado: se desbloquea con su contraseña y queda editable hasta cerrar la ventana. Los
+// perfiles solo los elimina el Acedor, desde su sesión. Arriba, la tarjeta del Acedor.
 import QtQuick
 import "../../../ui/qml"
 import "../../../ui/qml/components"
@@ -18,10 +19,158 @@ Column {
         width: page.width
         title: "Perfiles"
         detail: "El perfil se elige en la pantalla dormida, encima de la caja de texto, antes de"
-                + " escribir «Hey Jarvis». Con un solo perfil no se muestra el selector."
+                + " escribir «Hey Jarvis». Con un solo perfil no se muestra el selector. Solo el"
+                + " Acedor elimina perfiles, desde su sesión."
         action: "Nuevo perfil"
         locked: page.section ? page.section.locked : ""
         onTriggered: page.section.add()
+    }
+
+    // El Acedor: máxima autoridad. Se activa una vez poniéndole contraseña; después solo se le
+    // cambia dando la actual. Se aplica al guardar.
+    Rectangle {
+        id: adminCard
+
+        property bool editing: false
+
+        objectName: "adminCard"
+        width: page.width
+        height: adminBody.implicitHeight + 2 * Theme.space16
+        visible: page.section !== null && page.section.canProtect
+        radius: Theme.radiusPanel
+        color: Theme.bgPanel
+        border.width: 1
+        border.color: Theme.primaryDim
+
+        Column {
+            id: adminBody
+
+            x: Theme.space16
+            y: Theme.space16
+            width: parent.width - 2 * Theme.space16
+            spacing: Theme.space8
+            enabled: page.editable
+
+            Row {
+                spacing: Theme.space8
+
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    sourceSize: Qt.size(32, 32)
+                    source: Theme.icon("candado")
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Acedor"
+                    color: Theme.textPrimary
+                    font.family: Theme.fontBody
+                    font.pixelSize: Theme.sizeText
+                }
+            }
+
+            Text {
+                width: parent.width
+                text: page.section && page.section.adminActive
+                      ? "Activado. Desde su sesión da y quita permisos, ve las contraseñas y"
+                        + " elimina perfiles."
+                      : "Sin activar. Póngale contraseña para administrar permisos, ver las"
+                        + " contraseñas y eliminar perfiles. Guárdela bien: si la olvida, hay"
+                        + " que reiniciarlo y las contraseñas dejan de poder verse."
+                color: Theme.textSecondary
+                font.family: Theme.fontBody
+                font.pixelSize: Theme.sizeSecondary
+                wrapMode: Text.WordWrap
+            }
+
+            TextButton {
+                objectName: "adminPasswordButton"
+                visible: !adminCard.editing
+                text: page.section && page.section.adminActive ? "Cambiar contraseña"
+                                                               : "Activar el Acedor"
+                primary: !(page.section && page.section.adminActive)
+                onClicked: {
+                    adminMessage.text = ""
+                    adminCard.editing = true
+                }
+            }
+
+            Row {
+                spacing: Theme.space8
+                visible: adminCard.editing
+
+                SecretField {
+                    id: adminCurrent
+
+                    objectName: "adminCurrent"
+                    visible: page.section !== null && page.section.adminActive
+                    hidden: true
+                    width: 160
+                    placeholder: "Contraseña actual"
+                }
+
+                SecretField {
+                    id: adminNew
+
+                    objectName: "adminNew"
+                    width: 160
+                    placeholder: "Contraseña nueva"
+                    onAccepted: adminRepeated.focusInput()
+                }
+
+                SecretField {
+                    id: adminRepeated
+
+                    objectName: "adminRepeated"
+                    width: 160
+                    placeholder: "Repítala"
+                    onAccepted: adminAccept.clicked()
+                }
+
+                TextButton {
+                    id: adminAccept
+
+                    objectName: "adminAccept"
+                    text: "Aceptar"
+                    primary: true
+                    onClicked: {
+                        const problem = page.section.adminActive
+                            ? page.section.changeAdminPassword(
+                                  adminCurrent.text, adminNew.text, adminRepeated.text)
+                            : page.section.activateAdmin(adminNew.text, adminRepeated.text)
+                        adminCurrent.clear()
+                        adminNew.clear()
+                        adminRepeated.clear()
+                        adminMessage.text = problem
+                        if (problem.length === 0)
+                            adminCard.editing = false
+                    }
+                }
+
+                TextButton {
+                    text: "Cancelar"
+                    onClicked: {
+                        adminCurrent.clear()
+                        adminNew.clear()
+                        adminRepeated.clear()
+                        adminMessage.text = ""
+                        adminCard.editing = false
+                    }
+                }
+            }
+
+            Text {
+                id: adminMessage
+
+                objectName: "adminMessage"
+                visible: text.length > 0
+                color: Theme.statusError
+                font.family: Theme.fontBody
+                font.pixelSize: Theme.sizeSecondary
+            }
+        }
     }
 
     Repeater {
@@ -299,14 +448,6 @@ Column {
                     TextButton {
                         text: "Duplicar"
                         onClicked: page.section.duplicate(card.index)
-                    }
-
-                    TextButton {
-                        objectName: "removeProfile"
-                        text: "Eliminar"
-                        danger: true
-                        enabled: page.section.items.length > 1
-                        onClicked: page.section.remove(card.index)
                     }
                 }
             }

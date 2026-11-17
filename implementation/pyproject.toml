@@ -17,6 +17,7 @@ dependencies = [
     "APScheduler>=3.10,<4",
     "psutil>=5.9",
     "tomlkit>=0.12",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

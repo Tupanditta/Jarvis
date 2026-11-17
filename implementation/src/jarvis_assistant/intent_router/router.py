@@ -227,6 +227,7 @@ class IntentRouter:
         self._specs: dict[tuple[str, str], list[IntentSpec]] = {}
         self._titles: dict[str, str] = {}
         self._catalogs: dict[str, tuple[Provider, ...]] = {}
+        self._scope: frozenset[str] | None = None  # módulos permitidos; None: todos
         self.configure(settings, aliases, binaries=binaries, places=places)
         self.register(_CoreIntents(lambda: self._windows))
 
@@ -243,6 +244,15 @@ class IntentRouter:
         self._aliases = dict(aliases or {})
         self._binaries = tuple(binaries)
         self._places = dict(places or {})
+
+    def set_scope(self, allowed: frozenset[str] | None) -> None:
+        """Módulos que el perfil de la sesión puede usar (None: todos). Los demás no salen en la
+        ayuda. Sus órdenes se reconocen igual, sin buscar otra parecida de un módulo permitido
+        («busca el archivo notas» no acaba creándolo): `run_task` las rechaza con su frase."""
+        self._scope = allowed
+
+    def _in_scope(self, module: str) -> bool:
+        return self._scope is None or module in self._scope
 
     # --- Registro ----------------------------------------------------------------------------
 
@@ -306,6 +316,8 @@ class IntentRouter:
         """Órdenes disponibles con un ejemplo, agrupadas por módulo (RF-92)."""
         groups: dict[str, list[HelpEntry]] = {}
         for (module, _action), specs in self._specs.items():
+            if not self._in_scope(module):
+                continue
             spec = next((spec for spec in specs if spec.description), None)
             if spec is not None:
                 groups.setdefault(module, []).append(HelpEntry(spec.description, spec.example))

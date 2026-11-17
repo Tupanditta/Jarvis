@@ -199,3 +199,21 @@ def test_un_perfil_protegido_se_desbloquea_con_su_contrasena_en_la_pagina(protec
     qtbot.waitUntil(lambda: not lock.isVisible(), timeout=2000)
     assert find(window.window, "setPassword").property("text") == "Cambiar contraseña"
     assert window.warnings == []
+
+
+def test_el_acedor_se_activa_desde_su_tarjeta_y_no_hay_boton_de_eliminar(protected, qtbot):
+    window = protected
+    open_tab(window, "perfiles", qtbot)
+    with pytest.raises(AssertionError):
+        find(window.window, "removeProfile")
+    click(window.window, find(window.window, "adminPasswordButton"))
+    qtbot.wait(50)
+    for name in ("adminNew", "adminRepeated"):
+        click(window.window, find(window.window, name))
+        for char in "maestra-1234":
+            QTest.keyClick(window.window, char)
+    click(window.window, find(window.window, "adminAccept"))
+    qtbot.waitUntil(lambda: window.sections["perfiles"].adminActive, timeout=2000)
+    assert find(window.window, "adminMessage").property("text") == ""
+    assert find(window.window, "adminPasswordButton").property("text") == "Cambiar contraseña"
+    assert window.warnings == []

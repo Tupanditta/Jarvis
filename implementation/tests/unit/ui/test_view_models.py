@@ -381,3 +381,65 @@ def test_el_selector_marca_con_candado_los_perfiles_protegidos(qtbot):
     assert not model.currentLocked
     model.select(1)
     assert model.currentLocked
+
+
+# --- Acedor --------------------------------------------------------------------------------------
+
+
+def test_el_selector_ofrece_al_acedor_al_final_si_esta_activado():
+    from jarvis_assistant.config import Config, Profile
+    from jarvis_assistant.ui.profiles import ProfilesModel
+
+    model = ProfilesModel(lambda _event: None)
+    model.apply(events.ConfigApplied(Config(profiles=(Profile("casa", "Casa"),))))
+    assert model.count == 1
+    model.apply(events.ProtectedProfilesChanged(frozenset({"acedor"}), admin_active=True))
+    assert model.count == 2
+    name = next(k for k, v in model.roleNames().items() if bytes(v) == b"name")
+    assert model.data(model.index(1), name) == "Acedor"
+    model.apply(events.ProtectedProfilesChanged(frozenset(), admin_active=False))
+    assert model.count == 1
+
+
+def test_las_ventanas_sin_permiso_no_se_ven_ni_se_abren():
+    from jarvis_assistant.ui.workspace import WorkspaceModel
+
+    model = WorkspaceModel()
+    available = next(k for k, v in model.roleNames().items() if bytes(v) == b"available")
+    row = {spec.id: i for i, spec in enumerate(model.specs)}
+    assert not model.data(model.index(row["permisos"]), available)  # las del Acedor
+    model.show("permisos")
+    assert not model.placement("permisos").open
+    model.show("comandos")
+    model.apply(events.PermissionsApplied(frozenset({"comandos"})))
+    assert not model.placement("comandos").open
+    assert not model.data(model.index(row["comandos"]), available)
+    model.apply(events.PanelActivated("comandos"))
+    assert not model.placement("comandos").open
+    model.apply(events.PermissionsApplied(frozenset()))
+    model.show("permisos")
+    assert model.placement("permisos").open
+
+
+def test_el_modelo_del_acedor_publica_sus_acciones_y_olvida_las_contrasenas():
+    from jarvis_assistant.core.content import CredentialItem, NamedItem
+    from jarvis_assistant.ui.panel_models import AdminModel
+
+    published: list[events.Event] = []
+    model = AdminModel(publish=published.append)
+    model.apply(events.PermissionsShown(
+        (NamedItem("casa", "Casa"),),
+        (NamedItem("comandos", "Comandos"), NamedItem("busqueda", "Búsqueda")),
+        frozenset({("casa", "busqueda")}),
+    ))  # fmt: skip
+    assert model.matrix == [{"id": "casa", "name": "Casa", "allowed": [True, False]}]
+    model.setPermission("casa", "busqueda", True)
+    model.removeProfile("casa")
+    assert published == [
+        events.PermissionChangeRequested("casa", "busqueda", True),
+        events.ProfileRemovalRequested("casa"),
+    ]
+    model.apply(events.CredentialsShown((CredentialItem("t", "Trabajo", "abcd"),)))
+    assert model.credentials[0]["password"] == "abcd"
+    model.apply(events.SessionClosed())
+    assert model.credentials == []

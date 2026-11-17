@@ -1,11 +1,15 @@
 """Apartado Perfiles: nombre del perfil, nombre del usuario (el de «preséntate»), plantilla
 predeterminada y contraseña. Siempre queda al menos uno.
 
-Un perfil protegido con contraseña está bloqueado: no se edita, duplica ni elimina hasta
+Un perfil protegido con contraseña está bloqueado: no se edita ni duplica hasta
 desbloquearlo con su contraseña (`unlock`), y sigue desbloqueado hasta cerrar la ventana. Los
 fallos cuentan igual que en la pantalla dormida: el tercero seguido registra un aviso de
 intrusión (`core/security.py`). Poner, cambiar o quitar la contraseña se aplica al guardar;
-hasta entonces solo se guarda su hash en memoria, nunca el texto.
+hasta entonces solo se guarda su hash (y su sello para el Acedor) en memoria, nunca el texto.
+
+Cualquiera añade perfiles, pero ninguno se elimina desde aquí: eso solo lo hace el Acedor, en
+su sesión. El Acedor tiene su propia tarjeta: se activa poniéndole contraseña y, después, solo
+se le cambia dando la actual.
 
 Sin `profiles.toml`, el apartado empieza con el perfil «Predeterminado» que el asistente crea
 con `user.name`; el archivo se escribe la primera vez que se guarda un cambio de perfiles.
@@ -16,11 +20,12 @@ from typing import Any
 
 from PySide6.QtCore import Property, Signal, Slot
 
-from jarvis_assistant.config import Config, Profile
+from jarvis_assistant.config import ADMIN_PROFILE_ID, ADMIN_PROFILE_NAME, Config, Profile
 from jarvis_assistant.config.ids import make_id
 from jarvis_assistant.config.profiles import dump_profiles
 from jarvis_assistant.configurator.sections.base import Section, comparable
 from jarvis_assistant.configurator.sections.layouts import LayoutsSection
+from jarvis_assistant.core.custody import generate_keys, rewrap_private, seal
 from jarvis_assistant.core.security import (
     AccessOrigin,
     AttemptOutcome,
@@ -42,9 +47,12 @@ class ProfilesSection(Section):
         self._layouts = layouts
         self._vault = vault
         self._profiles: list[Profile] = []
-        self._loaded: set[str] = set()  # ids al abrir: los que falten al guardar se retiran
+        self._loaded: set[str] = set()  # ids al abrir: un perfil nuevo no los reutiliza
         self._stored: frozenset[str] = frozenset()  # protegidos según la base de datos
         self._pending: dict[str, str | None] = {}  # id → hash nuevo, o None: quitarla
+        self._sealed: dict[str, str] = {}  # id → contraseña nueva sellada para el Acedor
+        # Acedor activado o con contraseña nueva en este borrador: (hash, pública, privada).
+        self._pending_admin: tuple[str, str, str] | None = None
         self._unlocked: set[str] = set()
         layouts.layoutRemoved.connect(self._layout_removed)
         layouts.itemsChanged.connect(self.itemsChanged)
@@ -55,7 +63,7 @@ class ProfilesSection(Section):
         self._profiles = list(config.all_profiles())
         self._loaded = {profile.id for profile in self._profiles}
         self._stored = self._vault.protected_ids() if self._vault is not None else frozenset()
-        self._pending = {}
+        self._pending, self._sealed, self._pending_admin = {}, {}, None
         self._changed()
 
     def validate(self) -> list[str]:
@@ -64,6 +72,8 @@ class ProfilesSection(Section):
         for profile in self._profiles:
             if not profile.name.strip():
                 problems.append("Hay un perfil sin nombre.")
+            elif comparable(profile.name) == comparable(ADMIN_PROFILE_NAME):
+                problems.append(f"El nombre «{ADMIN_PROFILE_NAME}» está reservado.")
             elif comparable(profile.name) in seen:
                 problems.append(f"El nombre de perfil «{profile.name}» está repetido.")
             seen.add(comparable(profile.name))
@@ -81,17 +91,22 @@ class ProfilesSection(Section):
         datos. Los archivos ya están escritos."""
         if self._vault is None:
             return
+        if self._pending_admin is not None:
+            self._vault.install_admin(*self._pending_admin)  # antes: los sellos son para él
         current = self._ids()
-        for profile_id in sorted(self._loaded - current):
-            self._vault.retire(profile_id)
         for profile_id, password_hash in self._pending.items():
             if profile_id not in current:
                 continue
             if password_hash is None:
                 self._vault.clear_password(profile_id)
+                continue
+            self._vault.set_password_hash(profile_id, password_hash)
+            sealed = self._sealed.get(profile_id)
+            if sealed is not None:
+                self._vault.custody.store_sealed(profile_id, sealed)
             else:
-                self._vault.set_password_hash(profile_id, password_hash)
-        self._pending = {}
+                self._vault.custody.discard(profile_id)  # el sello viejo ya no es su contraseña
+        self._pending, self._sealed, self._pending_admin = {}, {}, None
 
     # --- Para QML ----------------------------------------------------------------------------
 
@@ -149,6 +164,11 @@ class ProfilesSection(Section):
             return PASSWORDS_DIFFER
         profile_id = self._profiles[row].id
         self._pending[profile_id] = hash_password(password)
+        public_key = self._admin_public_key()
+        if public_key is not None:
+            self._sealed[profile_id] = seal(public_key, password)
+        else:
+            self._sealed.pop(profile_id, None)
         self._unlocked.add(profile_id)
         self._changed()
         self.touch()
@@ -176,14 +196,61 @@ class ProfilesSection(Section):
         self.touch()
         return len(self._profiles) - 1
 
-    @Slot(int)
-    def remove(self, row: int) -> None:
-        """Elimina el perfil; el último no se puede eliminar, ni uno protegido sin
-        desbloquear."""
-        if self._can_edit(row) and len(self._profiles) > 1:
-            del self._profiles[row]
-            self._changed()
-            self.touch()
+    # --- Acedor ------------------------------------------------------------------------------
+
+    @Property(bool, notify=itemsChanged)
+    def adminActive(self) -> bool:
+        """El Acedor está activado (o lo estará al guardar)."""
+        if self._pending_admin is not None:
+            return True
+        return self._vault is not None and self._vault.admin_active()
+
+    @Slot(str, str, result=str)
+    def activateAdmin(self, password: str, repeated: str) -> str:
+        """Activa al Acedor con su contraseña; se aplica al guardar. Devuelve el problema."""
+        if self._vault is None:
+            return "No se puede activar el Acedor sin base de datos."
+        if self.adminActive:
+            return "El Acedor ya está activado."
+        problem = password_problem(password) or (PASSWORDS_DIFFER if password != repeated else "")
+        if problem:
+            return problem
+        self._pending_admin = (hash_password(password), *generate_keys(password))
+        self._changed()
+        self.touch()
+        return ""
+
+    @Slot(str, str, str, result=str)
+    def changeAdminPassword(self, current: str, password: str, repeated: str) -> str:
+        """Contraseña nueva del Acedor, dando la actual. Las contraseñas que custodia siguen
+        pudiéndose ver. Un fallo cuenta como intento de acceso al Acedor."""
+        if self._vault is None or not self.adminActive:
+            return "El Acedor no está activado."
+        problem = password_problem(password) or (PASSWORDS_DIFFER if password != repeated else "")
+        if problem:
+            return problem
+        if self._pending_admin is not None:  # activado en este borrador: claves nuevas
+            self._pending_admin = (hash_password(password), *generate_keys(password))
+        else:
+            outcome = self._vault.attempt(ADMIN_PROFILE_ID, current, AccessOrigin.SETTINGS)
+            private = self._vault.custody.private_key()
+            public = self._vault.custody.public_key()
+            rewrapped = None
+            if outcome is AttemptOutcome.GRANTED and private is not None:
+                rewrapped = rewrap_private(private, current, password)
+            if rewrapped is None or public is None:
+                return "Clave incorrecta. Acceso denegado."
+            self._pending_admin = (hash_password(password), public, rewrapped)
+        self._changed()
+        self.touch()
+        return ""
+
+    def _admin_public_key(self) -> str | None:
+        if self._pending_admin is not None:
+            return self._pending_admin[1]
+        if self._vault is None or not self._vault.admin_active():
+            return None
+        return self._vault.custody.public_key()
 
     # Se guarda el texto tal cual, también con espacios a medio escribir: si se recortara aquí,
     # el campo lo reescribiría y se comería el espacio. Se limpia al volcar (`dump`).
@@ -245,7 +312,7 @@ class ProfilesSection(Section):
         """Ids que un perfil nuevo no puede usar: también los de perfiles eliminados en este
         borrador y los protegidos que ya no están en `profiles.toml`. Así no hereda la
         contraseña ni los recordatorios de otro."""
-        return self._ids() | self._loaded | set(self._stored)
+        return self._ids() | self._loaded | set(self._stored) | {ADMIN_PROFILE_ID}
 
     def _free_name(self, base: str) -> str:
         taken = {comparable(profile.name) for profile in self._profiles}

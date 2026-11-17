@@ -210,3 +210,17 @@ def test_ids_nuevos_a_partir_del_nombre():
     assert make_id("Mi Plantilla", ()) == "mi-plantilla"
     assert make_id("Programación", {"programacion"}) == "programacion-2"
     assert make_id("¡!", ()) == "elemento"
+
+
+def test_el_id_y_el_nombre_del_acedor_estan_reservados(tmp_path):
+    from jarvis_assistant import config as cfg
+
+    (tmp_path / "profiles.toml").write_text(
+        '[[profiles]]\nid = "acedor"\nname = "Jefe"\n\n'
+        '[[profiles]]\nid = "jefe"\nname = "acedor"\n\n'
+        '[[profiles]]\nid = "casa"\nname = "Casa"\n',
+        encoding="utf-8",
+    )
+    config, errors = cfg.load(tmp_path)
+    assert [p.id for p in config.profiles] == ["casa"]
+    assert len([e for e in errors if e.file == "profiles.toml"]) == 2

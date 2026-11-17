@@ -16,6 +16,11 @@ from pathlib import Path
 
 from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
+from jarvis_assistant.action_modules.administration import (
+    CredentialVault,
+    PermissionManager,
+    ProfileManager,
+)
 from jarvis_assistant.action_modules.app_launcher import AppLauncher
 from jarvis_assistant.action_modules.command_runner import CommandRunner
 from jarvis_assistant.action_modules.file_manager import FileCreation, FileSearch
@@ -23,6 +28,7 @@ from jarvis_assistant.action_modules.protocol_runner import ProtocolRunner
 from jarvis_assistant.action_modules.reminder_manager import ReminderManager
 from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
+from jarvis_assistant.config.writer import remove_profile
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import ActionModule
@@ -60,6 +66,8 @@ _MISSING_MODELS_NOTICE_MS = 6000
 ACTION_MODULES: list[Callable[[], ActionModule]] = [
     CommandRunner, AppLauncher, FileSearch, FileCreation, History, ReminderManager,
     ProtocolRunner,
+    # Solo para el Acedor (`admin = True`).
+    PermissionManager, CredentialVault, ProfileManager,
 ]
 
 
@@ -98,6 +106,7 @@ def build_app(
     home: Path | None = None,
     reload_config: Reload | None = None,
     windows: Sequence[str] = (),
+    remove_profile: Callable[[str], None] | None = None,
 ) -> App:
     """Construye el grafo completo sin lanzar hilos ni abrir dispositivos.
 
@@ -136,6 +145,7 @@ def build_app(
         reload_config=reload_config,
         on_exit=on_exit,
         scheduler=adapters.scheduler or ClockScheduler(adapters.clock),
+        remove_profile=remove_profile,
     )
     return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters, workdir)
 
@@ -151,6 +161,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="interfaz con eventos simulados, sin voz ni modelos",
     )
     parser.add_argument("--ui-debug", action="store_true", help="contador de frames")
+    parser.add_argument(
+        "--reiniciar-acedor", action="store_true", dest="reset_admin",
+        help="desactiva al Acedor si ha olvidado su contraseña; las contraseñas custodiadas "
+        "dejan de poder verse",
+    )
     return parser.parse_args(argv)
 
 
@@ -193,9 +208,11 @@ class CoreThread:
         on_exit: Callable[[], None],
         reload_config: Reload | None = None,
         windows: Sequence[str] = (),
+        remove_profile: Callable[[str], None] | None = None,
     ) -> None:
         self._config = config
         self._windows = tuple(windows)
+        self._remove_profile = remove_profile
         self._bus = bus
         self._make_adapters = make_adapters
         self._on_exit = on_exit
@@ -232,7 +249,7 @@ class CoreThread:
         adapters = self._make_adapters()
         app = build_app(
             self._config, adapters, bus=self._bus, reload_config=self._reload_config,
-            windows=self._windows,
+            windows=self._windows, remove_profile=self._remove_profile,
         )
         self.app = app
         try:
@@ -261,12 +278,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     instance = acquire_single_instance(MUTEX_NAME)
     if instance is None:
+        if args.reset_admin:
+            print("Cierre Jarvis antes de reiniciar al Acedor.", file=sys.stderr)
+            return 1
         return 0
     try:
+        if args.reset_admin:
+            return reset_admin(paths)
         return _run(args, platform, paths)
     finally:
         instance.close()
         logger.info("Jarvis termina")
+
+
+def reset_admin(paths: AppPaths) -> int:
+    """`--reiniciar-acedor`: el Acedor deja de estar activo hasta que se le ponga otra
+    contraseña en la configuración. Las contraseñas de los perfiles siguen valiendo."""
+    database = Database(paths.db_path)
+    try:
+        database.migrate()
+        ProfileVault(database).reset_admin()
+    finally:
+        database.close()
+    logger.warning("Acedor reiniciado desde la línea de órdenes")
+    print("Acedor reiniciado. Actívelo de nuevo en Configuración, Perfiles.")
+    return 0
 
 
 def _load_config(args: argparse.Namespace, paths: AppPaths) -> Config:
@@ -410,6 +446,7 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         on_exit=bridge.exitRequested.emit,
         reload_config=lambda previous: config_module.load(paths.config_dir, previous=previous),
         windows=[spec.title for spec in WINDOWS],
+        remove_profile=lambda profile_id: remove_profile(paths.config_dir, profile_id),
     )
     core.start()
     tray.show()

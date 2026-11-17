@@ -34,6 +34,7 @@ IMPORTANT_LIMIT = 10  # RN-07
 
 class SessionManager:
     name = "sesion"
+    always_allowed = True  # nombrar y marcar la sesión no se restringe
     title = "Sesión"
 
     def __init__(

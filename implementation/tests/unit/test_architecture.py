@@ -141,7 +141,7 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # tipos de eventos y, para los perfiles protegidos, la base de datos y su contraseña
     # (`core.security`), con su propia conexión. Nadie depende de ella salvo `main.py`.
     "configurator": (
-        "config", "core.database", "core.events", "core.security",
+        "config", "core.custody", "core.database", "core.events", "core.security",
         "ui.app", "ui.view_models", "ui.workspace",
     ),
     "process": ("core.events",),

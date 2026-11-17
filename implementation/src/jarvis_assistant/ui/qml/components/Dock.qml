@@ -36,9 +36,11 @@ Rectangle {
                 required property string icon
                 required property bool open
                 required property bool focused
+                required property bool available  // sin permiso, el módulo no se ofrece
 
                 objectName: "dock-" + windowId
-                width: 40
+                visible: available
+                width: available ? 40 : 0
                 height: 36
 
                 Rectangle {

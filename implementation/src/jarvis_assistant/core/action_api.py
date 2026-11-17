@@ -234,6 +234,22 @@ class HelpGroup:
     entries: tuple[HelpEntry, ...]
 
 
+class AdminTools(Protocol):
+    """Lo que solo tiene la sesión del Acedor (`ActionContext.admin`). Lo da el orquestador."""
+
+    # Módulos que se pueden restringir: (nombre, título).
+    restrictable: tuple[tuple[str, str], ...]
+
+    def credentials(self) -> list[tuple[str, str, str | None]]:
+        """(id, nombre, contraseña) de cada perfil protegido; la contraseña es None si todavía
+        no está custodiada."""
+        ...
+
+    def remove_profile(self, profile_id: str) -> bool:
+        """Quita el perfil de `profiles.toml` y retira sus datos. False si no se ha podido."""
+        ...
+
+
 @dataclass
 class ActionContext:
     """Lo que un módulo recibe en cada llamada."""
@@ -266,6 +282,7 @@ class ActionContext:
     # El perfil (entorno de trabajo) de la sesión: los datos propios de cada perfil, como los
     # recordatorios, se leen y se escriben con él.
     profile: str = ""
+    admin: AdminTools | None = None  # solo en la sesión del Acedor
 
 
 class ActionModule(Protocol):

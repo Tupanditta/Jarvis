@@ -45,11 +45,11 @@ def test_build_app_construye_el_grafo_completo_sin_hilos_ni_dispositivos(tmp_pat
     assert app.sessions.current is None
     assert [module.name for module in ACTION_MODULES] == [
         "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
-        "protocolos",
+        "protocolos", "permisos", "credenciales", "perfiles",
     ]  # fmt: skip
     assert set(app.orchestrator.modules) == {
         "sesion", "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
-        "protocolos",
+        "protocolos", "permisos", "credenciales", "perfiles",
     }  # fmt: skip
     assert app.orchestrator.modules["sesion"] is app.sessions
     app.speaker.close()
@@ -176,3 +176,37 @@ def test_la_vista_previa_no_arranca_el_nucleo_ni_toma_la_instancia(tmp_path, mon
     assert main_module.main(["--preview"]) == 0
     assert started and started[0].preview
     assert not (platform.data_dir() / "jarvis.db").exists()
+
+
+def test_reiniciar_al_acedor_lo_desactiva_y_conserva_las_contrasenas(tmp_path, capsys):
+    from jarvis_assistant import main as main_module
+    from jarvis_assistant.core.custody import generate_keys
+    from jarvis_assistant.core.database import Database
+    from jarvis_assistant.core.security import (
+        AccessOrigin,
+        AttemptOutcome,
+        ProfileVault,
+        hash_password,
+    )
+    from jarvis_assistant.paths import AppPaths
+
+    paths = AppPaths(tmp_path / "datos", tmp_path / "config", tmp_path / "log", tmp_path / "m")
+    paths.ensure()
+    db = Database(paths.db_path)
+    db.migrate()
+    vault = ProfileVault(db)
+    vault.install_admin(hash_password("maestra-1234"), *generate_keys("maestra-1234"))
+    vault.set_password_hash("trabajo", hash_password("clave-trabajo"))
+    db.close()
+
+    assert main_module.parse_args(["--reiniciar-acedor"]).reset_admin
+    assert main_module.reset_admin(paths) == 0
+    assert "Acedor reiniciado" in capsys.readouterr().out
+
+    db = Database(paths.db_path)
+    vault = ProfileVault(db)
+    assert not vault.admin_active()
+    assert vault.attempt("trabajo", "clave-trabajo", AccessOrigin.LOGIN) is (
+        AttemptOutcome.GRANTED
+    )
+    db.close()

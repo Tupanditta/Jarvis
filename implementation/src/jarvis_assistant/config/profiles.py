@@ -13,6 +13,20 @@ from jarvis_assistant.config.reader import InvalidError, Reader
 DEFAULT_PROFILE_ID = "predeterminado"
 DEFAULT_PROFILE_NAME = "Predeterminado"
 
+# El Acedor: perfil fijo y único con la máxima autoridad (permisos, contraseñas, eliminar
+# perfiles). No está en `profiles.toml`: existe en cuanto se activa con su contraseña
+# (`core/security.py`). Ningún perfil del archivo puede usar su id ni su nombre.
+ADMIN_PROFILE_ID = "acedor"
+ADMIN_PROFILE_NAME = "Acedor"
+
+
+def admin_profile() -> "Profile":
+    return Profile(ADMIN_PROFILE_ID, ADMIN_PROFILE_NAME)
+
+
+def is_reserved_name(name: str) -> bool:
+    return name.strip().casefold() == ADMIN_PROFILE_NAME.casefold()
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -32,9 +46,14 @@ def _parse_profile(item: Reader) -> Profile:
     profile_id = item.text("id", non_empty=True)
     if not is_valid_id(profile_id):
         raise InvalidError(item.key("id"), "solo minúsculas, números, - y _")
+    if profile_id == ADMIN_PROFILE_ID:
+        raise InvalidError(item.key("id"), f"«{ADMIN_PROFILE_ID}» está reservado para el Acedor")
+    name = item.text("name", non_empty=True).strip()
+    if is_reserved_name(name):
+        raise InvalidError(item.key("name"), f"«{ADMIN_PROFILE_NAME}» está reservado")
     profile = Profile(
         id=profile_id,
-        name=item.text("name", non_empty=True).strip(),
+        name=name,
         user_name=item.text("user_name", "").strip(),
         layout=item.text("layout", "").strip(),
     )

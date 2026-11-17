@@ -19,6 +19,7 @@ from jarvis_assistant.core import events
 from jarvis_assistant.ui import window_controller as wc
 from jarvis_assistant.ui.panel_models import (
     DEFAULT_OUTPUT_LINES,
+    AdminModel,
     CommandsModel,
     HelpModel,
     HistoryModel,
@@ -109,10 +110,11 @@ class UiApp(QObject):
         self.workspace = WorkspaceModel(parent=self)
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)
+        self.admin = AdminModel(self, publish)
         self._models = (
             self.options, self.assistant, self.access, self.tasks, self.dialogue, self.hud,
             self.workspace, self.profiles, self.commands, self.opened, self.search, self.history,
-            self.reminders, self.protocols, self.help,
+            self.reminders, self.protocols, self.help, self.admin,
         )  # fmt: skip
         self.controller = wc.WindowController()
         self._collapse_timer = self._single_shot(self.hud.collapse)
@@ -139,6 +141,7 @@ class UiApp(QObject):
             ("workspace", self.workspace),
             ("profiles", self.profiles),
             ("access", self.access),
+            ("admin", self.admin),
             ("ui", self.options),
             ("windows", self),
         ):

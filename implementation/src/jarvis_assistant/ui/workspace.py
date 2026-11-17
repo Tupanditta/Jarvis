@@ -36,6 +36,7 @@ from PySide6.QtCore import (
 )
 
 from jarvis_assistant.config import (
+    ADMIN_PROFILE_ID,
     FACTORY_LAYOUT,
     BarPosition,
     Config,
@@ -68,6 +69,7 @@ class WindowSpec:
     min_width: int = 300  # píxeles
     min_height: int = 220
     style: str = "round"  # forma del marco y textura del fondo: una de `FRAME_STYLES`
+    admin: bool = False  # solo en la sesión del Acedor
 
 
 # Formas de marco que sabe dibujar `qml/components/outline.js`.
@@ -92,6 +94,13 @@ WINDOWS: tuple[WindowSpec, ...] = (
                0.24, 0.60, 0.19, 0.38),
     WindowSpec("protocolo", "Protocolo", "protocolo", "ProtocolPanel.qml",
                0.57, 0.60, 0.18, 0.38, style="cut"),
+    # Las del Acedor.
+    WindowSpec("permisos", "Permisos", "candado", "PermissionsPanel.qml",
+               0.015, 0.03, 0.30, 0.60, open=True, min_width=420, admin=True),
+    WindowSpec("credenciales", "Credenciales", "llave", "CredentialsPanel.qml",
+               0.765, 0.03, 0.22, 0.45, style="cut", admin=True),
+    WindowSpec("perfiles", "Perfiles", "sesion", "ProfilesPanel.qml",
+               0.765, 0.52, 0.22, 0.42, style="leaf", admin=True),
 )  # fmt: skip
 
 
@@ -140,7 +149,8 @@ class WorkspaceModel(QAbstractListModel):
     barsChanged = Signal()
 
     ROLES = ("windowId", "title", "icon", "component", "open", "fx", "fy", "fw", "fh",
-             "order", "focused", "aside", "minWidth", "minHeight", "style")  # fmt: skip
+             "order", "focused", "aside", "minWidth", "minHeight", "style",
+             "available")  # fmt: skip
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(
@@ -157,12 +167,19 @@ class WorkspaceModel(QAbstractListModel):
         self._dock = FACTORY_LAYOUT.dock
         self._input = FACTORY_LAYOUT.input
         self._input_width = FACTORY_LAYOUT.input_width
+        # Ventanas que el perfil de la sesión no puede usar (`PermissionsApplied`): no se ven
+        # ni se abren. Hasta saberlo, las del Acedor.
+        self._hidden = frozenset(spec.id for spec in self._specs if spec.admin)
         self._placements = self._initial_placements(FACTORY_LAYOUT)
 
     def _initial_placements(self, layout: ScreenLayout) -> dict[str, Placement]:
-        return {
+        placements = {
             spec.id: _initial(spec, row, layout.windows.get(spec.id))
             for row, spec in enumerate(self._specs)
+        }
+        return {
+            key: replace(p, open=False) if key in self._hidden else p
+            for key, p in placements.items()
         }
 
     @property
@@ -210,6 +227,8 @@ class WorkspaceModel(QAbstractListModel):
                 return spec.min_width
             case "minHeight":
                 return spec.min_height
+            case "available":
+                return spec.id not in self._hidden
         return None
 
     def placement(self, window_id: str) -> Placement:
@@ -251,6 +270,8 @@ class WorkspaceModel(QAbstractListModel):
             self._apply_profile(event.profile_id)
         elif isinstance(event, events.SessionClosed):
             self._in_session = False
+        elif isinstance(event, events.PermissionsApplied):
+            self._set_hidden(event.hidden_panels)
         elif isinstance(event, events.PanelActivated) and event.panel in self._rows:
             self.show(event.panel)
         elif isinstance(event, events.WindowAsideRequested):
@@ -268,8 +289,24 @@ class WorkspaceModel(QAbstractListModel):
                     self.restore(window_id)
 
     def _apply_profile(self, profile_id: str) -> None:
-        if self._config is not None:
+        if self._config is None:
+            return
+        if profile_id == ADMIN_PROFILE_ID:
+            self.apply_layout(self._config.layout(""))  # el Acedor usa la de fábrica
+        else:
             self.apply_layout(self._config.layout(self._config.profile(profile_id).layout))
+
+    def _set_hidden(self, hidden: frozenset[str]) -> None:
+        hidden = frozenset(window for window in hidden if window in self._rows)
+        if hidden == self._hidden:
+            return
+        self._hidden = hidden
+        self._placements = {
+            key: replace(p, open=False) if key in hidden else p
+            for key, p in self._placements.items()
+        }
+        self.dataChanged.emit(self.index(0), self.index(len(self._specs) - 1))
+        self.changed.emit()
 
     def apply_layout(self, layout: ScreenLayout) -> None:
         """Toma la disposición de la plantilla: ventanas y barras.
@@ -313,7 +350,7 @@ class WorkspaceModel(QAbstractListModel):
     def show(self, window_id: str) -> None:
         """Abre la ventana, si no lo está, la recupera si estaba apartada y la pone encima."""
         current = self._placements.get(window_id)
-        if current is None:
+        if current is None or window_id in self._hidden:
             return
         if current.open and window_id == self._front():
             return
@@ -409,7 +446,9 @@ class WorkspaceModel(QAbstractListModel):
     def set_open(self, window_id: str, opened: bool) -> None:
         """Abre o cierra la ventana sin cambiar nada más (editor de plantillas)."""
         current = self._placements.get(window_id)
-        if current is not None and current.open != opened:
+        if current is None or (opened and window_id in self._hidden):
+            return
+        if current.open != opened:
             self._set(window_id, replace(current, open=opened, aside=False), everything=True)
 
     # --- Barras ------------------------------------------------------------------------------

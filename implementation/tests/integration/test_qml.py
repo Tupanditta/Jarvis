@@ -517,7 +517,9 @@ def test_todas_las_ventanas_abiertas_con_contenido_no_dan_avisos_de_qml(desk, qt
     for step in panel_tour():
         ui.on_event(step.event)
     qtbot.wait(300)
-    assert all(floating(ui, spec.id).isVisible() for spec in WINDOWS)
+    assert all(floating(ui, spec.id).isVisible() for spec in WINDOWS if not spec.admin)
+    # Las del Acedor no se abren fuera de su sesión.
+    assert not any(floating(ui, spec.id).isVisible() for spec in WINDOWS if spec.admin)
     ui.workspace.reset()
     qtbot.wait(300)
     assert floating(ui, "actividad").isVisible() and not floating(ui, "ayuda").isVisible()
@@ -748,4 +750,30 @@ def test_la_tarjeta_de_intrusion_se_confirma_con_entendido(make_ui, qtbot):
     QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
     qtbot.waitUntil(lambda: not card.isVisible(), timeout=3000)
     assert published[-1] == events.IntrusionAcknowledged((3,))
+    assert ui.warnings == []
+
+
+def test_las_ventanas_del_acedor_muestran_su_contenido_sin_avisos(desk, qtbot):
+    from jarvis_assistant.core.content import CredentialItem, NamedItem
+
+    ui, published = desk
+    normal = frozenset(spec.id for spec in WINDOWS if not spec.admin) - {"actividad", "ayuda"}
+    ui.on_event(events.PermissionsApplied(normal))
+    casa = NamedItem("casa", "Casa")
+    ui.on_event(events.PermissionsShown(
+        (casa,), (NamedItem("comandos", "Comandos"),), frozenset({("casa", "comandos")})
+    ))  # fmt: skip
+    ui.on_event(events.CredentialsShown((CredentialItem("trabajo", "Trabajo", "abcd"),)))
+    ui.on_event(events.ProfilesListed((casa, NamedItem("trabajo", "Trabajo"))))
+    for window_id in ("permisos", "credenciales", "perfiles"):
+        assert shown(ui, qtbot, window_id).isVisible()
+    assert not floating(ui, "comandos").isVisible()
+    secret = visual(ui, "credential-trabajo")
+    assert secret.property("text") != "abcd"
+    eye = visual(ui, "reveal-trabajo")
+    click(ui, eye, eye.width() / 2, eye.height() / 2)
+    qtbot.waitUntil(lambda: secret.property("text") == "abcd", timeout=2000)
+    switch = visual(ui, "permission-casa-comandos")
+    click(ui, switch, switch.width() / 2, switch.height() / 2)
+    assert published[-1] == events.PermissionChangeRequested("casa", "comandos", True)
     assert ui.warnings == []

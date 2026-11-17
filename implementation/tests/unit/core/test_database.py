@@ -20,6 +20,14 @@ INSERT_ACTIVITY = (
 )
 
 
+# Las migraciones de verdad: las de prueba van detrás.
+LATEST = len(list(database.MIGRATIONS_DIR.glob("*.sql")))
+
+
+def migration(offset: int, name: str) -> str:
+    return f"{LATEST + offset:04d}_{name}.sql"
+
+
 @pytest.fixture
 def db():
     database_ = Database(":memory:")
@@ -91,9 +99,10 @@ def test_el_orden_alfabetico_coincide_con_el_cronologico():
 def test_migrate_crea_el_esquema_y_fija_la_version(db):
     assert tables(db.conn) == {
         "sessions", "session_activities", "reminders", "reminder_triggers",
-        "profile_credentials", "intrusion_alerts",
+        "profile_credentials", "intrusion_alerts", "profile_permissions", "admin_keys",
+        "credential_escrow",
     }  # fmt: skip
-    assert db.schema_version == 2
+    assert db.schema_version == LATEST
 
 
 def test_migrate_es_idempotente(db):
@@ -236,23 +245,23 @@ def test_las_migraciones_se_aplican_en_orden_segun_la_version(tmp_path):
     directory = migrations_with(
         tmp_path,
         {
-            "0004_tercera.sql": "ALTER TABLE extra ADD COLUMN b TEXT;",
-            "0003_segunda.sql": "CREATE TABLE extra (a TEXT);",
+            migration(2, "tercera"): "ALTER TABLE extra ADD COLUMN b TEXT;",
+            migration(1, "segunda"): "CREATE TABLE extra (a TEXT);",
         },
     )
     db = Database(":memory:", migrations_dir=directory)
     db.migrate()
-    assert db.schema_version == 4
+    assert db.schema_version == LATEST + 2
     assert [row[1] for row in db.conn.execute("PRAGMA table_info(extra)")] == ["a", "b"]
 
 
 def test_una_migracion_que_falla_se_deshace_entera_y_no_sube_la_version(tmp_path):
     broken = "CREATE TABLE extra (a TEXT);\nINSERT INTO no_existe VALUES (1);"
-    directory = migrations_with(tmp_path, {"0003_rota.sql": broken})
+    directory = migrations_with(tmp_path, {migration(1, "rota"): broken})
     db = Database(":memory:", migrations_dir=directory)
     with pytest.raises(sqlite3.Error):
         db.migrate()
-    assert db.schema_version == 2
+    assert db.schema_version == LATEST
     assert "extra" not in tables(db.conn)
     assert not db.conn.in_transaction
 
@@ -261,14 +270,16 @@ def test_una_migracion_ya_aplicada_no_se_repite(tmp_path):
     db = Database(tmp_path / "jarvis.db")
     db.migrate()
     db.close()
-    directory = migrations_with(tmp_path, {"0003_segunda.sql": "CREATE TABLE extra (a TEXT);"})
+    directory = migrations_with(tmp_path, {migration(1, "segunda"): "CREATE TABLE extra (a TEXT);"})
     db = Database(tmp_path / "jarvis.db", migrations_dir=directory)
     db.migrate()  # 0001 fallaría si se repitiera: las tablas ya existen
-    assert db.schema_version == 3
+    assert db.schema_version == LATEST + 1
     db.close()
 
 
-@pytest.mark.parametrize("name", ["0004_salto.sql", "segunda.sql", "0003-guion.sql"])
+@pytest.mark.parametrize(
+    "name", [migration(2, "salto"), "segunda.sql", migration(1, "guion").replace("_", "-", 1)]
+)
 def test_una_migracion_mal_numerada_es_un_error(tmp_path, name):
     directory = migrations_with(tmp_path, {name: "SELECT 1;"})
     db = Database(":memory:", migrations_dir=directory)
@@ -297,14 +308,14 @@ def test_antes_de_cambiar_el_esquema_se_copia_la_base(tmp_path):
     insert_session(db.conn, "anterior")
     db.close()
 
-    directory = migrations_with(tmp_path, {"0003_segunda.sql": "CREATE TABLE extra (a TEXT);"})
+    directory = migrations_with(tmp_path, {migration(1, "segunda"): "CREATE TABLE extra (a TEXT);"})
     db = Database(path, migrations_dir=directory)
     db.migrate()
     db.close()
 
     backup = sqlite3.connect(tmp_path / "jarvis.db.bak")
     try:
-        assert backup.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert backup.execute("PRAGMA user_version").fetchone()[0] == LATEST
         assert backup.execute("SELECT name FROM sessions").fetchone()[0] == "anterior"
         assert "extra" not in tables(backup)
     finally:

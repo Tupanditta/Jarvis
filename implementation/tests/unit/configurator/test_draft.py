@@ -126,9 +126,8 @@ def test_sin_perfiles_empieza_con_el_predeterminado_y_se_escribe_al_guardar(rig)
     ]
 
 
-def test_el_ultimo_perfil_no_se_elimina_y_los_nombres_no_se_repiten(rig):
-    rig.profiles.remove(0)
-    assert len(rig.profiles.items) == 1
+def test_los_perfiles_no_se_eliminan_aqui_y_los_nombres_no_se_repiten(rig):
+    assert not hasattr(rig.profiles, "remove")  # solo el Acedor, en su sesión
     row = rig.profiles.add()
     rig.profiles.setName(row, "predeterminádo")
     assert rig.draft.save().problems == ["El nombre de perfil «predeterminádo» está repetido."]

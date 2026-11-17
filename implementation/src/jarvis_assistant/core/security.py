@@ -9,6 +9,10 @@ La contraseña nunca se guarda ni se registra: solo su hash scrypt con sal, en l
 (tabla `profile_credentials`), no en `profiles.toml`. No hay recuperación: un perfil con la
 contraseña olvidada solo se elimina quitándolo a mano de `profiles.toml`.
 
+El Acedor (`ADMIN_PROFILE_ID`) es un perfil protegido más, con dos diferencias: tiene un par
+de claves con el que puede ver las contraseñas de los demás (`core/custody.py`) y recibe los
+avisos de intrusión de todos los perfiles, que confirma aparte del dueño.
+
 Lo usan el orquestador (hilo del núcleo) y la ventana de configuración (hilo de la interfaz),
 cada uno con su propia conexión a la base de datos.
 """
@@ -21,6 +25,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from jarvis_assistant.config.profiles import ADMIN_PROFILE_ID
+from jarvis_assistant.core.custody import AdminKey, CredentialCustody
 from jarvis_assistant.core.database import Database, from_db, to_db
 
 PASSWORD_MIN_LENGTH = 4
@@ -106,6 +112,7 @@ class ProfileVault:
     ) -> None:
         self._db = db
         self._now = now
+        self.custody = CredentialCustody(db, now)
 
     # --- Consultas ---------------------------------------------------------------------------
 
@@ -120,10 +127,17 @@ class ProfileVault:
 
     def pending_alerts(self, profile_id: str) -> list[IntrusionAlert]:
         """Avisos sin confirmar del perfil, del más antiguo al más reciente."""
+        return self._alerts(
+            "profile_id = ? AND acknowledged_at IS NULL", (profile_id,)
+        )
+
+    def pending_admin_alerts(self) -> list[IntrusionAlert]:
+        """Avisos de todos los perfiles que el Acedor no ha confirmado."""
+        return self._alerts("admin_acknowledged_at IS NULL", ())
+
+    def _alerts(self, condition: str, args: tuple[object, ...]) -> list[IntrusionAlert]:
         rows = self._db.conn.execute(
-            "SELECT * FROM intrusion_alerts WHERE profile_id = ? AND acknowledged_at IS NULL"
-            " ORDER BY attempted_at, id",
-            (profile_id,),
+            f"SELECT * FROM intrusion_alerts WHERE {condition} ORDER BY attempted_at, id", args
         ).fetchall()
         return [
             IntrusionAlert(
@@ -149,6 +163,9 @@ class ProfileVault:
                     "UPDATE profile_credentials SET failed_attempts = 0 WHERE profile_id = ?",
                     (profile_id,),
                 )
+                # Una contraseña anterior al Acedor solo era un hash: ahora se sella.
+                if profile_id != ADMIN_PROFILE_ID and not self.custody.has(profile_id):
+                    self.custody.store(profile_id, password)
                 return AttemptOutcome.GRANTED
             failed = conn.execute(
                 "UPDATE profile_credentials SET failed_attempts = failed_attempts + 1"
@@ -167,6 +184,25 @@ class ProfileVault:
                 (profile_id, to_db(self._now()), failed, origin.value),
             )
             return AttemptOutcome.LOCKED_OUT
+
+    def acknowledge_admin(self, alert_ids: Iterable[int]) -> None:
+        """El Acedor ha visto los avisos. Los de su propio perfil quedan vistos también como
+        dueño."""
+        ids = list(alert_ids)
+        if not ids:
+            return
+        now = to_db(self._now())
+        with self._db.transaction() as conn:
+            conn.executemany(
+                "UPDATE intrusion_alerts SET admin_acknowledged_at = ?"
+                " WHERE id = ? AND admin_acknowledged_at IS NULL",
+                [(now, alert_id) for alert_id in ids],
+            )
+            conn.executemany(
+                "UPDATE intrusion_alerts SET acknowledged_at = ?"
+                " WHERE id = ? AND profile_id = ? AND acknowledged_at IS NULL",
+                [(now, alert_id, ADMIN_PROFILE_ID) for alert_id in ids],
+            )
 
     def acknowledge(self, alert_ids: Iterable[int]) -> None:
         """El dueño ha visto los avisos."""
@@ -195,6 +231,7 @@ class ProfileVault:
 
     def clear_password(self, profile_id: str) -> None:
         """Quita la contraseña: el perfil deja de estar protegido."""
+        self.custody.discard(profile_id)
         with self._db.transaction() as conn:
             conn.execute(
                 "UPDATE profile_credentials SET is_deleted = 1, failed_attempts = 0,"
@@ -206,6 +243,7 @@ class ProfileVault:
         """El perfil se ha eliminado desde la configuración: sus recordatorios, su contraseña
         y sus avisos dejan de contar. Un perfil nuevo con el mismo id empieza limpio."""
         now = to_db(self._now())
+        self.custody.discard(profile_id)
         with self._db.transaction() as conn:
             conn.execute(
                 "UPDATE reminders SET status = 'eliminado'"
@@ -222,6 +260,29 @@ class ProfileVault:
                 " WHERE profile_id = ? AND acknowledged_at IS NULL",
                 (now, profile_id),
             )
+
+    # --- Acedor ------------------------------------------------------------------------------
+
+    def admin_active(self) -> bool:
+        """El Acedor está activado: tiene contraseña y claves."""
+        return self.is_protected(ADMIN_PROFILE_ID) and self.custody.active
+
+    def install_admin(self, password_hash: str, public_key: str, private_key: str) -> None:
+        """Activa al Acedor o cambia su contraseña (sus claves ya preparadas)."""
+        with self._db.transaction():
+            self.set_password_hash(ADMIN_PROFILE_ID, password_hash)
+            self.custody.install(public_key, private_key)
+
+    def open_admin(self, password: str) -> AdminKey | None:
+        """La clave del Acedor para su sesión, o None si la contraseña no vale."""
+        return self.custody.unlock(password)
+
+    def reset_admin(self) -> None:
+        """El Acedor ha olvidado su contraseña: deja de estar activo y las contraseñas
+        custodiadas dejan de poder verse. Los permisos se conservan."""
+        with self._db.transaction():
+            self.clear_password(ADMIN_PROFILE_ID)
+            self.custody.reset()
 
     # --- Interno -----------------------------------------------------------------------------
 

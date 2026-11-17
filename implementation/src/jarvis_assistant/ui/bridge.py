@@ -37,6 +37,11 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.AccessDenied,
     events.AccessClosed,
     events.IntrusionAlertsShown,
+    # Permisos y Acedor
+    events.PermissionsApplied,
+    events.PermissionsShown,
+    events.CredentialsShown,
+    events.ProfilesListed,
     # Contenido de los paneles
     events.WorkdirChanged,
     events.DirectoryListed,

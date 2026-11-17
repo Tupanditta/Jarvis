@@ -16,9 +16,11 @@ from typing import Literal
 from jarvis_assistant.config import Config
 from jarvis_assistant.core.action_api import HelpGroup
 from jarvis_assistant.core.content import (
+    CredentialItem,
     Entry,
     IntrusionItem,
     LaunchTarget,
+    NamedItem,
     OpenedItem,
     ProtocolRow,
     ReminderItem,
@@ -441,9 +443,11 @@ class QuitRequested(Event):
 @dataclass(frozen=True)
 class ProtectedProfilesChanged(Event):
     """Qué perfiles piden contraseña. Se publica al arrancar y al volver a cargar la
-    configuración; el selector de perfiles muestra un candado en ellos."""
+    configuración; el selector de perfiles muestra un candado en ellos. `admin_active`: el
+    Acedor está activado y el selector lo ofrece."""
 
     profile_ids: frozenset[str]
+    admin_active: bool = False
 
 
 @dataclass(frozen=True)
@@ -493,3 +497,54 @@ class IntrusionAcknowledged(Event):
     """El usuario pulsa «Entendido» en la tarjeta crítica."""
 
     alert_ids: tuple[int, ...]
+
+
+# --- Permisos y Acedor -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PermissionsApplied(Event):
+    """Al abrir sesión: las ventanas de los módulos que el perfil no puede usar no se muestran
+    ni se pueden abrir."""
+
+    hidden_panels: frozenset[str]
+
+
+@dataclass(frozen=True)
+class PermissionsShown(Event):
+    """Ventana Permisos del Acedor: perfiles, módulos y lo que cada perfil tiene restringido
+    (pares perfil, módulo)."""
+
+    profiles: tuple[NamedItem, ...]
+    modules: tuple[NamedItem, ...]
+    restricted: frozenset[tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class PermissionChangeRequested(Event):
+    """El Acedor pulsa un interruptor de la ventana Permisos."""
+
+    profile_id: str
+    module: str
+    allowed: bool
+
+
+@dataclass(frozen=True)
+class CredentialsShown(Event):
+    """Ventana Credenciales del Acedor. Las contraseñas no salen en el `repr`."""
+
+    items: tuple[CredentialItem, ...]
+
+
+@dataclass(frozen=True)
+class ProfilesListed(Event):
+    """Ventana Perfiles del Acedor: los perfiles que puede eliminar."""
+
+    profiles: tuple[NamedItem, ...]
+
+
+@dataclass(frozen=True)
+class ProfileRemovalRequested(Event):
+    """El Acedor pulsa «Eliminar» en la ventana Perfiles."""
+
+    profile_id: str
