@@ -17,6 +17,7 @@ from jarvis_assistant.config import Config
 from jarvis_assistant.core.action_api import HelpGroup
 from jarvis_assistant.core.content import (
     Entry,
+    IntrusionItem,
     LaunchTarget,
     OpenedItem,
     ProtocolRow,
@@ -430,3 +431,65 @@ class ShowHudRequested(Event):
 @dataclass(frozen=True)
 class QuitRequested(Event):
     """«Salir» en el menú de la bandeja o fin de la sesión del sistema operativo."""
+
+
+# --- Perfiles protegidos ---------------------------------------------------------------------
+# La contraseña solo viaja en `AccessAttempted`, de la interfaz al núcleo: no pasa por el
+# enrutador, no se publica como orden recibida y su `repr` no la muestra (RES-48).
+
+
+@dataclass(frozen=True)
+class ProtectedProfilesChanged(Event):
+    """Qué perfiles piden contraseña. Se publica al arrancar y al volver a cargar la
+    configuración; el selector de perfiles muestra un candado en ellos."""
+
+    profile_ids: frozenset[str]
+
+
+@dataclass(frozen=True)
+class AccessChallenged(Event):
+    """«Hey Jarvis» (o «Abrir sesión») en un perfil protegido: la interfaz muestra la caja de
+    la contraseña en el centro de la pantalla."""
+
+    profile_id: str
+    profile_name: str
+
+
+@dataclass(frozen=True)
+class AccessDenied(Event):
+    """Contraseña incorrecta: la caja se sacude y se queda abierta."""
+
+
+@dataclass(frozen=True)
+class AccessClosed(Event):
+    """La caja de la contraseña se cierra: acceso concedido, cancelado o tercer fallo. Quien
+    la ve no sabe si se ha registrado un aviso de intrusión."""
+
+    granted: bool = False
+
+
+@dataclass(frozen=True)
+class AccessAttempted(Event):
+    """La interfaz envía la contraseña escrita en la caja."""
+
+    password: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class AccessCancelled(Event):
+    """El usuario cierra la caja de la contraseña (Esc)."""
+
+
+@dataclass(frozen=True)
+class IntrusionAlertsShown(Event):
+    """Al entrar en un perfil protegido con avisos sin confirmar: la tarjeta crítica."""
+
+    profile_id: str
+    alerts: tuple[IntrusionItem, ...]
+
+
+@dataclass(frozen=True)
+class IntrusionAcknowledged(Event):
+    """El usuario pulsa «Entendido» en la tarjeta crítica."""
+
+    alert_ids: tuple[int, ...]

@@ -5,7 +5,8 @@ destruye al cerrarla (`closed`): mientras hay sesión no queda nada de ella en m
 guardar llama a `on_saved` (publicar `ConfigSaved` en el bus).
 
 `owner`: la pantalla de sesión. La ventana queda siempre encima de ella aunque esté a
-pantalla completa.
+pantalla completa. `vault`: las contraseñas de los perfiles, con su propia conexión a la base
+de datos en el hilo de la interfaz.
 """
 import logging
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from jarvis_assistant.configurator.draft import Draft
 from jarvis_assistant.configurator.editor import LayoutEditor
 from jarvis_assistant.configurator.registry import SECTIONS, SectionContext, SectionSpec
 from jarvis_assistant.configurator.sections.base import Section
+from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.ui.app import load_fonts
 from jarvis_assistant.ui.view_models import UiOptions
 
@@ -43,6 +45,7 @@ class ConfigWindow(QObject):
         specs: tuple[SectionSpec, ...] = SECTIONS,
         owner: QWindow | None = None,
         parent: QObject | None = None,
+        vault: ProfileVault | None = None,
     ) -> None:
         super().__init__(parent)
         self._on_saved = on_saved
@@ -51,7 +54,7 @@ class ConfigWindow(QObject):
         self.editor = LayoutEditor(self)
         self.sections: dict[str, Section] = {}
         for spec in specs:
-            section = spec.create(SectionContext(self.editor, self.sections))
+            section = spec.create(SectionContext(self.editor, self.sections, vault))
             section.setParent(self)
             section.dirtyChanged.connect(self.dirtyChanged)
             self.sections[spec.id] = section

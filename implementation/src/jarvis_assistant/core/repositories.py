@@ -300,10 +300,14 @@ def _trigger(row: sqlite3.Row) -> TriggerRow:
 
 class ReminderRepository:
     """Tablas `reminders` y `reminder_triggers`. Lo usa Recordatorio. Eliminar es cambiar el
-    estado a `eliminado`: los avisos no se tocan (RN-13)."""
+    estado a `eliminado`: los avisos no se tocan (RN-13).
 
-    def __init__(self, db: Database) -> None:
+    Cada recordatorio es de un perfil (`profile_id`): el repositorio solo ve y crea los del
+    perfil con el que se construye. Los de otro perfil no existen para él, tampoco por id."""
+
+    def __init__(self, db: Database, profile_id: str = "") -> None:
         self._db = db
+        self._profile = profile_id
 
     def create(
         self, content: str, triggers: Sequence[datetime], deadline: datetime | None, at: datetime
@@ -311,8 +315,9 @@ class ReminderRepository:
         """El recordatorio y sus avisos, en una transacción."""
         with self._db.transaction() as conn:
             cursor = conn.execute(
-                "INSERT INTO reminders (content, created_at, deadline_at) VALUES (?, ?, ?)",
-                (content, to_db(at), None if deadline is None else to_db(deadline)),
+                "INSERT INTO reminders (content, created_at, deadline_at, profile_id)"
+                " VALUES (?, ?, ?, ?)",
+                (content, to_db(at), None if deadline is None else to_db(deadline), self._profile),
             )
             reminder_id = cursor.lastrowid
             conn.executemany(
@@ -323,14 +328,16 @@ class ReminderRepository:
 
     def get(self, reminder_id: int) -> ReminderRow | None:
         row = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+            "SELECT * FROM reminders WHERE id = ? AND profile_id = ?", (reminder_id, self._profile)
         ).fetchone()
         return None if row is None else self._reminder(row)
 
     def listable(self) -> list[ReminderRow]:
         """Activos y vencidos, por identificador: el orden del panel (RN-50)."""
         rows = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE status IN ('activo', 'vencido') ORDER BY id"
+            "SELECT * FROM reminders WHERE profile_id = ? AND status IN ('activo', 'vencido')"
+            " ORDER BY id",
+            (self._profile,),
         ).fetchall()
         return [self._reminder(row) for row in rows]
 
@@ -345,9 +352,9 @@ class ReminderRepository:
     def overdue(self, now: datetime) -> list[ReminderRow]:
         """Activos cuya fecha límite ya ha llegado sin avisar de ella (RN-31)."""
         rows = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE status = 'activo' AND deadline_at IS NOT NULL"
-            " AND deadline_at <= ? ORDER BY id",
-            (to_db(now),),
+            "SELECT * FROM reminders WHERE profile_id = ? AND status = 'activo'"
+            " AND deadline_at IS NOT NULL AND deadline_at <= ? ORDER BY id",
+            (self._profile, to_db(now)),
         ).fetchall()
         return [self._reminder(row) for row in rows]
 
@@ -366,20 +373,24 @@ class ReminderRepository:
     def set_deadline(self, reminder_id: int, deadline: datetime) -> None:
         with self._db.transaction() as conn:
             conn.execute(
-                "UPDATE reminders SET deadline_at = ? WHERE id = ?", (to_db(deadline), reminder_id)
+                "UPDATE reminders SET deadline_at = ? WHERE id = ? AND profile_id = ?",
+                (to_db(deadline), reminder_id, self._profile),
             )
 
     def set_status(self, reminder_id: int, status: str) -> None:
         with self._db.transaction() as conn:
-            conn.execute("UPDATE reminders SET status = ? WHERE id = ?", (status, reminder_id))
+            conn.execute(
+                "UPDATE reminders SET status = ? WHERE id = ? AND profile_id = ?",
+                (status, reminder_id, self._profile),
+            )
 
     def _triggers(self, condition: str, now: datetime) -> list[TriggerRow]:
         # Las fechas se guardan en UTC con el mismo formato: se comparan como texto.
         rows = self._db.conn.execute(
             "SELECT t.* FROM reminder_triggers t JOIN reminders r ON r.id = t.reminder_id"
-            f" WHERE r.status = 'activo' AND t.is_fired = 0 AND {condition}"
-            " ORDER BY t.trigger_at, t.id",
-            (to_db(now),),
+            " WHERE r.profile_id = ? AND r.status = 'activo' AND t.is_fired = 0"
+            f" AND {condition} ORDER BY t.trigger_at, t.id",
+            (self._profile, to_db(now)),
         ).fetchall()
         return [_trigger(row) for row in rows]
 

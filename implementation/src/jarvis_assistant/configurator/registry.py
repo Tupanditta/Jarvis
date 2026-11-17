@@ -4,8 +4,8 @@ Igual que `ui.workspace.WINDOWS` declara las ventanas flotantes, `SECTIONS` decl
 apartados, en el orden en que se muestran. Añadir un apartado es añadir aquí su `SectionSpec`,
 su clase en `sections/` y su página en `qml/sections/`.
 
-`create` recibe el contexto con el editor de plantillas y los apartados ya creados (los de
-arriba en la lista), por si depende de alguno.
+`create` recibe el contexto con el editor de plantillas, los apartados ya creados (los de
+arriba en la lista), por si depende de alguno, y las contraseñas de los perfiles.
 """
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -16,12 +16,16 @@ from jarvis_assistant.configurator.sections.catalog import CatalogSection
 from jarvis_assistant.configurator.sections.layouts import LayoutsSection
 from jarvis_assistant.configurator.sections.profiles import ProfilesSection
 from jarvis_assistant.configurator.sections.sound import SoundSection
+from jarvis_assistant.core.security import ProfileVault
 
 
 @dataclass(frozen=True)
 class SectionContext:
     editor: LayoutEditor
     sections: Mapping[str, Section]
+    # Contraseñas de los perfiles. Sin ella (pruebas, vista previa), ningún perfil está
+    # protegido y no se pueden poner contraseñas.
+    vault: ProfileVault | None = None
 
 
 @dataclass(frozen=True)
@@ -36,7 +40,7 @@ class SectionSpec:
 def _profiles(context: SectionContext) -> Section:
     layouts = context.sections["plantillas"]
     assert isinstance(layouts, LayoutsSection)
-    return ProfilesSection(layouts)
+    return ProfilesSection(layouts, context.vault)
 
 
 SECTIONS: tuple[SectionSpec, ...] = (

@@ -18,6 +18,12 @@ PHRASES: dict[str, list[str]] = {
         "Me alegra verle otra vez por aquí, señor. ¿Por dónde quiere que empecemos?",
         "Aquí estoy, señor, como siempre. Usted dirá qué hacemos hoy.",
     ],
+    # Al entrar en un perfil protegido con su contraseña (sustituye a «ciclo.apertura»).
+    "ciclo.apertura_protegida": [
+        "Identidad confirmada. Ha accedido a un entorno de trabajo protegido con privilegios"
+        " avanzados. Tiene acceso a protocolos y funciones confidenciales. ¿En qué vamos a"
+        " trabajar, señor?",
+    ],
     "ciclo.escucha": [
         "Dígame, señor. Soy todo oídos.",
         "Aquí me tiene, señor.",
@@ -550,6 +556,22 @@ PHRASES: dict[str, list[str]] = {
         "Hay {n}, señor.",
         "Tiene {n} disponibles, señor.",
     ],
+    # --- Perfiles protegidos ---
+    "seguridad.desafio": [
+        "Esta área está protegida por un nivel de seguridad superior. Introduzca la clave"
+        " correcta para obtener acceso.",
+    ],
+    "seguridad.denegado": [
+        "Clave incorrecta. Acceso denegado.",
+    ],
+    "seguridad.intrusion": [
+        "Alerta de seguridad, señor. Alguien intentó acceder a este entorno sin autorización"
+        " {cuando}. Introdujo una clave incorrecta {intentos} veces seguidas.",
+    ],
+    "seguridad.intrusiones": [
+        "Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a este"
+        " entorno desde su última visita. El último, {cuando}. Tiene los detalles en pantalla.",
+    ],
     "protocolos.ninguno": [
         "No hay ningún protocolo definido, señor.",
         "Todavía no tiene protocolos, señor. Puede definirlos en la configuración.",
@@ -561,6 +583,9 @@ LIFECYCLE_IDS = ("ciclo.apertura", "ciclo.escucha", "ciclo.reposo", "ciclo.cierr
 # Frases sin parámetros que se sintetizan al arrancar, además de las del ciclo de vida.
 PRELOADED_IDS = (
     *LIFECYCLE_IDS,
+    "ciclo.apertura_protegida",
+    "seguridad.desafio",
+    "seguridad.denegado",
     "general.cancelado",
     "general.operacion_cancelada",
     "general.no_entendido",

@@ -3,6 +3,9 @@
 Los perfiles llegan con `ConfigApplied`. El elegido se publica con `ProfileSelected`: la
 próxima sesión se abre con él. El perfil con el que se abrió la última sesión se recuerda
 entre ejecuciones (`ProfileMemory`); no es configuración, es estado de la aplicación.
+
+Los perfiles protegidos con contraseña llegan con `ProtectedProfilesChanged` y se muestran con
+un candado (`locked`).
 """
 import json
 import logging
@@ -64,7 +67,7 @@ class ProfilesModel(QAbstractListModel):
 
     changed = Signal()
 
-    ROLES = ("profileId", "name", "selected")
+    ROLES = ("profileId", "name", "selected", "locked")
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(
@@ -79,6 +82,7 @@ class ProfilesModel(QAbstractListModel):
         self._profiles: tuple[Profile, ...] = ()
         self._current = -1
         self._published: str | None = None
+        self._protected: frozenset[str] = frozenset()
 
     def roleNames(self) -> dict[int, QByteArray]:
         return {
@@ -100,6 +104,8 @@ class ProfilesModel(QAbstractListModel):
                 return profile.name
             case "selected":
                 return index.row() == self._current
+            case "locked":
+                return profile.id in self._protected
         return None
 
     # --- Eventos del núcleo ------------------------------------------------------------------
@@ -109,6 +115,14 @@ class ProfilesModel(QAbstractListModel):
             self._set_profiles(event.config.all_profiles())
         elif isinstance(event, events.SessionOpened) and event.profile_id:
             self._memory.save(event.profile_id)
+        elif (
+            isinstance(event, events.ProtectedProfilesChanged)
+            and event.profile_ids != self._protected
+        ):
+            self._protected = event.profile_ids
+            if self._profiles:
+                self.dataChanged.emit(self.index(0), self.index(len(self._profiles) - 1))
+            self.changed.emit()
 
     def _set_profiles(self, profiles: tuple[Profile, ...]) -> None:
         wanted = self.currentId or self._memory.load()
@@ -150,6 +164,11 @@ class ProfilesModel(QAbstractListModel):
     @Property(int, notify=changed)
     def currentIndex(self) -> int:
         return self._current
+
+    @Property(bool, notify=changed)
+    def currentLocked(self) -> bool:
+        """El perfil elegido pide contraseña."""
+        return self.currentId in self._protected
 
     @Property(str, notify=changed)
     def currentId(self) -> str:

@@ -111,6 +111,12 @@ class OpenSessionRequested(Input):
 
 
 @dataclass(frozen=True)
+class AccessGranted(Input):
+    """Contraseña correcta de un perfil protegido: se abre la sesión con la frase de apertura
+    de los entornos protegidos. La comprobación la hace el orquestador, antes de la FSM."""
+
+
+@dataclass(frozen=True)
 class ShutdownRequested(Input):
     """Salir desde la bandeja o fin de la sesión del sistema operativo."""
 
@@ -298,11 +304,14 @@ class StateMachine:
     def _asleep(self, entry: Input) -> list[Effect]:
         if isinstance(entry, DialogueRequested):
             return [RejectDialogue(entry.dialogue)]
-        if isinstance(entry, WakeWord | OpenSessionRequested):
+        if isinstance(entry, WakeWord | OpenSessionRequested | AccessGranted):
             self.state = _S.LISTENING_COMMAND
+            opening = "ciclo.apertura_protegida" if isinstance(entry, AccessGranted) else (
+                "ciclo.apertura"
+            )
             return [
                 OpenSession(),
-                SayLifecycle("ciclo.apertura", Transition.SESSION_OPENED),
+                SayLifecycle(opening, Transition.SESSION_OPENED),
                 DeliverPendingNotices(),
                 RestartSilenceTimer(),
             ]

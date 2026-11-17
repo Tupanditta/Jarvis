@@ -2,6 +2,7 @@
 import pytest
 
 from jarvis_assistant.core.state_machine import (
+    AccessGranted,
     AssistantState,
     CancelTurn,
     CloseSession,
@@ -58,6 +59,25 @@ def test_abrir_sesion_desde_la_bandeja_equivale_a_hey_jarvis_en_dormido():
     fsm = machine(S.DORMIDO)
     assert fsm.handle(OpenSessionRequested()) == machine(S.DORMIDO).handle(WakeWord())
     assert fsm.state is S.LISTENING_COMMAND
+
+
+def test_el_acceso_concedido_a_un_perfil_protegido_abre_con_su_frase():
+    fsm = machine(S.DORMIDO)
+    effects = fsm.handle(AccessGranted())
+    assert fsm.state is S.LISTENING_COMMAND
+    assert effects == [
+        OpenSession(),
+        SayLifecycle("ciclo.apertura_protegida", Transition.SESSION_OPENED),
+        DeliverPendingNotices(),
+        RestartSilenceTimer(),
+    ]
+
+
+@pytest.mark.parametrize("state", WITH_SESSION)
+def test_el_acceso_concedido_no_hace_nada_con_sesion(state):
+    fsm = machine(state)
+    assert fsm.handle(AccessGranted()) == []
+    assert fsm.state is state
 
 
 @pytest.mark.parametrize("state", WITH_SESSION)

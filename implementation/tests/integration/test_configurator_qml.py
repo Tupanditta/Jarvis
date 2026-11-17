@@ -150,3 +150,52 @@ def test_el_nombre_de_usuario_escrito_vale_al_pulsar_guardar_sin_salir_del_campo
     profile = cfg.load(directory)[0].profiles[0]
     assert profile.user_name == "Jane Doe"
     assert window.warnings == []
+
+
+# --- Perfiles protegidos -----------------------------------------------------------------------
+
+
+@pytest.fixture
+def protected(tmp_path, qtbot):
+    from jarvis_assistant.core.database import Database
+    from jarvis_assistant.core.security import ProfileVault, hash_password
+
+    directory = tmp_path / "config"
+    directory.mkdir()
+    (directory / "profiles.toml").write_text(
+        '[[profiles]]\nid = "secreto"\nname = "Confidencial"\n', encoding="utf-8"
+    )
+    db = Database(":memory:")
+    db.migrate()
+    vault = ProfileVault(db)
+    vault.set_password_hash("secreto", hash_password("clave-1234"))
+    window = ConfigWindow(directory, vault=vault)
+    window.show()
+    yield window
+    if window.window is not None:
+        window.window.close()
+        window.window.hide()
+    window.editor.cancel()
+    db.close()
+
+
+def test_un_perfil_protegido_se_desbloquea_con_su_contrasena_en_la_pagina(protected, qtbot):
+    window = protected
+    open_tab(window, "perfiles", qtbot)
+    lock = find(window.window, "profileLock")
+    assert lock.isVisible()
+    field = find(window.window, "unlockField")
+    click(window.window, field)
+    for char in "mala":
+        QTest.keyClick(window.window, char)
+    click(window.window, find(window.window, "unlockProfile"))
+    qtbot.wait(50)
+    assert find(window.window, "unlockMessage").property("text") != ""
+    assert lock.isVisible()
+    click(window.window, field)
+    for char in "clave-1234":
+        QTest.keyClick(window.window, char)
+    QTest.keyClick(window.window, Qt.Key.Key_Return)
+    qtbot.waitUntil(lambda: not lock.isVisible(), timeout=2000)
+    assert find(window.window, "setPassword").property("text") == "Cambiar contraseña"
+    assert window.warnings == []

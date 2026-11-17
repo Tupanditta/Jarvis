@@ -138,8 +138,12 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "os_adapters": ("process.single_instance",),
     # La ventana de configuración: edita y escribe la configuración y reutiliza los
     # componentes y modelos de la interfaz para el editor de plantillas. Del núcleo, solo los
-    # tipos de eventos. Nadie depende de ella salvo `main.py`.
-    "configurator": ("config", "core.events", "ui.app", "ui.view_models", "ui.workspace"),
+    # tipos de eventos y, para los perfiles protegidos, la base de datos y su contraseña
+    # (`core.security`), con su propia conexión. Nadie depende de ella salvo `main.py`.
+    "configurator": (
+        "config", "core.database", "core.events", "core.security",
+        "ui.app", "ui.view_models", "ui.workspace",
+    ),
     "process": ("core.events",),
     "ui": (
         "config", "core.action_api", "core.content", "core.event_bus", "core.events",
@@ -151,7 +155,8 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
 # enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`.
 HUB_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "core/orchestrator.py": (
-        "intent_router.batch", "intent_router.router", "speaker.phrases", "speaker.speaker",
+        "intent_router.batch", "intent_router.router", "speaker.formats", "speaker.phrases",
+        "speaker.speaker",
     ),
 }  # fmt: skip
 

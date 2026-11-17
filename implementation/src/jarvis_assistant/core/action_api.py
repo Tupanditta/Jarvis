@@ -263,6 +263,9 @@ class ActionContext:
     # `pendiente`; `invoke` ejecuta una acción como subtarea (ver `Invoke`).
     subtask: Callable[[str, str], Subtask] = _no_subtasks
     invoke: Invoke = _no_invoke
+    # El perfil (entorno de trabajo) de la sesión: los datos propios de cada perfil, como los
+    # recordatorios, se leen y se escriben con él.
+    profile: str = ""
 
 
 class ActionModule(Protocol):

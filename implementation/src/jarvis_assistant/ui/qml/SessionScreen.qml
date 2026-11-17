@@ -33,12 +33,15 @@ Window {
     property bool cursorHidden: false
 
     function focusInput() {
-        input.focusInput()
+        if (access.gateOpen)
+            gate.focusInput()
+        else
+            input.focusInput()
     }
 
     onActiveChanged: {
         if (active)
-            input.focusInput()
+            screen.focusInput()
     }
 
     onClosing: (close) => {
@@ -209,7 +212,7 @@ Window {
     // Solo en dormido, en el centro bajo el orbe: el perfil con el que se abrirá la sesión.
     ProfilePicker {
         objectName: "profilePicker"
-        shown: screen.asleep
+        shown: screen.asleep && !access.gateOpen
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.round(orb.y + orb.height / 2 + Theme.space48)
     }
@@ -218,7 +221,7 @@ Window {
     // el que se configura el asistente.
     Chip {
         objectName: "settingsButton"
-        visible: screen.asleep && windows.settingsAvailable
+        visible: screen.asleep && windows.settingsAvailable && !access.gateOpen
         icon: "ajustes"
         text: windows.configuring ? "Configuración abierta" : "Configuración"
         selected: windows.configuring
@@ -239,12 +242,29 @@ Window {
         y: Math.round(Math.max(Theme.space8, Math.min(screen.height - height - Theme.space8,
                                                       workspace.inputY * screen.height - height / 2)))
         focus: true
-        // Con la configuración abierta no se puede iniciar sesión.
-        enabled: !windows.configuring
+        // Con la configuración abierta no se puede iniciar sesión; con la caja de la contraseña
+        // abierta, se escribe en ella.
+        enabled: !windows.configuring && !access.gateOpen
         onBrowse: (delta) => {
             if (profiles.count > 1)
                 profiles.step(delta)
         }
+    }
+
+    // Perfil protegido: la contraseña, en el centro y por encima de todo.
+    AccessGate {
+        id: gate
+
+        anchors.fill: parent
+        z: 10
+        onClosed: input.focusInput()
+    }
+
+    // Aviso crítico de intrusión, en el centro, hasta que se confirma.
+    IntrusionCard {
+        width: Math.min(560, screen.width - 2 * screen.margin)
+        anchors.centerIn: parent
+        z: 9
     }
 
     FrameCounter {

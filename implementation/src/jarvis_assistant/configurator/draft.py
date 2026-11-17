@@ -75,6 +75,12 @@ class Draft:
         except WriteError as error:
             logger.error("No se ha podido guardar %s: %s", error.file, error.reason)
             return SaveResult(False, [f"No se ha podido guardar {error.file}: {error.reason}"])
+        for section in changed:
+            try:
+                section.commit()
+            except Exception:
+                logger.exception("No se ha podido guardar %s", type(section).__name__)
+                return SaveResult(False, ["No se han podido guardar las contraseñas."])
         logger.info("Configuración guardada: %s", ", ".join(names))
         self.open()
         return SaveResult(True)

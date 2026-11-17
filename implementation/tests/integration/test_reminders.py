@@ -35,7 +35,8 @@ async def rig(tmp_path, monkeypatch):
 
 
 def reminders(rig) -> ReminderRepository:
-    return ReminderRepository(rig.database)
+    """Los del perfil con el que se abre la sesión."""
+    return ReminderRepository(rig.database, rig.app.config.profile(None).id)
 
 
 def statuses(rig) -> list[str]:

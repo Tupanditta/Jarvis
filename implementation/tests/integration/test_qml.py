@@ -695,3 +695,57 @@ def test_la_tarjeta_de_dialogo_muestra_la_pregunta_y_se_retira_al_cerrarla(make_
     ui.on_event(events.DialogueClosed("answered"))
     qtbot.waitUntil(lambda: not any(card.property("visible") for card in cards), timeout=3000)
     assert ui.warnings == []
+
+
+# --- Perfiles protegidos -----------------------------------------------------------------------
+
+
+def find_item(ui, name: str) -> QQuickItem:
+    item = ui.screen.findChild(QObject, name)
+    assert item is not None, name
+    return item
+
+
+def test_la_caja_de_la_contrasena_no_muestra_lo_que_se_escribe_y_lo_envia(make_ui, qtbot):
+    ui, published = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    ui.on_event(events.AccessChallenged("secreto", "Confidencial"))
+    gate = find_item(ui, "accessGate")
+    field = find_item(ui, "accessInput")
+    qtbot.waitUntil(lambda: gate.isVisible() and field.hasActiveFocus(), timeout=3000)
+    assert not input_of(ui.screen).isEnabled()
+    type_text(ui.screen, "abcd")
+    assert field.property("displayText") == ""
+    QTest.keyClick(ui.screen, Qt.Key.Key_Return)
+    assert published[-1] == events.AccessAttempted("abcd")
+    assert field.property("text") == ""
+    ui.on_event(events.AccessDenied())
+    qtbot.waitUntil(
+        lambda: find_item(ui, "accessMessage").property("text") != "", timeout=2000
+    )
+    QTest.keyClick(ui.screen, Qt.Key.Key_Escape)
+    assert published[-1] == events.AccessCancelled()
+    ui.on_event(events.AccessClosed())
+    qtbot.waitUntil(lambda: not gate.isVisible(), timeout=3000)
+    assert input_of(ui.screen).isEnabled()
+    assert ui.warnings == []
+
+
+def test_la_tarjeta_de_intrusion_se_confirma_con_entendido(make_ui, qtbot):
+    from datetime import UTC, datetime
+
+    from jarvis_assistant.core.content import IntrusionItem
+
+    ui, published = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-17", "secreto"))
+    alert = IntrusionItem(3, datetime(2026, 11, 17, 10, 0, tzinfo=UTC), 3, "inicio")
+    ui.on_event(events.IntrusionAlertsShown("secreto", (alert,)))
+    card = find_item(ui, "intrusionCard")
+    qtbot.waitUntil(card.isVisible, timeout=3000)
+    button = find_item(ui, "intrusionAcknowledge")
+    centre = button.mapToScene(QPointF(button.width() / 2, button.height() / 2)).toPoint()
+    QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+    qtbot.waitUntil(lambda: not card.isVisible(), timeout=3000)
+    assert published[-1] == events.IntrusionAcknowledged((3,))
+    assert ui.warnings == []

@@ -29,6 +29,7 @@ from jarvis_assistant.ui.panel_models import (
 )
 from jarvis_assistant.ui.profiles import ProfileMemory, ProfilesModel
 from jarvis_assistant.ui.view_models import (
+    AccessModel,
     AssistantModel,
     DialogueModel,
     HudModel,
@@ -107,9 +108,10 @@ class UiApp(QObject):
         self.help = HelpModel(self, publish)
         self.workspace = WorkspaceModel(parent=self)
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
+        self.access = AccessModel(publish, self)
         self._models = (
-            self.options, self.assistant, self.tasks, self.dialogue, self.hud, self.workspace,
-            self.profiles, self.commands, self.opened, self.search, self.history,
+            self.options, self.assistant, self.access, self.tasks, self.dialogue, self.hud,
+            self.workspace, self.profiles, self.commands, self.opened, self.search, self.history,
             self.reminders, self.protocols, self.help,
         )  # fmt: skip
         self.controller = wc.WindowController()
@@ -136,6 +138,7 @@ class UiApp(QObject):
             ("help", self.help),
             ("workspace", self.workspace),
             ("profiles", self.profiles),
+            ("access", self.access),
             ("ui", self.options),
             ("windows", self),
         ):

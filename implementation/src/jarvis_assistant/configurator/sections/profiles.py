@@ -1,5 +1,11 @@
-"""Apartado Perfiles: nombre del perfil, nombre del usuario (el de «preséntate») y plantilla
-predeterminada. Siempre queda al menos uno.
+"""Apartado Perfiles: nombre del perfil, nombre del usuario (el de «preséntate»), plantilla
+predeterminada y contraseña. Siempre queda al menos uno.
+
+Un perfil protegido con contraseña está bloqueado: no se edita, duplica ni elimina hasta
+desbloquearlo con su contraseña (`unlock`), y sigue desbloqueado hasta cerrar la ventana. Los
+fallos cuentan igual que en la pantalla dormida: el tercero seguido registra un aviso de
+intrusión (`core/security.py`). Poner, cambiar o quitar la contraseña se aplica al guardar;
+hasta entonces solo se guarda su hash en memoria, nunca el texto.
 
 Sin `profiles.toml`, el apartado empieza con el perfil «Predeterminado» que el asistente crea
 con `user.name`; el archivo se escribe la primera vez que se guarda un cambio de perfiles.
@@ -15,6 +21,15 @@ from jarvis_assistant.config.ids import make_id
 from jarvis_assistant.config.profiles import dump_profiles
 from jarvis_assistant.configurator.sections.base import Section, comparable
 from jarvis_assistant.configurator.sections.layouts import LayoutsSection
+from jarvis_assistant.core.security import (
+    AccessOrigin,
+    AttemptOutcome,
+    ProfileVault,
+    hash_password,
+    password_problem,
+)
+
+PASSWORDS_DIFFER = "Las contraseñas no coinciden."
 
 
 class ProfilesSection(Section):
@@ -22,10 +37,15 @@ class ProfilesSection(Section):
 
     files = ("profiles.toml",)
 
-    def __init__(self, layouts: LayoutsSection) -> None:
+    def __init__(self, layouts: LayoutsSection, vault: ProfileVault | None = None) -> None:
         super().__init__()
         self._layouts = layouts
+        self._vault = vault
         self._profiles: list[Profile] = []
+        self._loaded: set[str] = set()  # ids al abrir: los que falten al guardar se retiran
+        self._stored: frozenset[str] = frozenset()  # protegidos según la base de datos
+        self._pending: dict[str, str | None] = {}  # id → hash nuevo, o None: quitarla
+        self._unlocked: set[str] = set()
         layouts.layoutRemoved.connect(self._layout_removed)
         layouts.itemsChanged.connect(self.itemsChanged)
 
@@ -33,6 +53,9 @@ class ProfilesSection(Section):
 
     def load(self, config: Config) -> None:
         self._profiles = list(config.all_profiles())
+        self._loaded = {profile.id for profile in self._profiles}
+        self._stored = self._vault.protected_ids() if self._vault is not None else frozenset()
+        self._pending = {}
         self._changed()
 
     def validate(self) -> list[str]:
@@ -53,13 +76,31 @@ class ProfilesSection(Section):
         ]
         dump_profiles(documents["profiles.toml"], clean)
 
+    def commit(self) -> None:
+        """Contraseñas nuevas, cambiadas o quitadas, y perfiles eliminados, en la base de
+        datos. Los archivos ya están escritos."""
+        if self._vault is None:
+            return
+        current = self._ids()
+        for profile_id in sorted(self._loaded - current):
+            self._vault.retire(profile_id)
+        for profile_id, password_hash in self._pending.items():
+            if profile_id not in current:
+                continue
+            if password_hash is None:
+                self._vault.clear_password(profile_id)
+            else:
+                self._vault.set_password_hash(profile_id, password_hash)
+        self._pending = {}
+
     # --- Para QML ----------------------------------------------------------------------------
 
     @Property("QVariantList", notify=itemsChanged)
     def items(self) -> list[dict[str, Any]]:
         return [
             {"id": p.id, "name": p.name, "userName": p.user_name, "layout": p.layout,
-             "layoutName": self._layouts.name_of(p.layout)}
+             "layoutName": self._layouts.name_of(p.layout),
+             "protected": self._protected(p.id), "unlocked": self._editable(p.id)}
             for p in self._profiles
         ]  # fmt: skip
 
@@ -71,19 +112,65 @@ class ProfilesSection(Section):
     def add(self) -> int:
         """Perfil nuevo con la plantilla de fábrica. Devuelve su fila."""
         name = self._free_name("Perfil nuevo")
-        self._profiles.append(Profile(make_id(name, self._ids()), name))
+        self._profiles.append(Profile(make_id(name, self._taken_ids()), name))
         self._changed()
         self.touch()
         return len(self._profiles) - 1
 
+    @Property(bool, constant=True)
+    def canProtect(self) -> bool:
+        """Se pueden poner contraseñas (hay base de datos)."""
+        return self._vault is not None
+
+    @Slot(int, str, result=str)
+    def unlock(self, row: int, password: str) -> str:
+        """Desbloquea un perfil protegido. Devuelve `concedido`, `denegado` o `bloqueado`
+        (tercer fallo: aviso de intrusión registrado; la caja se cierra)."""
+        if not 0 <= row < len(self._profiles) or self._vault is None:
+            return AttemptOutcome.DENIED.value
+        profile_id = self._profiles[row].id
+        if self._editable(profile_id):
+            return AttemptOutcome.GRANTED.value
+        outcome = self._vault.attempt(profile_id, password, AccessOrigin.SETTINGS)
+        if outcome is AttemptOutcome.GRANTED:
+            self._unlocked.add(profile_id)
+            self.itemsChanged.emit()
+        return outcome.value
+
+    @Slot(int, str, str, result=str)
+    def setPassword(self, row: int, password: str, repeated: str) -> str:
+        """Pone o cambia la contraseña. Devuelve el problema, o vacío si vale."""
+        if not self._can_edit(row) or self._vault is None:
+            return "Desbloquee el perfil para cambiar su contraseña."
+        problem = password_problem(password)
+        if problem:
+            return problem
+        if password != repeated:
+            return PASSWORDS_DIFFER
+        profile_id = self._profiles[row].id
+        self._pending[profile_id] = hash_password(password)
+        self._unlocked.add(profile_id)
+        self._changed()
+        self.touch()
+        return ""
+
+    @Slot(int)
+    def clearPassword(self, row: int) -> None:
+        if not self._can_edit(row) or not self._protected(self._profiles[row].id):
+            return
+        self._pending[self._profiles[row].id] = None
+        self._changed()
+        self.touch()
+
     @Slot(int, result=int)
     def duplicate(self, row: int) -> int:
-        if not 0 <= row < len(self._profiles):
+        """Copia el perfil sin su contraseña. Uno protegido, solo desbloqueado."""
+        if not self._can_edit(row):
             return -1
         source = self._profiles[row]
         name = self._free_name(f"{source.name} (copia)")
         self._profiles.append(
-            dataclasses.replace(source, id=make_id(name, self._ids()), name=name)
+            dataclasses.replace(source, id=make_id(name, self._taken_ids()), name=name)
         )
         self._changed()
         self.touch()
@@ -91,8 +178,9 @@ class ProfilesSection(Section):
 
     @Slot(int)
     def remove(self, row: int) -> None:
-        """Elimina el perfil; el último no se puede eliminar."""
-        if 0 <= row < len(self._profiles) and len(self._profiles) > 1:
+        """Elimina el perfil; el último no se puede eliminar, ni uno protegido sin
+        desbloquear."""
+        if self._can_edit(row) and len(self._profiles) > 1:
             del self._profiles[row]
             self._changed()
             self.touch()
@@ -113,8 +201,19 @@ class ProfilesSection(Section):
 
     # --- Interno -----------------------------------------------------------------------------
 
+    def _protected(self, profile_id: str) -> bool:
+        if profile_id in self._pending:
+            return self._pending[profile_id] is not None
+        return profile_id in self._stored
+
+    def _editable(self, profile_id: str) -> bool:
+        return profile_id not in self._stored or profile_id in self._unlocked
+
+    def _can_edit(self, row: int) -> bool:
+        return 0 <= row < len(self._profiles) and self._editable(self._profiles[row].id)
+
     def _update(self, row: int, **changes: str) -> None:
-        if not 0 <= row < len(self._profiles):
+        if not self._can_edit(row):
             return
         updated = dataclasses.replace(self._profiles[row], **changes)
         if updated != self._profiles[row]:
@@ -141,6 +240,12 @@ class ProfilesSection(Section):
 
     def _ids(self) -> set[str]:
         return {profile.id for profile in self._profiles}
+
+    def _taken_ids(self) -> set[str]:
+        """Ids que un perfil nuevo no puede usar: también los de perfiles eliminados en este
+        borrador y los protegidos que ya no están en `profiles.toml`. Así no hereda la
+        contraseña ni los recordatorios de otro."""
+        return self._ids() | self._loaded | set(self._stored)
 
     def _free_name(self, base: str) -> str:
         taken = {comparable(profile.name) for profile in self._profiles}

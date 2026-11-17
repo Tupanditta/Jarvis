@@ -83,3 +83,13 @@ class ProtocolRow:
     aliases: tuple[str, ...]
     important: bool
     steps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IntrusionItem:
+    """Un aviso de intrusión, para la tarjeta crítica."""
+
+    alert_id: int
+    at: datetime  # UTC
+    attempts: int
+    origin: str  # 'inicio' o 'configuracion'

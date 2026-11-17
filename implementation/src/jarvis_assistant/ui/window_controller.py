@@ -113,6 +113,8 @@ class WindowController:
                 return self.show_screen()
             self._screen_active = False
             return [MinimizeScreen(), *self._sync_hud()]
+        if isinstance(event, events.AccessChallenged):
+            return self.show_screen()  # la caja de la contraseña está en la pantalla
         if isinstance(event, events.ShowHudRequested):
             self._hud_dismissed = False
             return self._sync_hud()

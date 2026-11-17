@@ -31,6 +31,7 @@ from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.orchestrator import Orchestrator, Reload
 from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Scheduler
+from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
@@ -346,6 +347,9 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
     # está abierta no se puede iniciar sesión. Al guardar, el núcleo vuelve a cargar la
     # configuración (`ConfigSaved`).
     settings_window: list[ConfigWindow] = []
+    # La ventana tiene su propia conexión a la base de datos (las contraseñas de los perfiles):
+    # la del núcleo solo se usa en su hilo.
+    settings_db: list[Database] = []
 
     def set_configuring(configuring: bool) -> None:
         ui.set_configuring(configuring)
@@ -357,14 +361,19 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
             # Se destruye en la siguiente vuelta del bucle, cuando QML ya no la está usando;
             # con ella, su motor QML y sus dos ventanas.
             QTimer.singleShot(0, lambda: window.deleteLater())
+        while settings_db:
+            settings_db.pop().close()
         set_configuring(False)
 
     def open_settings() -> None:
         if not settings_window:
+            database = Database(paths.db_path)
+            settings_db.append(database)
             window = ConfigWindow(
                 paths.config_dir,
                 on_saved=lambda: bus.publish_threadsafe(events.ConfigSaved()),
                 owner=ui.screen,
+                vault=ProfileVault(database),
             )
             window.closed.connect(close_settings)
             settings_window.append(window)

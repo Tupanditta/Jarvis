@@ -14,6 +14,11 @@ van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en
 `run_task` es la única función que ejecuta acciones (AD-13). Un protocolo ejecuta sus tareas
 con `ctx.invoke`, que también pasa por `run_task`, como subtareas de la suya.
 
+Perfiles protegidos: «Hey Jarvis» (o «Abrir sesión») en un perfil con contraseña no llega a
+la FSM. Abre la caja de la contraseña (`AccessChallenged`); la contraseña llega en
+`AccessAttempted`, sin pasar por el enrutador, y solo un acierto entra en la FSM como
+`AccessGranted`. Los fallos y los avisos de intrusión los lleva `core/security.py`.
+
 Diálogo: un módulo pregunta con `ctx.ask`; la pregunta abierta y su tiempo de espera viven
 en `dialogue.py`. El registro de tareas (actividades, `TaskUpdated`, subtareas y segundo plano)
 vive en `tasks.py`; `run_task` lo usa.
@@ -45,12 +50,14 @@ from jarvis_assistant.core.action_api import (
 )
 from jarvis_assistant.core.announcer import Announcement, Announcer
 from jarvis_assistant.core.clock import Clock, TimerHandle
+from jarvis_assistant.core.content import IntrusionItem
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.dialogue import DialogueElapsed, Dialogues, settle
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.notices import Notice, NoticeQueue
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRow
+from jarvis_assistant.core.security import AccessOrigin, AttemptOutcome, ProfileVault
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.tasks import TaskRecord, TaskRegistry
@@ -71,6 +78,7 @@ from jarvis_assistant.intent_router.router import (
     Order,
     ParamError,
 )
+from jarvis_assistant.speaker import formats
 from jarvis_assistant.speaker.phrases import enumeration, render
 from jarvis_assistant.speaker.speaker import Speaker
 
@@ -180,6 +188,9 @@ class Orchestrator:
         self._scheduler = scheduler
         self._active_panel: str | None = None  # el último `PanelActivated`
         self._profile_id: str | None = None  # el elegido en la pantalla dormida
+        self._vault = ProfileVault(database, clock.now)
+        self._gate: str | None = None  # perfil protegido cuya contraseña se está pidiendo
+        self._gate_speech: asyncio.Task | None = None  # lo que se dice con la caja abierta
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -224,6 +235,9 @@ class Orchestrator:
         bus.subscribe(events.ProfileSelected, lambda e: setattr(self, "_profile_id", e.profile_id))
         bus.subscribe(events.ConfigSaved, lambda _e: self.submit(_ConfigSaved()))
         bus.subscribe(events.TextSubmitted, self.submit)
+        bus.subscribe(events.AccessAttempted, self.submit)
+        bus.subscribe(events.AccessCancelled, self.submit)
+        bus.subscribe(events.IntrusionAcknowledged, self.submit)
         bus.subscribe(events.UserTyping, self.submit)
         bus.subscribe(events.WindowPressed, lambda _e: self.submit(fsm.WindowPressed()))
         bus.subscribe(
@@ -269,6 +283,7 @@ class Orchestrator:
         """Consume entradas y ejecuta efectos hasta que la FSM pide terminar el proceso."""
         self._loop = asyncio.get_running_loop()
         self._bus.publish(events.ConfigApplied(self._config))
+        self._publish_protection()
         self._refresh()
         while not self._stopping:
             entry = await self._queue.get()
@@ -316,6 +331,12 @@ class Orchestrator:
     async def _dispatch(self, entry: object) -> None:
         if isinstance(entry, events.TextSubmitted):
             await self._on_text(entry.text)
+        elif isinstance(entry, events.AccessAttempted):
+            await self._on_access_attempt(entry.password)
+        elif isinstance(entry, events.AccessCancelled):
+            self._close_gate(granted=False)
+        elif isinstance(entry, events.IntrusionAcknowledged):
+            self._vault.acknowledge(entry.alert_ids)
         elif isinstance(entry, events.UserTyping):
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
@@ -406,6 +427,11 @@ class Orchestrator:
         await self._handle(fsm.SilenceTimeout())
 
     async def _handle(self, entry: fsm.Input) -> None:
+        if self._machine.state is AssistantState.DORMIDO:
+            if isinstance(entry, fsm.WakeWord | fsm.OpenSessionRequested) and self._challenge():
+                return
+            if isinstance(entry, fsm.ShutdownRequested):
+                self._close_gate(granted=False)
         before = self._machine.state
         effects = self._machine.handle(entry)
         after = self._machine.state
@@ -497,6 +523,99 @@ class Orchestrator:
             return events.RestEntered()
         return events.SessionClosed()
 
+    # --- Perfiles protegidos -----------------------------------------------------------------
+
+    def _publish_protection(self) -> None:
+        self._bus.publish(events.ProtectedProfilesChanged(self._vault.protected_ids()))
+
+    def _challenge(self) -> bool:
+        """«Hey Jarvis» en dormido. Si el perfil elegido tiene contraseña, abre la caja (o la
+        vuelve a mostrar) y devuelve True: la sesión no se abre todavía."""
+        profile = self._profile()
+        if not self._vault.is_protected(profile.id):
+            return False
+        first = self._gate != profile.id
+        self._gate = profile.id
+        self._bus.publish(events.AccessChallenged(profile.id, profile.name))
+        if first:
+            self._speak_at_gate(Phrase("seguridad.desafio"))
+        return True
+
+    async def _on_access_attempt(self, password: str) -> None:
+        profile_id = self._gate
+        if profile_id is None or self._machine.state is not AssistantState.DORMIDO:
+            return
+        outcome = self._vault.attempt(profile_id, password, AccessOrigin.LOGIN)
+        if outcome is AttemptOutcome.GRANTED:
+            logger.info("Acceso concedido al perfil %s", profile_id)
+            self._profile_id = profile_id
+            self._close_gate(granted=True)
+            await self._handle(fsm.AccessGranted())
+            return
+        # El tercer fallo responde igual que los demás: quien lo intenta no sabe que ha
+        # quedado registrado un aviso de intrusión.
+        logger.info("Acceso denegado al perfil %s", profile_id)
+        self._bus.publish(events.AccessDenied())
+        self._speak_at_gate(Phrase("seguridad.denegado"))
+        if outcome is AttemptOutcome.LOCKED_OUT:
+            self._gate = None
+            self._bus.publish(events.AccessClosed(granted=False))
+
+    def _close_gate(self, *, granted: bool) -> None:
+        if self._gate is None:
+            return
+        self._gate = None
+        self._speaker.stop()  # cancelar calla la frase; al acertar, la sesión trae la suya
+        self._bus.publish(events.AccessClosed(granted=granted))
+
+    def _speak_at_gate(self, phrase: Phrase) -> None:
+        """Dice `phrase` en dormido, sin despertar al asistente. La salida de audio se abre
+        para la frase y se cierra al terminar si no se ha abierto sesión entretanto."""
+        self._speaker.stop()
+        if self._gate_speech is None or self._gate_speech.done():
+            self._speaker.open_output()
+        self._gate_speech = speech = asyncio.ensure_future(self._say_at_gate(phrase))
+        speech.add_done_callback(lambda _done: self._queue.put_nowait(_Poke()))
+
+    async def _say_at_gate(self, phrase: Phrase) -> None:
+        try:
+            await self._speaker.say(phrase)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("No se ha podido decir %s", phrase.id)
+        finally:
+            if (
+                self._gate_speech is asyncio.current_task() and self._session is None
+                and self._machine.state is AssistantState.DORMIDO
+            ):  # fmt: skip
+                self._speaker.close_output()
+
+    def _gate_speaking(self) -> bool:
+        return (
+            self._machine.state is AssistantState.DORMIDO
+            and self._gate_speech is not None and not self._gate_speech.done()
+        )  # fmt: skip
+
+    def _queue_intrusion_alerts(self, profile_id: str) -> None:
+        """Los avisos de intrusión sin confirmar van los primeros, tras la frase de apertura:
+        se dicen y aparece la tarjeta crítica, que sigue hasta que el usuario la confirma."""
+        alerts = self._vault.pending_alerts(profile_id)
+        if not alerts:
+            return
+        last = alerts[-1]
+        when = formats.moment(last.at, self._clock.now())
+        if len(alerts) == 1:
+            phrase = Phrase("seguridad.intrusion", {"cuando": when, "intentos": last.attempts})
+        else:
+            phrase = Phrase("seguridad.intrusiones", {"n": len(alerts), "cuando": when})
+        items = tuple(
+            IntrusionItem(alert.id, alert.at, alert.attempts, alert.origin.value)
+            for alert in alerts
+        )
+        shown = events.IntrusionAlertsShown(profile_id, items)
+        self._notices.add_first(Notice(phrase, on_start=lambda: self._bus.publish(shown)))
+
     # --- Sesión ------------------------------------------------------------------------------
 
     async def _open_session(self) -> None:
@@ -505,6 +624,7 @@ class Orchestrator:
         self._workdir.reset()  # RN-14
         self._speaker.open_output()
         await self._session_hook("on_session_opened")
+        self._queue_intrusion_alerts(self._profile().id)
 
     def _reload(self, *, notify: bool = True) -> None:
         """Relee la configuración (RF-96). Un archivo inválido conserva su versión anterior;
@@ -519,6 +639,7 @@ class Orchestrator:
             return
         errors = [*errors, *self._apply_config(config)]
         self._bus.publish(events.ConfigApplied(self._config))
+        self._publish_protection()
         reported: set[str] = set()
         for error in errors:
             if error.warning:
@@ -758,11 +879,17 @@ class Orchestrator:
     def _deliver(self, notice: Notice) -> None:
         """Entrega un aviso: activa su panel al empezar a decirlo."""
         panel = notice.panel
+
+        def started() -> None:
+            if panel is not None:
+                self._bus.publish(events.PanelActivated(panel))
+            if notice.on_start is not None:
+                notice.on_start()
+
         self._announcer.submit(
             Announcement(
                 (notice.phrase,),
-                on_start=None if panel is None
-                else lambda: self._bus.publish(events.PanelActivated(panel)),
+                on_start=None if panel is None and notice.on_start is None else started,
                 on_delivered=notice.on_delivered,
             )
         )  # fmt: skip
@@ -935,6 +1062,7 @@ class Orchestrator:
             active_panel=self._active_panel,
             subtask=self._subtask_of(task),
             invoke=invoke,
+            profile=self._profile().id,
         )
 
     def _subtask_of(self, task: TaskRecord | None) -> Callable[[str, str], Subtask]:
@@ -970,7 +1098,8 @@ class Orchestrator:
     def _refresh(self) -> None:
         """Publica la actividad si ha cambiado y mantiene el temporizador del nivel."""
         state = self._machine.state
-        if self._speaker.speaking:
+        # Lo que se dice con la caja de la contraseña abierta no despierta al asistente.
+        if self._speaker.speaking and not self._gate_speaking():
             activity = Activity.HABLANDO
         elif state in _AWAITING:
             activity = Activity.ESPERANDO  # la tarea que pregunta sigue en ejecución

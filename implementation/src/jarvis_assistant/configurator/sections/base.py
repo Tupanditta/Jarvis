@@ -53,6 +53,10 @@ class Section(QObject):
         """Escribe su parte en los documentos `tomlkit` de `files`."""
         raise NotImplementedError
 
+    def commit(self) -> None:
+        """Tras escribir los archivos: guarda lo que el apartado no tiene en ellos (la
+        contraseña de los perfiles, en la base de datos). Por defecto, nada."""
+
     def touch(self) -> None:
         if not self._dirty:
             self._dirty = True
