@@ -293,7 +293,7 @@ Toda la pantalla tiene vida mientras el asistente está despierto. El fondo se d
 
 Al despertar, el fondo sale del núcleo; al dormirse, vuelve a él antes de que colapsen los anillos. En reposo solo queda una parte del polvo y uno de cada cuatro mini orbes, quietos y muy tenues, sin enlaces. En dormido no hay fondo.
 
-En modo dormido la pantalla sigue visible: fondo `bg.base`, el orbe apagado (un punto en `primary.deep`), sin paneles ni subtítulos, y la caja de texto con la ayuda «Escriba el código de activación para iniciar la sesión»; lo que se escribe en ella se oculta con asteriscos, como una contraseña.
+En modo dormido la pantalla sigue visible: fondo `bg.base`, el orbe apagado (un punto en `primary.deep`), sin paneles ni subtítulos, y la caja de texto con la ayuda «Escriba el código de activación para iniciar la sesión»; lo que se escribe en ella se ve tal cual. En el centro, bajo el orbe, el selector de perfiles (con dos o más); encima de la caja, el botón «Configuración».
 
 ## 6. HUD flotante
 

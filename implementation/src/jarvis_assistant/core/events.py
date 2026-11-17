@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
+from jarvis_assistant.config import Config
 from jarvis_assistant.core.action_api import HelpGroup
 from jarvis_assistant.core.content import (
     Entry,
@@ -51,10 +52,12 @@ _AUDIO_SOURCES = ("assistant", "none")
 
 @dataclass(frozen=True)
 class SessionOpened(Event):
-    """Se ha abierto una sesión: la interfaz muestra la pantalla con la animación de despertar."""
+    """Se ha abierto una sesión: la interfaz muestra la pantalla con la animación de despertar.
+    `profile_id`: el perfil con el que se ha abierto; la pantalla toma su plantilla."""
 
     session_id: int
     name: str
+    profile_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -334,6 +337,15 @@ class HelpShown(Event):
 
 
 @dataclass(frozen=True)
+class ConfigApplied(Event):
+    """El núcleo aplica una configuración: al arrancar, al abrir sesión y al guardar desde la
+    ventana de configuración con la sesión cerrada. La interfaz toma de aquí los perfiles,
+    las plantillas y el sonido."""
+
+    config: Config
+
+
+@dataclass(frozen=True)
 class ConfigReloadFailed(Event):
     """Un archivo de configuración es inválido al recargar: se conserva el anterior (RF-96)."""
 
@@ -383,6 +395,19 @@ class WindowPressed(Event):
 @dataclass(frozen=True)
 class SilenceRequested(Event):
     """Botón de silencio: calla la locución en curso."""
+
+
+@dataclass(frozen=True)
+class ProfileSelected(Event):
+    """El usuario elige perfil en la pantalla dormida; la próxima sesión se abre con él."""
+
+    profile_id: str
+
+
+@dataclass(frozen=True)
+class ConfigSaved(Event):
+    """La ventana de configuración ha guardado cambios. Con la sesión cerrada, el núcleo
+    vuelve a cargar la configuración; con ella abierta, se aplican al abrir la siguiente."""
 
 
 @dataclass(frozen=True)

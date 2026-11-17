@@ -12,6 +12,8 @@ from jarvis_assistant.core import events
 from jarvis_assistant.core.event_bus import EventBus
 
 UI_EVENTS: tuple[type[events.Event], ...] = (
+    events.ConfigApplied,
+    events.ProfileSelected,
     events.SessionOpened,
     events.SessionChanged,
     events.ListeningResumed,

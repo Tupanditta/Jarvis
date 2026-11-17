@@ -196,6 +196,8 @@ Item {
         volume: 0.6
 
         function ring() {
+            if (!ui.sound)
+                return  // sonido del asistente desactivado en la configuración
             var now = Date.now()
             if (now - lastPlayed < 120)
                 return
@@ -268,6 +270,9 @@ Item {
 
                 anchors.fill: parent
                 active: win.open
+                // Se crea por partes entre fotogramas: al abrir sesión con varias ventanas no
+                // se bloquea la animación de despertar (las ventanas esperan ocultas al orbe).
+                asynchronous: true
                 source: Qt.resolvedUrl("panels/" + win.component)
                 onLoaded: {
                     item.embedded = true

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from jarvis_assistant.config import Config, ConfigError, validate_protocols
+from jarvis_assistant.config import Config, ConfigError, Profile, validate_protocols
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import (
@@ -132,6 +132,11 @@ class _Poke:
 
 
 @dataclass(frozen=True)
+class _ConfigSaved:
+    """La ventana de configuración ha guardado: con la sesión cerrada, se vuelve a cargar."""
+
+
+@dataclass(frozen=True)
 class _UserAction:
     """Acción del usuario en la interfaz que ejecuta una acción de un módulo."""
 
@@ -174,6 +179,7 @@ class Orchestrator:
         self._on_exit = on_exit
         self._scheduler = scheduler
         self._active_panel: str | None = None  # el último `PanelActivated`
+        self._profile_id: str | None = None  # el elegido en la pantalla dormida
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -215,6 +221,8 @@ class Orchestrator:
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
         )
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
+        bus.subscribe(events.ProfileSelected, lambda e: setattr(self, "_profile_id", e.profile_id))
+        bus.subscribe(events.ConfigSaved, lambda _e: self.submit(_ConfigSaved()))
         bus.subscribe(events.TextSubmitted, self.submit)
         bus.subscribe(events.UserTyping, self.submit)
         bus.subscribe(events.WindowPressed, lambda _e: self.submit(fsm.WindowPressed()))
@@ -260,6 +268,7 @@ class Orchestrator:
     async def run(self) -> None:
         """Consume entradas y ejecuta efectos hasta que la FSM pide terminar el proceso."""
         self._loop = asyncio.get_running_loop()
+        self._bus.publish(events.ConfigApplied(self._config))
         self._refresh()
         while not self._stopping:
             entry = await self._queue.get()
@@ -299,6 +308,7 @@ class Orchestrator:
         self._router.configure(
             config.settings.router, config.aliases, binaries=config.binaries, places=self._places
         )
+        self._speaker.set_sound(config.settings.sound.enabled)
         return errors
 
     # --- Entradas ----------------------------------------------------------------------------
@@ -319,6 +329,10 @@ class Orchestrator:
             await self._on_user_action(entry)
         elif isinstance(entry, _Poke):
             pass  # `_pump` hace el resto
+        elif isinstance(entry, _ConfigSaved):
+            # Con la sesión abierta, los cambios se aplican al abrir la siguiente (RF-96).
+            if self._session is None:
+                self._reload(notify=False)
         elif isinstance(entry, fsm.Input):
             await self._handle(entry)
         else:
@@ -476,7 +490,7 @@ class Orchestrator:
         if transition is Transition.SESSION_OPENED:
             session = self._session
             assert session is not None
-            return events.SessionOpened(session.id, session.name)
+            return events.SessionOpened(session.id, session.name, self._profile().id)
         if transition is Transition.LISTENING_RESUMED:
             return events.ListeningResumed()
         if transition is Transition.REST_ENTERED:
@@ -492,9 +506,10 @@ class Orchestrator:
         self._speaker.open_output()
         await self._session_hook("on_session_opened")
 
-    def _reload(self) -> None:
+    def _reload(self, *, notify: bool = True) -> None:
         """Relee la configuración (RF-96). Un archivo inválido conserva su versión anterior;
-        el aviso se da tras la frase de apertura."""
+        el aviso se da tras la frase de apertura. Sin `notify` solo se registra: al abrir la
+        sesión se vuelve a cargar y entonces se avisa."""
         if self._reload_config is None:
             return
         try:
@@ -503,12 +518,15 @@ class Orchestrator:
             logger.exception("No se ha podido recargar la configuración")
             return
         errors = [*errors, *self._apply_config(config)]
+        self._bus.publish(events.ConfigApplied(self._config))
         reported: set[str] = set()
         for error in errors:
             if error.warning:
                 logger.warning("Configuración: %s, %s: %s", error.file, error.key, error.reason)
                 continue
             logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            if not notify:
+                continue
             self._bus.publish(events.ConfigReloadFailed(error.file, error.reason))
             if error.file not in reported:
                 reported.add(error.file)
@@ -695,10 +713,14 @@ class Orchestrator:
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
+    def _profile(self) -> Profile:
+        """El perfil elegido en la pantalla dormida o, si no existe, el primero."""
+        return self._config.profile(self._profile_id)
+
     def _presentation(self) -> Phrase:
         """«Preséntate»: una sola frase con quién es, cómo funciona, sus módulos (los del
         registro, para que la lista no se desfase) y cómo saber más."""
-        name = self._config.settings.user.name.strip()
+        name = self._profile().user_name
         modules = enumeration(
             [group.title.lower() for group in self._router.help() if group.module != CORE_MODULE]
         )

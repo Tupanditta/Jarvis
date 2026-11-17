@@ -154,7 +154,9 @@ async def test_cu03_flujo_principal(rig):
     assert rig.player.is_open
     assert rig.spoken() == [APERTURA]
     assert rig.of(events.CommandReceived) == []  # la frase de activación no se muestra
-    assert rig.of(events.SessionOpened) == [events.SessionOpened(session.id, session.name)]
+    assert rig.of(events.SessionOpened) == [
+        events.SessionOpened(session.id, session.name, "predeterminado")
+    ]
     assert rig.of(events.SessionChanged) == [events.SessionChanged(session.id, session.name, False)]
     assert rig.activities()[-1] is Activity.HABLANDO
     # La transición se publica en el mismo instante en que empieza el audio (RNF-22).

@@ -21,7 +21,9 @@ from jarvis_assistant.config import (
     ConfigError,
     InputSettings,
     PageEntry,
+    Profile,
     Settings,
+    SoundSettings,
     UserSettings,
 )
 from jarvis_assistant.core import events
@@ -454,6 +456,86 @@ async def test_presentate_con_el_nombre_de_la_configuracion(tmp_path, monkeypatc
     await rig.order("presentate")
     await rig.advance(5.0)
     assert rig.spoken() == [said("presentacion", nombre="Jane Doe", modulos=modules(rig))]
+    await rig.stop()
+
+
+PROFILES = (Profile("trabajo", "Trabajo", "Jane Doe"), Profile("casa", "Casa", "John Doe"))
+
+
+async def test_presentate_con_el_nombre_del_perfil_elegido(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, profiles=PROFILES))
+    opened: list[events.SessionOpened] = []
+    rig.app.bus.subscribe(events.SessionOpened, opened.append)
+    await rig.start()
+    rig.app.bus.publish(events.ProfileSelected("casa"))
+    await rig.open_session()
+    await rig.order("presentate")
+    await rig.advance(5.0)
+    assert rig.spoken() == [said("presentacion", nombre="John Doe", modulos=modules(rig))]
+    assert [event.profile_id for event in opened] == ["casa"]
+    await rig.stop()
+
+
+async def test_un_perfil_elegido_que_ya_no_existe_abre_con_el_primero(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, profiles=PROFILES))
+    opened: list[events.SessionOpened] = []
+    rig.app.bus.subscribe(events.SessionOpened, opened.append)
+    await rig.start()
+    rig.app.bus.publish(events.ProfileSelected("borrado"))
+    await rig.open_session()
+    assert [event.profile_id for event in opened] == ["trabajo"]
+    await rig.stop()
+
+
+async def test_sin_sonido_las_frases_se_publican_pero_no_suenan(tmp_path, monkeypatch):
+    settings = Settings(sound=SoundSettings(enabled=False))
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, settings=settings))
+    await rig.start()
+    await rig.open_session()
+    await rig.order("dónde estoy")
+    assert rig.spoken() == [said("comandos.pwd", ruta=str(rig.home))]
+    assert len(rig.of(events.SpeechFinished)) == 1
+    assert rig.player.played == []
+    assert rig.state is AssistantState.LISTENING_COMMAND
+    await rig.stop()
+
+
+async def test_al_arrancar_se_publica_la_configuracion_aplicada(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch)
+    applied: list[events.ConfigApplied] = []
+    rig.app.bus.subscribe(events.ConfigApplied, applied.append)
+    await rig.start()
+    assert [event.config.catalog for event in applied] == [CONFIG.catalog]
+    await rig.stop()
+
+
+async def test_guardar_con_la_sesion_cerrada_recarga_sin_avisos(tmp_path, monkeypatch):
+    saved = dataclasses.replace(CONFIG, profiles=PROFILES)
+    rig = Rig(tmp_path, monkeypatch, reload=lambda _previous: (saved, []))
+    applied: list[events.ConfigApplied] = []
+    rig.app.bus.subscribe(events.ConfigApplied, applied.append)
+    await rig.start()
+    rig.app.bus.publish(events.ConfigSaved())
+    await settle()
+    assert applied[-1].config.profiles == PROFILES
+    assert rig.of(events.ConfigReloadFailed) == []
+    await rig.stop()
+
+
+async def test_guardar_con_la_sesion_abierta_espera_a_la_siguiente(tmp_path, monkeypatch):
+    calls: list[Config] = []
+
+    def reload(previous):
+        calls.append(previous)
+        return previous, []
+
+    rig = Rig(tmp_path, monkeypatch, reload=reload)
+    await rig.start()
+    await rig.open_session()
+    opened = len(calls)
+    rig.app.bus.publish(events.ConfigSaved())
+    await settle()
+    assert len(calls) == opened
     await rig.stop()
 
 

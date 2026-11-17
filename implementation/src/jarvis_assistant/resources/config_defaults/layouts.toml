@@ -1,0 +1,23 @@
+# Plantillas de la pantalla de sesión: qué ventanas se muestran al abrir sesión, dónde y con
+# qué tamaño, y dónde van el selector de ventanas (dock) y la caja de texto (input).
+# Posiciones y tamaños en fracciones de la pantalla (0-1); las barras, por su centro.
+# Lo cómodo es crearlas desde la ventana de configuración (menú de la bandeja), colocando las
+# ventanas con el ratón. La plantilla «fabrica» siempre existe y no se escribe aquí.
+#
+# [[layouts]]
+# id = "programar"
+# name = "Programar"
+# [layouts.dock]
+# x = 0.5
+# y = 0.032
+# [layouts.input]
+# x = 0.5
+# y = 0.935
+# width = 0.235
+# [layouts.windows.comandos]
+# open = true
+# x = 0.6
+# y = 0.05
+# width = 0.38
+# height = 0.6
+# order = 1

@@ -10,6 +10,7 @@ from jarvis_assistant import config as cfg
 SPEC_DEFAULTS = {
     "input": {"inactivity_to_idle_seconds": 120},
     "tts": {"voice": "es_ES-davefx-medium", "volume": 1.0, "cache_size": 64},
+    "sound": {"enabled": True},
     "router": {
         "intent_threshold": 80, "wake_threshold": 80, "control_threshold": 80,
         "idle_closing_threshold": 85, "catalog_threshold": 75, "path_threshold": 80,

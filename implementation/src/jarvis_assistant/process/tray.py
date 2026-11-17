@@ -80,6 +80,7 @@ class TrayController(QObject):
         self._open_folder = open_folder or _open_in_file_manager
         self._activity = Activity.DORMIDO
         self._session_name: str | None = None
+        self._configuring = False
         self._icons = {key: make_icon(color) for key, color in ICON_VARIANTS.items()}
 
         self.icon = QSystemTrayIcon()
@@ -90,7 +91,9 @@ class TrayController(QObject):
         )
         self.hud_action = self._add("Mostrar HUD", lambda: publish(events.ShowHudRequested()))
         self.menu.addSeparator()
-        self.config_action = self._add("Abrir configuración", lambda: self._open_folder(config_dir))
+        self.config_action = self._add(
+            "Abrir carpeta de configuración", lambda: self._open_folder(config_dir)
+        )
         self.log_action = self._add("Abrir registro", lambda: self._open_folder(log_dir))
         self.menu.addSeparator()
         self.quit_action = self._add("Salir", request_quit)
@@ -107,6 +110,10 @@ class TrayController(QObject):
 
     def hide(self) -> None:
         self.icon.hide()
+
+    def set_configuring(self, configuring: bool) -> None:
+        self._configuring = configuring
+        self._update()
 
     def notify(self, title: str, message: str) -> None:
         self.icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning)
@@ -125,7 +132,8 @@ class TrayController(QObject):
 
     def _update(self) -> None:
         asleep = self._session_name is None
-        self.open_action.setVisible(asleep)
+        # Con la ventana de configuración abierta no se puede iniciar sesión.
+        self.open_action.setVisible(asleep and not self._configuring)
         self.hud_action.setVisible(not asleep)  # el HUD solo existe con la sesión abierta
         self.variant = ICON_VARIANT_OF[self._activity]
         self.icon.setIcon(self._icons[self.variant])

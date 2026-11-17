@@ -24,7 +24,9 @@ Recibir las órdenes del usuario. El usuario no habla al asistente: escribe en u
 | `IDLE` | En reposo. Escriba «Hey Jarvis» |
 | `LISTENING_COMMAND` y `AWAITING_*` | Escriba una orden |
 
-- En `DORMIDO` lo escrito es el código de activación y la caja lo oculta como una contraseña: cada carácter se muestra como `*`. Solo cambia lo que se ve; el texto se publica igual y el enrutador lo reconoce con la misma tolerancia a erratas. En el resto de estados el texto se ve tal cual.
+- Lo escrito se ve siempre tal cual, también el código de activación en `DORMIDO`.
+- En `DORMIDO`, con la ventana de configuración abierta, la caja está desactivada: no se puede iniciar sesión hasta cerrarla.
+- En `DORMIDO`, con la caja vacía, ← y → cambian el perfil elegido en el selector de perfiles ([hud.md](hud.md), sección 2.1). Con texto, mueven el cursor como siempre.
 
 - No hay botones de órdenes. Los únicos controles de ratón de la interfaz son los de [hud.md](hud.md), sección 3.
 

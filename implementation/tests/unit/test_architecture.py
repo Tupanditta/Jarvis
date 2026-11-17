@@ -51,6 +51,14 @@ def under(*folders: str) -> list[Path]:
 # --- Importaciones prohibidas ----------------------------------------------------------------
 
 
+@pytest.mark.parametrize("path", [p for p in FILES if relative(p).split("/")[0] != "configurator"],
+                         ids=relative)
+def test_nadie_importa_la_ventana_de_configuracion_salvo_main(path):
+    if relative(path) in COMPOSITION_ROOT:
+        return
+    assert imports_any(path, "jarvis_assistant.configurator") == []
+
+
 @pytest.mark.parametrize(
     "path", under("core", "action_modules", "intent_router", "speaker"), ids=relative
 )
@@ -128,6 +136,10 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
         "speaker.formats", "speaker.phrases",
     ),
     "os_adapters": ("process.single_instance",),
+    # La ventana de configuración: edita y escribe la configuración y reutiliza los
+    # componentes y modelos de la interfaz para el editor de plantillas. Del núcleo, solo los
+    # tipos de eventos. Nadie depende de ella salvo `main.py`.
+    "configurator": ("config", "core.events", "ui.app", "ui.view_models", "ui.workspace"),
     "process": ("core.events",),
     "ui": (
         "config", "core.action_api", "core.content", "core.event_bus", "core.events",

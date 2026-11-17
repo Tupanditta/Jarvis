@@ -11,7 +11,7 @@ Mostrar al usuario el estado del asistente y de sus tareas sin interrumpir su tr
 
 | Superficie | Qué es | Foco |
 |---|---|---|
-| **Pantalla de sesión** | Ventana a pantalla completa en el monitor principal: el orbe en el centro, la actividad de la sesión a la izquierda, el panel activo a la derecha (RF-82) y la caja de texto abajo ([entrada-texto.md](entrada-texto.md)). | Pasa al frente y pide el foco al arrancar, al abrir la sesión y con «Mostrar pantalla». El foco queda en la caja. No queda siempre encima. |
+| **Pantalla de sesión** | Ventana a pantalla completa en el monitor principal: el orbe en el centro, las ventanas flotantes de los módulos, el selector de ventanas y la caja de texto ([entrada-texto.md](entrada-texto.md)). Dónde va cada cosa lo dice la plantilla del perfil (sección 2.1). Dormida, encima de la caja, el selector de perfiles. | Pasa al frente y pide el foco al arrancar, al abrir la sesión y con «Mostrar pantalla». El foco queda en la caja. No queda siempre encima. |
 | **HUD flotante** | Ventana compacta en una esquina ⚙ del monitor principal: mini orbe, estado, subtítulos, el panel activo (RF-87) y una caja de texto. | Siempre encima, sin bordes, fondo translúcido, **nunca toma el foco por su cuenta** (RNF-13): solo lo toma cuando el usuario hace clic en su caja de texto. Sus botones responden al clic sin activar la ventana. |
 | **Icono de la bandeja** | Estado y menú ([proceso.md](proceso.md), RF-86). | — |
 
@@ -41,6 +41,15 @@ Lógica pura en `ui/window_controller.py`, probada sin Qt. Entradas: los eventos
 **HUD contraído.** El HUD tiene dos alturas: contraído (cabecera con el mini orbe, el estado y los subtítulos) y expandido (cabecera y panel activo). Se expande con cualquier evento de tarea, diálogo, aviso o panel; se contrae tras 8 s ⚙ sin eventos, siempre que no haya un diálogo abierto ni una tarea `pendiente`. No se arrastra: su esquina se elige en la configuración.
 
 **Cursor.** Sobre la pantalla de sesión, el cursor se oculta tras 2 s sin moverse y reaparece al moverlo.
+
+### 2.1 Plantillas y perfiles
+
+- **Plantilla** (`config.ScreenLayout`, `layouts.toml`): qué ventanas flotantes están abiertas al abrir sesión, su posición y tamaño, el centro del selector de ventanas y el centro y el ancho de la caja de texto. Todo en fracciones de la pantalla. Una ventana que la plantilla no nombra toma su disposición de fábrica (`WINDOWS`, `ui/workspace.py`). La plantilla de fábrica es la disposición de `WINDOWS` con el selector arriba y la caja abajo, centrados.
+- **Al abrir sesión**, `WorkspaceModel` toma la plantilla del perfil con el que se abrió (`SessionOpened.profile_id`). Solo cambia los datos de las filas (`dataChanged`), sin reiniciar el modelo: QML conserva las ventanas en lugar de recrearlas. Los paneles se cargan de forma asíncrona (`Loader.asynchronous`) para no frenar la animación de despertar. Durante la sesión las ventanas se mueven libremente; eso no cambia la plantilla. El botón «Restablecer disposición» del selector vuelve a la plantilla. La disposición no se recuerda entre sesiones: cada sesión empieza en la plantilla.
+- **Dormida**, la pantalla toma la plantilla del perfil elegido, así la caja de texto ya está donde estará en la sesión.
+- **Pantalla dormida:** en el centro, bajo el orbe, el selector de perfiles. Encima de la caja de texto (debajo si la caja está en la mitad de arriba), el botón «Configuración», que abre la ventana de configuración ([configurador.md](configurador.md)). Es el único sitio desde el que se configura. Con la ventana abierta, el botón dice «Configuración abierta» y la caja de texto está desactivada: no se puede iniciar sesión.
+- **Selector de perfiles** (`ProfilePicker.qml`, `ui/profiles.py`): solo en `DORMIDO` y solo con dos perfiles o más. Una fila de botones en el centro de la pantalla, bajo el orbe, con el elegido resaltado. Se cambia con el ratón o con ←/→ con la caja vacía. Cada cambio publica `ProfileSelected`; el núcleo abre la siguiente sesión con ese perfil. Viene elegido el perfil con el que se abrió la última sesión (`perfil.json` en la carpeta de datos); si ya no existe, el primero.
+- **Subtítulos**: siguen a la caja de texto, encima o debajo según su altura.
 
 ## 3. Paneles
 
@@ -77,7 +86,8 @@ QML (clic, texto enviado) ──► modelo de vista ──► bus.publish_thread
 ```
 
 - **`UiBridge`** (`ui/bridge.py`): se suscribe a los eventos del bus y emite una señal por tipo. Es el único punto de contacto con el backend. Para `AudioLevel`, solo conserva el último valor pendiente.
-- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel de la voz del asistente, subtítulos), `tasks`, `dialogue`, y uno por panel.
+- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel de la voz del asistente, subtítulos), `tasks`, `dialogue`, `workspace` (ventanas flotantes y barras), `profiles` (selector de perfiles), `ui` (opciones y sonido) y uno por panel.
+- **Configuración aplicada:** el núcleo publica `ConfigApplied` al arrancar, al abrir sesión y al guardar desde la ventana de configuración con la sesión cerrada. De ahí toma la interfaz los perfiles, las plantillas y si suena el aviso de las ventanas (`sound.enabled`).
 - **QML:** declarativo, sin lógica de negocio. Las animaciones usan los tipos de animación de Qt Quick; no hay código Python por frame.
 - **Tema:** todos los colores, tamaños, tipografías y duraciones salen del singleton `Theme.qml` ([Interfaz/README.md](../../Interfaz/README.md)).
 - **Ventanas:** se crean al arrancar el proceso; la pantalla de sesión se muestra y el HUD queda oculto. El HUD usa los indicadores `Tool`, `FramelessWindowHint` y `WindowStaysOnTopHint`, y no se activa al mostrarse ni al actualizarse; solo acepta el foco con un clic en su caja de texto.

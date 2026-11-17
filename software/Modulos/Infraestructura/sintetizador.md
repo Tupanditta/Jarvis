@@ -28,6 +28,7 @@ Decir las respuestas del asistente con una voz neuronal local de español de Esp
 - Un flujo de salida de `sounddevice` en el dispositivo de salida predeterminado, a la frecuencia de la voz. Se abre al abrir la sesión, antes de la frase de apertura, y se cierra cuando termina la frase de cierre; en modo dormido no hay ningún flujo de salida abierto.
 - **Cola de locuciones:** las frases se dicen de una en una, en orden. `await say(phrase)` termina cuando la frase acaba de sonar o se interrumpe.
 - **Nivel:** el callback de salida calcula el nivel del bloque que reproduce; el núcleo lo publica como `AudioLevel(source="assistant")` (RF-83).
+- **Sin sonido** (⚙ `sound.enabled = false`, [configurador.md](configurador.md)): cada frase se publica (`SpeechStarted` y `SpeechFinished` seguidos, para los subtítulos) pero no se sintetiza ni suena. La secuencia de estados no cambia. El orquestador lo aplica con `set_sound` cada vez que carga la configuración.
 - **Fallo del dispositivo de salida:** se registra, la frase se da por dicha tras su duración nominal y el asistente sigue funcionando; el texto se ve en los subtítulos.
 
 ### Sincronía con la animación (RNF-22)

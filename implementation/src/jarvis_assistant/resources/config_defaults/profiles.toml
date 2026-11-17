@@ -1,0 +1,11 @@
+# Perfiles de usuario. Se elige uno en la pantalla dormida, encima de la caja de texto, antes
+# de escribir «Hey Jarvis». Con un solo perfil no se muestra el selector.
+# El asistente solo lee este archivo; se edita desde la ventana de configuración (menú de la
+# bandeja) o a mano. Sin ningún perfil se usa uno «Predeterminado» con user.name de
+# settings.toml.
+#
+# [[profiles]]
+# id = "trabajo"          # minúsculas, números, - y _; no cambia al renombrar
+# name = "Trabajo"        # nombre en el selector
+# user_name = "Jane Doe"  # nombre que dice «preséntate»; vacío: no lo dice
+# layout = "programar"    # id de una plantilla de layouts.toml; vacío: la de fábrica

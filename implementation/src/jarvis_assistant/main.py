@@ -35,7 +35,7 @@ from jarvis_assistant.core.state_machine import StateMachine
 from jarvis_assistant.core.workdir import Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.os_adapters.base import PlatformAdapter
-from jarvis_assistant.paths import LAYOUT_FILE_NAME, AppPaths, missing_models
+from jarvis_assistant.paths import PROFILE_FILE_NAME, AppPaths, missing_models
 from jarvis_assistant.process.logging_setup import (
     LEVELS,
     install_asyncio_handler,
@@ -305,6 +305,7 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication
 
+    from jarvis_assistant.configurator.window import ConfigWindow
     from jarvis_assistant.process.tray import TrayController
     from jarvis_assistant.ui.app import UiApp
     from jarvis_assistant.ui.bridge import UiBridge
@@ -340,13 +341,44 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         qt_app.exec()
         return 1
 
+    # La ventana de configuración solo se abre desde la pantalla dormida. Se crea al abrirla y
+    # se destruye al cerrarla: durante la sesión no ocupa memoria ni hace trabajo. Mientras
+    # está abierta no se puede iniciar sesión. Al guardar, el núcleo vuelve a cargar la
+    # configuración (`ConfigSaved`).
+    settings_window: list[ConfigWindow] = []
+
+    def set_configuring(configuring: bool) -> None:
+        ui.set_configuring(configuring)
+        tray.set_configuring(configuring)
+
+    def close_settings() -> None:
+        if settings_window:
+            window = settings_window.pop()
+            # Se destruye en la siguiente vuelta del bucle, cuando QML ya no la está usando;
+            # con ella, su motor QML y sus dos ventanas.
+            QTimer.singleShot(0, lambda: window.deleteLater())
+        set_configuring(False)
+
+    def open_settings() -> None:
+        if not settings_window:
+            window = ConfigWindow(
+                paths.config_dir,
+                on_saved=lambda: bus.publish_threadsafe(events.ConfigSaved()),
+                owner=ui.screen,
+            )
+            window.closed.connect(close_settings)
+            settings_window.append(window)
+        set_configuring(True)
+        settings_window[0].show()
+
     ui = UiApp(
         publish=bus.publish_threadsafe,
         settings=config.settings.ui,
         platform=platform,
         debug=args.ui_debug,
         output_lines=config.settings.commands.output_lines,
-        layout_path=paths.data_dir / LAYOUT_FILE_NAME,
+        profile_path=paths.data_dir / PROFILE_FILE_NAME,
+        open_settings=open_settings,
     )
 
     def exit_ui() -> None:

@@ -1,7 +1,9 @@
 // Pantalla de sesión (Interfaz, sección 5; hud.md, sección 1).
 // Pantalla completa en el monitor principal. Visible también en dormido: fondo oscuro, orbe
-// apagado y la caja de texto. Con la sesión abierta muestra las ventanas flotantes de los
-// módulos y su selector. Cerrarla solo la oculta: el proceso sigue en la bandeja.
+// apagado, la caja de texto y, encima, el selector de perfiles. Con la sesión abierta muestra
+// las ventanas flotantes de los módulos y su selector. Dónde van las ventanas y las dos barras
+// lo dice la plantilla del perfil (`workspace`). Cerrarla solo la oculta: el proceso sigue en
+// la bandeja.
 import QtQuick
 import QtQuick.Window
 import "orb"
@@ -24,6 +26,9 @@ Window {
     readonly property real margin: Math.round(Theme.space48 * k)
     readonly property bool drawing: visible && visibility !== Window.Minimized
     readonly property bool resting: assistant.activity === "reposo"
+    readonly property bool asleep: assistant.activity === "dormido"
+    // La caja de texto está en la mitad de abajo: subtítulos y perfiles van encima de ella.
+    readonly property bool inputLow: input.y + input.height / 2 >= height / 2
     property real panels: 0              // opacidad de paneles y subtítulos
     property bool cursorHidden: false
 
@@ -150,22 +155,26 @@ Window {
         x: Theme.space8
         y: Theme.space8
         width: screen.width - 2 * Theme.space8
-        height: Math.max(0, input.y - Theme.space8 - y)
+        height: Math.max(0, screen.height - 2 * Theme.space8)
         opacity: screen.panels
         visible: opacity > 0
         conductor: orb
         centerX: orb.x + orb.width / 2 - x
         centerY: orb.y + orb.height / 2 - y
-        // Las pestañas de las ventanas apartadas no tapan el selector.
-        reserveLeft: dock.x - x
-        reserveRight: dock.x + dock.width - x
+        // Las pestañas de las ventanas apartadas no tapan el selector si está arriba.
+        readonly property bool dockOnTop: dock.y < Theme.space48
+        reserveLeft: dockOnTop ? dock.x - x : 0
+        reserveRight: dockOnTop ? dock.x + dock.width - x : 0
     }
 
     Dock {
         id: dock
 
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: Theme.space12
+        // Centro en las fracciones de la plantilla, sin salirse de la pantalla.
+        x: Math.round(Math.max(0, Math.min(screen.width - width,
+                                           workspace.dockX * screen.width - width / 2)))
+        y: Math.round(Math.max(0, Math.min(screen.height - height,
+                                           workspace.dockY * screen.height - height / 2)))
         z: 1
         opacity: screen.panels
         visible: opacity > 0
@@ -189,20 +198,53 @@ Window {
         id: subtitles
 
         width: Math.min(900, screen.width - 2 * screen.margin)
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: input.y - height - Theme.space16
+        x: Math.round(Math.max(0, Math.min(screen.width - width,
+                                           input.x + input.width / 2 - width / 2)))
+        y: screen.inputLow ? input.y - height - Theme.space16
+                           : input.y + input.height + Theme.space16
         visible: screen.panels > 0
         opacity: shown ? screen.panels : 0
+    }
+
+    // Solo en dormido, en el centro bajo el orbe: el perfil con el que se abrirá la sesión.
+    ProfilePicker {
+        objectName: "profilePicker"
+        shown: screen.asleep
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: Math.round(orb.y + orb.height / 2 + Theme.space48)
+    }
+
+    // Solo en dormido, junto a la caja: la entrada a la configuración. Es el único sitio desde
+    // el que se configura el asistente.
+    Chip {
+        objectName: "settingsButton"
+        visible: screen.asleep && windows.settingsAvailable
+        icon: "ajustes"
+        text: windows.configuring ? "Configuración abierta" : "Configuración"
+        selected: windows.configuring
+        x: Math.round(Math.max(0, Math.min(screen.width - width,
+                                           input.x + input.width / 2 - width / 2)))
+        y: screen.inputLow ? input.y - height - Theme.space16
+                           : input.y + input.height + Theme.space16
+        onClicked: windows.openSettings()
     }
 
     CommandInput {
         id: input
 
-        width: Math.min(450, screen.width - 2 * screen.margin)
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: screen.margin
+        width: Math.round(Math.min(screen.width - 2 * Theme.space8,
+                                   Math.max(300, workspace.inputWidth * screen.width)))
+        x: Math.round(Math.max(Theme.space8, Math.min(screen.width - width - Theme.space8,
+                                                      workspace.inputX * screen.width - width / 2)))
+        y: Math.round(Math.max(Theme.space8, Math.min(screen.height - height - Theme.space8,
+                                                      workspace.inputY * screen.height - height / 2)))
         focus: true
+        // Con la configuración abierta no se puede iniciar sesión.
+        enabled: !windows.configuring
+        onBrowse: (delta) => {
+            if (profiles.count > 1)
+                profiles.step(delta)
+        }
     }
 
     FrameCounter {

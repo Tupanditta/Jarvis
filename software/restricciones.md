@@ -63,10 +63,10 @@ Condiciones que delimitan el alcance del asistente o que deben respetarse en su 
 
 | ID | Restricción | Origen |
 |---|---|---|
-| RES-33 | **Sin texto plano ni JSON** para sesiones, actividades y recordatorios: solo SQLite. La configuración sí se guarda en archivos TOML, que el asistente solo lee. | Idea |
+| RES-33 | **Sin texto plano ni JSON** para sesiones, actividades y recordatorios: solo SQLite. La configuración sí se guarda en archivos TOML. El asistente solo los lee; el único que los escribe es la ventana de configuración ([configurador.md](Modulos/Infraestructura/configurador.md)), y solo al pulsar Guardar. | Idea, modificada |
 | RES-34 | **Sin `DELETE` físico** de sesiones ni recordatorios. Las claves ajenas usan `ON DELETE RESTRICT`. | Idea |
 | RES-35 | **Fechas con zona horaria.** Todas las fechas se guardan en ISO-8601 con zona horaria, normalizadas a UTC (`+00:00`); nunca fechas sin zona. Se muestran y se dicen en la hora local del sistema. | Idea, modificada |
-| RES-36 | **Protocolos de solo lectura.** Se definen en un archivo de configuración estático que el asistente nunca escribe. | Idea |
+| RES-36 | **Protocolos de solo lectura.** Se definen en un archivo de configuración estático que el asistente nunca escribe. (La ventana de configuración todavía no edita protocolos; si llega a hacerlo, seguirá la regla de RES-33.) | Idea |
 | RES-37 | **Marca de desbordamiento persistida.** La tabla `sessions` incluye la columna `pending_purge_on_close` (RN-08). | Refuerzo |
 | RES-48 | **Privacidad del registro.** El asistente no captura ni guarda audio. El texto de las órdenes escritas solo aparece en el registro de diagnóstico en nivel `DEBUG`. | Refuerzo |
 

@@ -213,7 +213,13 @@ implementation/
 ├── src/jarvis_assistant/
 │   ├── __main__.py
 │   ├── main.py                      # composición: build_app(config, adapters) y main()
-│   ├── config.py                    # modelos de configuración y carga TOML
+│   ├── config/                      # configuración: un módulo por archivo TOML
+│   │   ├── loader.py                # Config, load(), check(): reúne los archivos
+│   │   ├── reader.py                # lectura validada de tablas TOML
+│   │   ├── settings.py, catalog.py, places.py, commands.py, protocols.py, structures.py
+│   │   ├── profiles.py              # perfiles de usuario
+│   │   ├── layouts.py               # plantillas de pantalla
+│   │   └── writer.py                # escritura con tomlkit (solo la usa configurator)
 │   ├── paths.py                     # rutas de datos, configuración, modelos y registro
 │   ├── core/
 │   │   ├── state_machine.py         # AssistantState, entradas, efectos, DialogueContext
@@ -273,7 +279,16 @@ implementation/
 │   │   │   ├── panels/              # un archivo por panel
 │   │   │   ├── components/          # TaskCard, StatusBadge, Subtitles, PanelFrame…
 │   │   │   └── Theme.qml            # tokens del sistema de diseño (singleton)
+│   │   ├── workspace.py             # ventanas flotantes, barras y plantilla aplicada
+│   │   ├── profiles.py              # selector de perfiles de la pantalla dormida
 │   │   └── assets/                  # fuentes e iconos
+│   ├── configurator/                # ventana de configuración (configurador.md)
+│   │   ├── window.py                # ConfigWindow: ventana, Guardar y Cancelar
+│   │   ├── draft.py                 # borrador: carga, validación y guardado
+│   │   ├── editor.py                # editor de plantillas a pantalla completa
+│   │   ├── registry.py              # SECTIONS: los apartados
+│   │   ├── sections/                # un archivo por apartado
+│   │   └── qml/                     # ConfigWindow, LayoutEditor, sections/, controls/
 │   └── resources/config_defaults/   # TOML predeterminados
 └── tests/
     ├── fakes/                       # dobles: reloj, voz, plataforma
@@ -300,6 +315,7 @@ Cada paquete importa solo lo que permite esta tabla, además de sus propios mód
 | `os_adapters` | `process.single_instance`. |
 | `process` | `core.events`. |
 | `ui` | `config`, `core.action_api`, `core.content`, `core.event_bus`, `core.events`, `core.repositories`. |
+| `configurator` | `config`, `core.events` (solo los tipos de eventos), `ui.app`, `ui.view_models`, `ui.workspace`. Nadie lo importa salvo `main.py`. |
 | `main.py` | Todo: es la raíz de composición. |
 
 Los contratos entre paquetes se anotan con sus `Protocol` (`ActionModule`, `PlatformAdapter`, `Scheduler`), no con `Any`. Las importaciones que solo sirven para anotar van bajo `TYPE_CHECKING`.
@@ -317,6 +333,7 @@ Todas gratuitas (RES-44). Se instalan siempre en el entorno virtual `implementat
 | `rapidfuzz` | ≥ 3.6 | Coincidencia difusa | MIT |
 | `APScheduler` | ≥ 3.10, < 4 | Planificador | MIT |
 | `psutil` | ≥ 5.9 | Núcleos físicos, árbol de procesos, medidas | BSD |
+| `tomlkit` | ≥ 0.12 | Escribir la configuración desde la ventana de configuración conservando comentarios y formato | MIT |
 | Desarrollo: `pytest`, `pytest-asyncio`, `pytest-qt`, `pytest-timeout`, `pytest-cov`, `pytest-xdist`, `ruff` | — | Pruebas y estilo; `pytest-xdist` las ejecuta en paralelo (RNF-24) | MIT |
 
 Herramientas externas opcionales, gratuitas: *Everything* con `es.exe` (búsqueda indexada). Las APIs de Windows se llaman con `ctypes`; no se añade `pywin32`.

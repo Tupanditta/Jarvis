@@ -28,7 +28,7 @@ class EventBus:
 
 | Evento | Campos | Publica | Efecto en la interfaz |
 |---|---|---|---|
-| `SessionOpened` | `session_id`, `name` | Orquestador | Abre la pantalla de sesión con la animación de despertar. |
+| `SessionOpened` | `session_id`, `name`, `profile_id` | Orquestador | Abre la pantalla de sesión con la animación de despertar y la plantilla del perfil. |
 | `ListeningResumed` | `silent: bool` | Orquestador | Animación de despertar. |
 | `RestEntered` | — | Orquestador | Animación de dormirse; la interfaz sigue visible. |
 | `SessionClosed` | — | Orquestador | Animación de dormirse; al terminar, oculta todo. |
@@ -77,6 +77,7 @@ class EventBus:
 | `ProtocolsListed` | `protocols: tuple[ProtocolRow, ...]` | Protocolos |
 | `HelpShown` | `groups: tuple[HelpGroup, ...]` | Orquestador |
 | `ConfigReloadFailed` | `file`, `reason` | Configuración |
+| `ConfigApplied` | `config: Config` (al arrancar, al abrir sesión y al guardar con la sesión cerrada) | Orquestador |
 
 ### Acciones del usuario (interfaz → núcleo)
 
@@ -89,6 +90,8 @@ Se publican con `publish_threadsafe`.
 | `FocusItemRequested(item_id)` | Botón «traer al frente» | Apertura |
 | `SilenceRequested` | Botón de silencio | Speaker |
 | `OpenSessionRequested` | Bandeja | Orquestador |
+| `ProfileSelected(profile_id)` | Selector de perfiles de la pantalla dormida | Orquestador (perfil de la próxima sesión), interfaz (plantilla) |
+| `ConfigSaved` | Ventana de configuración, al guardar | Orquestador: con la sesión cerrada, vuelve a cargar la configuración |
 | `ShowScreenRequested(visible)` | Bandeja | Interfaz (`window_controller`) |
 | `QuitRequested` | Bandeja | Orquestador |
 

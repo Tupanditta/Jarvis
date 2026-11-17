@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QMetaObject, QObject, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QMetaObject, QObject, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QFontDatabase, QGuiApplication, QWindow
 from PySide6.QtQml import QQmlApplicationEngine, QQmlError
 from PySide6.QtQuick import QQuickWindow
@@ -27,6 +27,7 @@ from jarvis_assistant.ui.panel_models import (
     RemindersModel,
     SearchModel,
 )
+from jarvis_assistant.ui.profiles import ProfileMemory, ProfilesModel
 from jarvis_assistant.ui.view_models import (
     AssistantModel,
     DialogueModel,
@@ -34,7 +35,7 @@ from jarvis_assistant.ui.view_models import (
     TaskListModel,
     UiOptions,
 )
-from jarvis_assistant.ui.workspace import LayoutStore, WorkspaceModel
+from jarvis_assistant.ui.workspace import WorkspaceModel
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class UiApp(QObject):
 
     screenAnimation = Signal(str)
     hudAnimation = Signal(str)
+    configuringChanged = Signal()
 
     def __init__(
         self,
@@ -73,12 +75,16 @@ class UiApp(QObject):
         debug: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
         output_lines: int = DEFAULT_OUTPUT_LINES,
-        layout_path: Path | None = None,
+        profile_path: Path | None = None,
+        open_settings: Callable[[], None] | None = None,
         parent: QObject | None = None,
     ) -> None:
-        """`layout_path`: archivo donde se guarda la disposición de las ventanas flotantes;
-        sin él, la disposición dura lo que la ejecución."""
+        """`profile_path`: archivo donde se recuerda el último perfil usado; sin él, dura lo
+        que la ejecución. `open_settings`: abre la ventana de configuración desde la pantalla
+        dormida; sin él no hay botón."""
         super().__init__(parent)
+        self._open_settings = open_settings
+        self._configuring = False
         self._platform = platform
         self._monotonic = monotonic
         self._quitting = False
@@ -99,13 +105,12 @@ class UiApp(QObject):
         self.reminders = RemindersModel(self, publish)
         self.protocols = ProtocolModel(self, publish)
         self.help = HelpModel(self, publish)
-        self.workspace = WorkspaceModel(
-            store=None if layout_path is None else LayoutStore(layout_path), parent=self
-        )
+        self.workspace = WorkspaceModel(parent=self)
+        self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self._models = (
-            self.assistant, self.tasks, self.dialogue, self.hud, self.workspace,
-            self.commands, self.opened, self.search, self.history, self.reminders,
-            self.protocols, self.help,
+            self.options, self.assistant, self.tasks, self.dialogue, self.hud, self.workspace,
+            self.profiles, self.commands, self.opened, self.search, self.history,
+            self.reminders, self.protocols, self.help,
         )  # fmt: skip
         self.controller = wc.WindowController()
         self._collapse_timer = self._single_shot(self.hud.collapse)
@@ -130,6 +135,7 @@ class UiApp(QObject):
             ("protocols", self.protocols),
             ("help", self.help),
             ("workspace", self.workspace),
+            ("profiles", self.profiles),
             ("ui", self.options),
             ("windows", self),
         ):
@@ -184,7 +190,6 @@ class UiApp(QObject):
         self._quitting = True
         self._collapse_timer.stop()
         self._close_timer.stop()
-        self.workspace.save()
 
     @Slot(result=bool)
     def acceptClose(self) -> bool:
@@ -193,6 +198,28 @@ class UiApp(QObject):
             return True
         self._execute(self.controller.screen_closed())
         return False
+
+    # --- Configuración ------------------------------------------------------------------------
+
+    @Property(bool, constant=True)
+    def settingsAvailable(self) -> bool:
+        return self._open_settings is not None
+
+    @Property(bool, notify=configuringChanged)
+    def configuring(self) -> bool:
+        """La ventana de configuración está abierta: no se puede iniciar sesión."""
+        return self._configuring
+
+    def set_configuring(self, configuring: bool) -> None:
+        if configuring != self._configuring:
+            self._configuring = configuring
+            self.configuringChanged.emit()
+
+    @Slot()
+    def openSettings(self) -> None:
+        """Botón «Configuración» de la pantalla dormida."""
+        if self._open_settings is not None:
+            self._open_settings()
 
     @Slot(str)
     def copyText(self, text: str) -> None:

@@ -469,7 +469,10 @@ class HudModel(QObject):
 
 
 class UiOptions(QObject):
-    """Ajustes de `[ui]` y del modo de diagnóstico; no cambian durante la ejecución."""
+    """Ajustes de `[ui]` y del modo de diagnóstico, que no cambian durante la ejecución, y el
+    sonido (`sound.enabled`), que llega con cada `ConfigApplied`."""
+
+    soundChanged = Signal()
 
     def __init__(
         self, settings: UiSettings, debug: bool = False, parent: QObject | None = None
@@ -477,6 +480,18 @@ class UiOptions(QObject):
         super().__init__(parent)
         self._settings = settings
         self._debug = debug
+        self._sound = True
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.ConfigApplied):
+            sound = event.config.settings.sound.enabled
+            if sound != self._sound:
+                self._sound = sound
+                self.soundChanged.emit()
+
+    @Property(bool, notify=soundChanged)
+    def sound(self) -> bool:
+        return self._sound
 
     @Property(str, constant=True)
     def quality(self) -> str:

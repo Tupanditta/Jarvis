@@ -144,7 +144,8 @@ Toda eliminación de sesiones y recordatorios es lógica: las filas se conservan
 | Enrutador de intenciones | [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md) | `intent_router/` | Idea |
 | Sintetizador de voz (TTS) | [sintetizador.md](Modulos/Infraestructura/sintetizador.md) | `speaker/` | Idea |
 | Interfaz HUD | [hud.md](Modulos/Infraestructura/hud.md) | `ui/` | Idea |
-| Configuración | [configuracion.md](Modulos/Infraestructura/configuracion.md) | `config.py` | Refuerzo |
+| Configuración | [configuracion.md](Modulos/Infraestructura/configuracion.md) | `config/` | Refuerzo |
+| Ventana de configuración | [configurador.md](Modulos/Infraestructura/configurador.md) | `configurator/` | Refuerzo |
 | Plataforma | [plataforma.md](Modulos/Infraestructura/plataforma.md) | `os_adapters/` | Refuerzo |
 | Proceso y diagnóstico | [proceso.md](Modulos/Infraestructura/proceso.md) | `process/`, `main.py` | Refuerzo |
 

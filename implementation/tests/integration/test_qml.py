@@ -11,7 +11,7 @@ from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
-from jarvis_assistant.config import UiSettings
+from jarvis_assistant.config import Config, Profile, UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.ui.app import FONTS_DIR, QML_DIR, UiApp, load_fonts
@@ -524,15 +524,32 @@ def test_todas_las_ventanas_abiertas_con_contenido_no_dan_avisos_de_qml(desk, qt
     assert ui.warnings == []
 
 
-def test_la_disposicion_de_las_ventanas_se_guarda_al_salir(make_ui, qtbot, tmp_path):
-    path = tmp_path / "ventanas.json"
-    ui, _ = make_ui(layout_path=path)
+def test_el_perfil_elegido_se_ve_en_dormido_y_se_cambia_con_las_flechas(make_ui, qtbot):
+    ui, published = make_ui()
     ui.start()
-    ui.workspace.show("comandos")
-    ui.shutdown()
-    assert path.is_file()
-    other, _ = make_ui(layout_path=path)
-    assert other.workspace.placement("comandos").open
+    config = Config(profiles=(Profile("a", "Trabajo"), Profile("b", "Casa")))
+    ui.on_event(events.ConfigApplied(config))
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    qtbot.waitUntil(lambda: picker.property("opacity") == 1, timeout=2000)
+    box = input_of(ui.screen)
+    qtbot.waitUntil(lambda: box.hasActiveFocus(), timeout=2000)
+    assert visual(ui, "profile-0").property("selected")
+    QTest.keyClick(ui.screen, Qt.Key.Key_Right)
+    selected = [e.profile_id for e in published if isinstance(e, events.ProfileSelected)]
+    assert selected == ["a", "b"]
+    assert visual(ui, "profile-1").property("selected")
+    assert not visual(ui, "profile-0").property("selected")
+    assert ui.warnings == []
+
+
+def test_con_un_solo_perfil_no_hay_selector(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.ConfigApplied(Config()))
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    qtbot.wait(300)
+    assert picker.property("opacity") == 0
 
 
 # --- Caja de texto (entrada-texto.md, criterios de aceptación) --------------------------------
@@ -590,18 +607,40 @@ def test_el_texto_de_ayuda_sigue_al_estado(make_ui, qtbot):
         assert placeholder in texts
 
 
-def test_dormido_el_codigo_de_activacion_se_oculta_como_una_contrasena(make_ui, qtbot):
+def test_dormido_se_ve_lo_que_se_escribe(make_ui, qtbot):
     ui, _ = make_ui()
     ui.start()
     box = input_of(ui.screen)
     ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
     box.setProperty("text", "hy jarvs")
-    assert box.property("text") == "hy jarvs"
-    assert box.property("displayText") == "********"
+    assert box.property("displayText") == "hy jarvs"
+
+
+def test_la_configuracion_se_abre_desde_la_pantalla_dormida_y_bloquea_el_inicio(make_ui, qtbot):
+    opened = []
+    ui, _ = make_ui(open_settings=lambda: opened.append(True))
+    ui.start()
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    button = visual(ui, "settingsButton")
+    qtbot.waitUntil(button.isVisible, timeout=2000)
+    center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2)).toPoint()
+    QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
+    assert opened == [True]
+    ui.set_configuring(True)
+    assert not input_of(ui.screen).isEnabled()
+    ui.set_configuring(False)
+    assert input_of(ui.screen).isEnabled()
     ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.ESCUCHANDO))
-    assert box.property("displayText") == "hy jarvs"
-    ui.on_event(events.AssistantActivityChanged("IDLE", Activity.REPOSO))
-    assert box.property("displayText") == "hy jarvs"
+    qtbot.waitUntil(lambda: not button.isVisible(), timeout=2000)
+    assert ui.warnings == []
+
+
+def test_sin_ventana_de_configuracion_no_hay_boton(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    qtbot.wait(100)
+    assert not visual(ui, "settingsButton").isVisible()
 
 
 def test_la_vista_previa_tiene_todos_los_estados():
