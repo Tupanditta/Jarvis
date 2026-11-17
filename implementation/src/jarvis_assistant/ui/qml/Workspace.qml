@@ -14,7 +14,8 @@
 // Las esquinas son de las filas de arriba y de abajo; las columnas de los lados empiezan
 // debajo de ellas. Las pestañas de un mismo borde se ponen en fila sin taparse, y en la fila
 // de arriba dejan libre el hueco del selector (`reserveLeft`, `reserveRight`). Las que no
-// caben en su fila pasan a otra, más hacia dentro.
+// caben en su fila pasan a otra, más hacia dentro. Tampoco tapan el medidor de recursos de
+// una esquina inferior (`reserveCorner`): la fila de abajo y la columna de ese lado lo rodean.
 import QtQuick
 import QtMultimedia
 import "components"
@@ -28,11 +29,17 @@ Item {
     property bool staging: false         // abriendo sesión: las ventanas esperan al orbe
     property real reserveLeft: 0         // hueco del selector en el borde de arriba, en x
     property real reserveRight: 0
+    property string reserveCorner: ""    // "left" o "right": esquina inferior ocupada
+    property real reserveCornerWidth: 0
+    property real reserveCornerHeight: 0
 
     onWidthChanged: placeTabs()
     onHeightChanged: placeTabs()
     onReserveLeftChanged: placeTabs()
     onReserveRightChanged: placeTabs()
+    onReserveCornerChanged: placeTabs()
+    onReserveCornerWidthChanged: placeTabs()
+    onReserveCornerHeightChanged: placeTabs()
 
     // Recoloca las pestañas de las ventanas apartadas, una vez por vuelta del bucle de eventos.
     function placeTabs() {
@@ -109,19 +116,28 @@ Item {
             var side = top.length > 1 && middle > (reserveLeft + reserveRight) / 2 ? 1 : 0
             top[side].items.push(item)
         }
+        // Un hueco junto al selector donde no cabe una pestaña (pantalla estrecha o selector
+        // ancho): sus pestañas bajan a la fila siguiente, que ya no tiene selector.
         var topLines = 1
         for (var s = 0; s < top.length; ++s) {
-            pack(top[s].items, top[s].lo, Math.max(top[s].lo + tabW, top[s].hi), tabW)
+            var narrow = top.length > 1 && top[s].hi - top[s].lo < tabW
+            var shift = narrow ? 1 : 0
+            pack(top[s].items, narrow ? margin : top[s].lo,
+                 narrow ? w - margin : Math.max(top[s].lo + tabW, top[s].hi), tabW)
             for (var a = 0; a < top[s].items.length; ++a) {
                 var up = top[s].items[a]
                 up.win.tabX = up.at
-                up.win.tabY = margin + up.line * (tabH + gap)
-                topLines = Math.max(topLines, up.line + 1)
+                up.win.tabY = margin + (up.line + shift) * (tabH + gap)
+                topLines = Math.max(topLines, up.line + shift + 1)
             }
         }
 
+        var cornerLeft = reserveCorner === "left" ? reserveCornerWidth + gap : 0
+        var cornerRight = reserveCorner === "right" ? reserveCornerWidth + gap : 0
+        var cornerTop = h - reserveCornerHeight - gap
         var bottomLines = 1
-        pack(edges.bottom, margin, w - margin, tabW)
+        pack(edges.bottom, margin + cornerLeft,
+             Math.max(margin + cornerLeft + tabW, w - margin - cornerRight), tabW)
         for (var b = 0; b < edges.bottom.length; ++b) {
             var down = edges.bottom[b]
             down.win.tabX = down.at
@@ -132,12 +148,14 @@ Item {
         // Columnas de los lados, entre las filas de arriba y de abajo.
         var columnTop = margin + topLines * (tabH + gap)
         var columnBottom = h - margin - bottomLines * (tabH + gap)
-        pack(edges.left, columnTop, columnBottom, tabH)
+        var leftBottom = cornerLeft > 0 ? Math.min(columnBottom, cornerTop) : columnBottom
+        var rightBottom = cornerRight > 0 ? Math.min(columnBottom, cornerTop) : columnBottom
+        pack(edges.left, columnTop, Math.max(columnTop + tabH, leftBottom), tabH)
         for (var l = 0; l < edges.left.length; ++l) {
             edges.left[l].win.tabX = margin + edges.left[l].line * (tabW + gap)
             edges.left[l].win.tabY = edges.left[l].at
         }
-        pack(edges.right, columnTop, columnBottom, tabH)
+        pack(edges.right, columnTop, Math.max(columnTop + tabH, rightBottom), tabH)
         for (var r = 0; r < edges.right.length; ++r) {
             edges.right[r].win.tabX = w - margin - tabW - edges.right[r].line * (tabW + gap)
             edges.right[r].win.tabY = edges.right[r].at

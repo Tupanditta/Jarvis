@@ -1,0 +1,24 @@
+###OPUS
+frases clave
+	ejecuta la orden 66
+
+un manual de como incorporar nuevos comandos, páginas, aplicaciones y demás, para que esa tarea pueda hacerla cualquier agente de ia, se deben incluir pasos y restricciones. 
+
+comas
+
+cerrar ventana, algunas, o todas
+
+hay perfiles que requieren contraseña, por lo que no se activan solo con hey jarvis, antes de despertar e inciar sesión te pide una contraseña. si esta es incorrecta no se abre. Te deja intentarlo 3 veces, si se falla se guarda un aviso de violación de identidad (o como quieras llamarlo), lo que produce un recordatorio crítico en el perfil que se ha intentado entrar. Cuando el usuario entre en ese perfil mediante la contraseña correctamente, lo primero que saldrá será un aviso crítico indicando que alguien intento entrar al perfil sin permiso, fecha y hora en la que se realizó. Generar este aviso no se notifica ni se muestra a la persona que intentó entrar, por lo que está no sabrá nada del aviso. Por lo tanto, hey jarvis deja de mostrarse como una contraseña con *** a la hora de iniciar sesión. En el contenedor del texto de inicio de sesión pone: inicie sesión con "Hey Jarvis". Si se intenta entrar en un perfil con contraseña, se muestra un contenedor nuevo en el centro y ese ni si quiera muestra los caracteres introducidos (aquí se introduce la contraseña). 
+Para darle más emoción, cuando escoga un perfil que requiere contraseña, cuando introduzca Hey Jarvis, al mostrar la ventana con el contenedor para introducir la contraseña el asistente dirá una frase "Esta área está protegida por un nivel de seguridad superior. Introduzca la clave correcta para obtener acceso."
+Si se ha iniciado sesión en un perfil que requería contraseña, la frase de inicio de sesión será la siguiente: identidad confirmada. Ha accedido a un entorno de trabajo protegido con privilegios avanzados. Tiene acceso a protocolos y funciones confidenciales. ¿En que vamos a trabajar, señor?
+obviamente, para modificar un perfil que requiere contraseña se necesita la contraseña (3 errores al introducirla generan el mismo flujo que hemos definido antes)
+
+quiero añadir lo siguiente al módulo de configuración:
+un apartado General con calidad gráfica y volumen, y un botón para probar la voz;
+voz y volumen propios para cada perfil;
+apartados para lugares, binarios y protocolos;
+exportar e importar la configuración;
+restaurar los valores de fábrica;
+activar y desactivar módulos
+
+quiero un módulo nuevo disponible que muestre cuanta ram y cpu usa el asistente en total. Quiero que sea en tiempo real. Se verán como círculos, representando un porcentaje. 

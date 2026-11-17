@@ -148,6 +148,29 @@ Window {
         onAwake: desk.release()
     }
 
+    // --- Medidor de recursos -----------------------------------------------------------------
+
+    // CPU y RAM del asistente, fijo en una esquina inferior y por debajo de las ventanas.
+    ResourceMeter {
+        id: meter
+
+        objectName: "resourceMeter"
+        width: implicitWidth
+        height: implicitHeight
+        x: usage.corner === "left" ? screen.margin : screen.width - width - screen.margin
+        y: screen.height - height - screen.margin
+        opacity: screen.panels
+        visible: usage.shown && opacity > 0
+        watching: visible && screen.drawing
+
+        Behavior on x {
+            NumberAnimation {
+                duration: ui.reduceMotion ? 0 : Theme.motionAside
+                easing.type: Easing.InOutCubic
+            }
+        }
+    }
+
     // --- Ventanas flotantes -----------------------------------------------------------------
 
     // Una ventana por módulo. Se abren solas cuando su módulo muestra algo y a mano desde el
@@ -168,6 +191,10 @@ Window {
         readonly property bool dockOnTop: dock.y < Theme.space48
         reserveLeft: dockOnTop ? dock.x - x : 0
         reserveRight: dockOnTop ? dock.x + dock.width - x : 0
+        // Ni el medidor de recursos.
+        reserveCorner: meter.visible ? usage.corner : ""
+        reserveCornerWidth: meter.width + screen.margin - x
+        reserveCornerHeight: meter.height + screen.margin - y
     }
 
     Dock {

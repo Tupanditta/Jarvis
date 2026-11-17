@@ -29,6 +29,7 @@ from jarvis_assistant.ui.panel_models import (
     SearchModel,
 )
 from jarvis_assistant.ui.profiles import ProfileMemory, ProfilesModel
+from jarvis_assistant.ui.resources import ResourcesModel
 from jarvis_assistant.ui.view_models import (
     AccessModel,
     AssistantModel,
@@ -107,6 +108,7 @@ class UiApp(QObject):
         self.reminders = RemindersModel(self, publish)
         self.protocols = ProtocolModel(self, publish)
         self.help = HelpModel(self, publish)
+        self.resources = ResourcesModel(parent=self)
         self.workspace = WorkspaceModel(parent=self)
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)
@@ -138,6 +140,7 @@ class UiApp(QObject):
             ("reminders", self.reminders),
             ("protocols", self.protocols),
             ("help", self.help),
+            ("usage", self.resources),
             ("workspace", self.workspace),
             ("profiles", self.profiles),
             ("access", self.access),

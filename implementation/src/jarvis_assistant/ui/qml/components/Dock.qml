@@ -1,5 +1,6 @@
 // Selector de ventanas: un botón por ventana flotante. Abre la ventana, la trae al frente o,
-// si ya está encima, la cierra. El punto bajo el icono marca las abiertas. Tras ellos, un
+// si ya está encima, la cierra. El punto bajo el icono marca las abiertas. Tras ellos, el del
+// medidor de recursos, que no es una ventana: lo muestra u oculta (`usage.toggle`). Luego, un
 // botón aparta a los bordes las ventanas a la vista o, si hay más apartadas que a la vista,
 // devuelve las apartadas. El último devuelve todas a su disposición inicial.
 import QtQuick
@@ -93,6 +94,65 @@ Rectangle {
                 TapHandler {
                     onTapped: workspace.toggle(entry.windowId)
                 }
+            }
+        }
+
+        Item {
+            id: meterButton
+
+            readonly property string label: usage.shown ? "Ocultar recursos" : "Mostrar recursos"
+
+            onLabelChanged: {
+                if (meterHover.hovered)
+                    dock.hint = label
+            }
+
+            objectName: "dock-recursos"
+            width: 40
+            height: 36
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 2
+                radius: Theme.radiusCard + 2
+                color: meterHover.hovered ? Theme.bgHover : "transparent"
+            }
+
+            Image {
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: -2
+                width: 18
+                height: 18
+                sourceSize.width: 36
+                sourceSize.height: 36
+                source: Theme.icon("recursos")
+                opacity: usage.shown ? 1 : 0.5
+            }
+
+            Rectangle {
+                width: 4
+                height: 2
+                radius: 1
+                color: Theme.primary
+                visible: usage.shown
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 5
+            }
+
+            HoverHandler {
+                id: meterHover
+                cursorShape: Qt.PointingHandCursor
+                onHoveredChanged: {
+                    if (hovered)
+                        dock.hint = meterButton.label
+                    else if (dock.hint === meterButton.label)
+                        dock.hint = ""
+                }
+            }
+
+            TapHandler {
+                onTapped: usage.toggle()
             }
         }
 

@@ -26,11 +26,14 @@ QtObject {
     readonly property color statusPending: "#F5B544"
     readonly property color statusDone: "#34D399"
     readonly property color statusError: "#F2555A"
+    readonly property color neonCyan: "#00F0FF"      // medidores de recursos
+    readonly property color neonMagenta: "#FF2BD6"
 
     // Tipografía
     readonly property string fontDisplay: "Rajdhani"
     readonly property string fontBody: "Inter"
     readonly property string fontMono: "JetBrains Mono"
+    readonly property string fontTech: "Orbitron"    // cifras y rótulos de los medidores
     readonly property real displaySpacing: 0.08  // espaciado de `fontDisplay`, sobre su tamaño
     readonly property int sizeLabel: 11
     readonly property int sizeSecondary: 13

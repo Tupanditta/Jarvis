@@ -84,9 +84,9 @@ def test_cada_archivo_qml_compila_sin_errores(qapp, path: Path):
 def test_las_fuentes_incluidas_se_registran(qapp):
     assert sorted(path.name for path in FONTS_DIR.glob("*.ttf")) == [
         "Inter-Medium.ttf", "Inter-Regular.ttf", "JetBrainsMono-Regular.ttf",
-        "Rajdhani-SemiBold.ttf",
+        "Orbitron-Variable.ttf", "Rajdhani-SemiBold.ttf",
     ]  # fmt: skip
-    assert {"Inter", "JetBrains Mono", "Rajdhani"} <= set(load_fonts())
+    assert {"Inter", "JetBrains Mono", "Orbitron", "Rajdhani"} <= set(load_fonts())
 
 
 @pytest.mark.parametrize("quality", ["high", "medium", "low"])
@@ -366,6 +366,8 @@ def test_una_ventana_se_cierra_con_su_boton_y_vuelve_desde_el_selector(desk, qtb
 
 
 TAB = (184, 40)  # una ventana apartada: solo su cabecera
+# Pestaña de arriba a la izquierda: en 800 px no cabe junto al selector y baja una fila.
+CORNER = (8, 56)
 
 
 def test_triple_clic_en_la_cabecera_aparta_la_ventana_y_un_clic_la_recupera(desk, qtbot):
@@ -378,7 +380,7 @@ def test_triple_clic_en_la_cabecera_aparta_la_ventana_y_un_clic_la_recupera(desk
     assert ui.workspace.placement("actividad").aside
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
     # Arriba a la izquierda: se aparta a esa esquina.
-    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     drag(ui, scene(window, TAB[0] - 3, TAB[1] - 3), 200, 200)  # apartada no cambia de tamaño
     assert (window.width(), window.height()) == TAB
     click(ui, window, 60, 20)
@@ -426,6 +428,7 @@ def test_aparta_por_orden_escrita(desk, qtbot):
     ui.on_event(events.WindowAsideRequested("Actividad"))
     window = floating(ui, "actividad")
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     click(ui, window, TAB[0] - 18, 20)  # su botón la cierra del todo
     qtbot.waitUntil(lambda: not window.isVisible(), timeout=2000)
     assert not ui.workspace.placement("actividad").open
@@ -443,7 +446,7 @@ def test_con_animaciones_la_ventana_viaja_hasta_su_pestana_y_vuelve(make_ui, qtb
     qtbot.wait(100)
     assert TAB[0] < window.width() < size[0]  # a medio camino
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
-    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     assert window.rotation() == 0
     ui.workspace.restore("actividad")
     qtbot.waitUntil(lambda: (window.width(), window.height()) == size, timeout=2000)
@@ -750,6 +753,45 @@ def test_la_tarjeta_de_intrusion_se_confirma_con_entendido(make_ui, qtbot):
     QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
     qtbot.waitUntil(lambda: not card.isVisible(), timeout=3000)
     assert published[-1] == events.IntrusionAcknowledged((3,))
+    assert ui.warnings == []
+
+
+def test_el_medidor_de_recursos_esta_en_una_esquina_inferior_y_mide_mientras_se_ve(desk, qtbot):
+    ui, _ = desk
+    meter = visual(ui, "resourceMeter")
+    qtbot.waitUntil(lambda: ui.resources.watching, timeout=2000)
+    corner = meter.mapToScene(QPointF(0, 0))
+    assert corner.x() + meter.width() > ui.screen.width() / 2  # abajo a la derecha
+    assert corner.y() + meter.height() > ui.screen.height() * 0.8
+    assert visual(ui, "usage-ram").property("value") > 0
+    assert "WindowSpec" not in str(ui.workspace.component("recursos"))  # no es una ventana
+    assert ui.workspace.component("recursos") == ""
+    button = visual(ui, "dock-recursos")
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: not meter.isVisible(), timeout=2000)
+    assert not ui.resources.watching
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: meter.isVisible() and ui.resources.watching, timeout=2000)
+    assert ui.warnings == []
+
+
+def test_un_triple_clic_pasa_el_medidor_a_la_otra_esquina_y_las_pestanas_lo_rodean(desk, qtbot):
+    ui, _ = desk
+    meter = visual(ui, "resourceMeter")
+    size = (meter.width(), meter.height())
+    for _ in range(3):
+        click(ui, meter, meter.width() / 2, meter.height() / 2)
+    assert ui.resources.corner == "left"
+    qtbot.waitUntil(lambda: meter.mapToScene(QPointF(0, 0)).x() < ui.screen.width() / 2,
+                    timeout=2000)
+    assert (meter.width(), meter.height()) == size  # no cambia de tamaño
+    # Abajo a la izquierda: su pestaña queda a la derecha del medidor, sin taparlo.
+    ui.workspace.show("busqueda")
+    ui.workspace.set_aside("busqueda")
+    tab = floating(ui, "busqueda")
+    qtbot.waitUntil(lambda: (tab.width(), tab.height()) == TAB, timeout=2000)
+    right = meter.mapToScene(QPointF(meter.width(), 0)).x()
+    qtbot.waitUntil(lambda: tab.mapToScene(QPointF(0, 0)).x() > right, timeout=2000)
     assert ui.warnings == []
 
 
