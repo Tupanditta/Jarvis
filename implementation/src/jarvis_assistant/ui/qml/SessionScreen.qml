@@ -27,6 +27,9 @@ Window {
     readonly property bool drawing: visible && visibility !== Window.Minimized
     readonly property bool resting: assistant.activity === "reposo"
     readonly property bool asleep: assistant.activity === "dormido"
+    // Dormido y ya en calma: sin sesión y sin la animación de cierre en curso. Lo propio de la
+    // pantalla dormida (perfiles, configuración) espera a que el orbe termine de colapsar.
+    readonly property bool dormant: asleep && !assistant.sessionOpen && !orb.inTransition
     // La caja de texto está en la mitad de abajo: subtítulos y perfiles van encima de ella.
     readonly property bool inputLow: input.y + input.height / 2 >= height / 2
     property real panels: 0              // opacidad de paneles y subtítulos
@@ -291,7 +294,7 @@ Window {
     // Solo en dormido, en el centro bajo el orbe: el perfil con el que se abrirá la sesión.
     ProfilePicker {
         objectName: "profilePicker"
-        shown: screen.asleep && !access.gateOpen
+        shown: screen.dormant && !access.gateOpen
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.round(orb.y + orb.height / 2 + Theme.space48)
     }
@@ -300,7 +303,7 @@ Window {
     // el que se configura el asistente.
     Chip {
         objectName: "settingsButton"
-        visible: screen.asleep && windows.settingsAvailable && !access.gateOpen
+        visible: screen.dormant && windows.settingsAvailable && !access.gateOpen
         icon: "ajustes"
         text: windows.configuring ? "Configuración abierta" : "Configuración"
         selected: windows.configuring

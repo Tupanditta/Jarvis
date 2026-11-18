@@ -548,6 +548,26 @@ def test_el_perfil_elegido_se_ve_en_dormido_y_se_cambia_con_las_flechas(make_ui,
     assert ui.warnings == []
 
 
+def test_al_cerrar_sesion_los_perfiles_esperan_al_final_de_la_animacion(make_ui, qtbot):
+    ui, _ = make_ui(open_settings=lambda: None)
+    ui.start()
+    config = Config(profiles=(Profile("a", "Trabajo"), Profile("b", "Casa")))
+    ui.on_event(events.ConfigApplied(config))
+    ui.on_event(events.SessionOpened(1, "Trabajo", "a"))
+    ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.ESCUCHANDO))
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    ui.on_event(events.SessionClosed())
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    orb = ui.screen.findChild(QObject, "orb")
+    assert orb.property("inTransition")
+    assert not picker.property("shown")
+    assert not visual(ui, "settingsButton").isVisible()
+    qtbot.waitUntil(lambda: picker.property("opacity") == 1, timeout=5000)
+    assert not orb.property("inTransition")
+    assert visual(ui, "settingsButton").isVisible()
+    assert ui.warnings == []
+
+
 def test_con_un_solo_perfil_no_hay_selector(make_ui, qtbot):
     ui, _ = make_ui()
     ui.start()

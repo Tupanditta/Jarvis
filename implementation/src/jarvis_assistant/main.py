@@ -414,7 +414,13 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
             window.closed.connect(close_settings)
             settings_window.append(window)
         set_configuring(True)
-        settings_window[0].show()
+        try:
+            settings_window[0].show()
+        except Exception:
+            # Sin ventana no hay nada que cerrar: si no se deshace, la pantalla queda
+            # bloqueada como si la configuración siguiera abierta.
+            logger.exception("No se ha podido abrir la configuración")
+            close_settings()
 
     ui = UiApp(
         publish=bus.publish_threadsafe,
