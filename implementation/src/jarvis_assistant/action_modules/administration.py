@@ -96,7 +96,7 @@ class PermissionManager:
                 "ver",
                 ("muestra los permisos", "ver permisos", "permisos de los perfiles"),
                 (), "Ver los permisos", "Muestra los permisos",
-                panel=PERMISSIONS_PANEL, in_protocols=False,
+                panel=PERMISSIONS_PANEL, in_protocols=False, record=False,
             ),
         )  # fmt: skip
 
@@ -174,7 +174,7 @@ class CredentialVault:
                 ("muestra las contraseñas", "ver contraseñas", "muestra las credenciales",
                  "contraseñas de los perfiles"),
                 (), "Ver las contraseñas", "Muestra las contraseñas",
-                panel=CREDENTIALS_PANEL, in_protocols=False,
+                panel=CREDENTIALS_PANEL, in_protocols=False, record=False,
             ),
         )  # fmt: skip
 
@@ -224,7 +224,7 @@ class ProfileManager:
                 "ver",
                 ("muestra los perfiles", "ver perfiles", "lista los perfiles"),
                 (), "Ver los perfiles", "Muestra los perfiles",
-                panel=PROFILES_PANEL, in_protocols=False,
+                panel=PROFILES_PANEL, in_protocols=False, record=False,
             ),
         )  # fmt: skip
 

@@ -65,6 +65,9 @@ class IntentSpec:
     example: str = ""  # para la ayuda
     panel: str | None = None  # panel que se activa al ejecutarla
     in_protocols: bool = True  # invocable como tarea de protocolo
+    # Se registra como actividad de la sesión. Las consultas (mostrar, listar, leer) no: se
+    # ejecutan y responden igual, pero no llenan el registro. Dentro de un protocolo, sí.
+    record: bool = True
     # Ocupa el turno: mientras se ejecuta, ninguna otra orden empieza (un protocolo, RN-55).
     exclusive: bool = False
     # Parámetros que fija el propio patrón («busca el archivo…» fija el tipo).

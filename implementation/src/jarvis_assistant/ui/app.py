@@ -63,6 +63,19 @@ def load_fonts() -> list[str]:
     return families
 
 
+def keep_apart(first: ResourcesModel | NoiseModel, second: ResourcesModel | NoiseModel) -> None:
+    """Pone dos medidores en esquinas inferiores opuestas y los mantiene así: si uno cambia de
+    esquina, el otro pasa a la que deja libre. Juntos no caben en una esquina."""
+
+    def follow(moved: ResourcesModel | NoiseModel, other: ResourcesModel | NoiseModel) -> None:
+        if other.corner == moved.corner:
+            other.switchCorner()
+
+    first.cornerChanged.connect(lambda: follow(first, second))
+    second.cornerChanged.connect(lambda: follow(second, first))
+    follow(first, second)
+
+
 class UiApp(QObject):
     """Interfaz completa: modelos, ventanas y controlador de ventanas."""
 
@@ -111,6 +124,7 @@ class UiApp(QObject):
         self.help = HelpModel(self, publish)
         self.resources = ResourcesModel(parent=self)
         self.noise = NoiseModel(parent=self)
+        keep_apart(self.resources, self.noise)
         self.workspace = WorkspaceModel(parent=self)
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)

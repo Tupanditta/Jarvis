@@ -155,9 +155,6 @@ Window {
 
     // Separación entre dos medidores en la misma esquina.
     readonly property real meterGap: Theme.space24
-    // El de ruido se pone al lado del de recursos si comparten esquina: hacia dentro.
-    readonly property bool metersJoined: usage.shown && noise.shown
-                                         && usage.corner === noise.corner
 
     // Ancho que ocupan los medidores en una esquina inferior, desde el borde de la pantalla
     // (margen incluido); 0 si no hay ninguno. Con las posiciones finales, no las animadas.
@@ -200,18 +197,15 @@ Window {
         }
     }
 
-    // Ruido alrededor, en decibelios. Junto al de recursos si están en la misma esquina; si
-    // no, en la suya.
+    // Ruido alrededor, en decibelios. Siempre en la esquina inferior opuesta a la del de
+    // recursos (`keep_apart`): los tres círculos no caben juntos.
     NoiseMeter {
         id: noiseMeter
-
-        readonly property real inset: screen.metersJoined ? meter.width + screen.meterGap : 0
 
         objectName: "noiseMeter"
         width: implicitWidth
         height: implicitHeight
-        x: noise.corner === "left" ? screen.margin + inset
-                                   : screen.width - width - screen.margin - inset
+        x: noise.corner === "left" ? screen.margin : screen.width - width - screen.margin
         y: screen.height - height - screen.margin
         opacity: screen.panels
         visible: noise.shown && opacity > 0

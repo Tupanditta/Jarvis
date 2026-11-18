@@ -383,7 +383,7 @@ async def test_buenas_noches_en_espera_cierra_la_sesion_y_cancela_todo(rig):
     await rig.advance(1.0)
     assert rig.state is S.LISTENING_COMMAND
     await rig.order("lista")
-    assert rig.tasks()[-1][2] == "completado"
+    assert rig.of(events.DirectoryListed)
 
 
 async def test_cancelar_con_un_turno_en_curso_y_sin_dialogo(rig):
@@ -412,4 +412,4 @@ async def test_una_tarea_que_pregunta_y_falla_deja_la_fsm_en_escucha(rig, monkey
     assert last_task(rig).status == "error"
     assert rig.spoken() == [said("general.error")]
     await rig.order("lista")
-    assert rig.tasks()[-1][2] == "completado"
+    assert rig.of(events.DirectoryListed)

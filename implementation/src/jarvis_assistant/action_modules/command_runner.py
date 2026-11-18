@@ -158,21 +158,22 @@ class CommandRunner:
             ),
             IntentSpec(
                 "ls", ("lista", "lista el directorio", "qué hay aquí", "ls"), (),
-                "Listar la carpeta actual", "Qué hay aquí", PANEL, reads=here,
+                "Listar la carpeta actual", "Qué hay aquí", PANEL, reads=here, record=False,
             ),
             IntentSpec(
                 "pwd", ("dónde estoy", "directorio actual", "en qué carpeta estoy"), (),
-                "Decir la carpeta actual", "Dónde estoy", PANEL, reads=here,
+                "Decir la carpeta actual", "Dónde estoy", PANEL, reads=here, record=False,
             ),
             IntentSpec(
                 "arbol", ("árbol", "muestra el árbol", "árbol de {ruta}",
                           "muestra el árbol de {ruta}", "mapa de {ruta}"),
                 (Slot("ruta", SlotType.DIR_PATH, optional=True),),
                 "Mostrar el árbol de una carpeta", "Árbol de documentos", PANEL, reads=here,
+                record=False,
             ),
             IntentSpec(
                 "clear", ("limpia", "limpia la consola", "clear"), (),
-                "Limpiar el panel de comandos", "Limpia la consola", PANEL,
+                "Limpiar el panel de comandos", "Limpia la consola", PANEL, record=False,
             ),
             IntentSpec(
                 "ejecutar", ("ejecuta {comando}", "lanza el comando {comando}",

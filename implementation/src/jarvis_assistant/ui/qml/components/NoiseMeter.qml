@@ -1,7 +1,8 @@
 // Medidor de ruido: el ruido que hay alrededor ahora mismo, en decibelios aproximados, en un
-// anillo de neón para medir la concentración. Forma parte de la pantalla de sesión, fijo en
-// una esquina inferior (`noise.corner`); si el de recursos está en la misma esquina, se pone a
-// su lado. No se mueve ni cambia de tamaño. Un triple clic lo pasa a la otra esquina inferior.
+// anillo con espectro para medir la concentración. Forma parte de la pantalla de sesión, fijo en
+// una esquina inferior (`noise.corner`), siempre la opuesta a la del de recursos. No se mueve
+// ni cambia de tamaño. Un triple clic lo pasa a la otra esquina inferior y el de recursos
+// cambia también.
 // Solo se muestra u oculta con su botón del selector (`noise.toggle`).
 //
 // Solo se abre el micrófono mientras está a la vista (`noise.watch`/`unwatch`).
@@ -12,7 +13,7 @@ Item {
     id: meter
 
     property bool watching: false        // a la vista: lo decide la pantalla
-    readonly property int ringSize: 120
+    readonly property int ringSize: 140
 
     implicitWidth: ring.width
     implicitHeight: ring.height + caption.height + Theme.space4
@@ -23,17 +24,14 @@ Item {
             noise.unwatch()
     }
 
-    NeonRing {
+    NoiseGauge {
         id: ring
 
         objectName: "noise-db"
-        width: meter.ringSize
+        ringSize: meter.ringSize
         value: noise.level
         maximum: 100
         alert: 65                        // ruido que ya no deja concentrarse
-        unit: "dB"
-        label: "RUIDO"
-        color: Theme.neonLime
         animated: !ui.reduceMotion
     }
 
@@ -43,7 +41,7 @@ Item {
 
         objectName: "noise-focus"
         y: ring.height + Theme.space4
-        width: meter.ringSize
+        width: ring.width
         height: 14
         horizontalAlignment: Text.AlignHCenter
         text: noise.focusText

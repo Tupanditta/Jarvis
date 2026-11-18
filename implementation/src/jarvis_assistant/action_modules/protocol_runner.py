@@ -55,6 +55,7 @@ class ProtocolRunner:
             IntentSpec(
                 "listar", ("muestra los protocolos", "qué protocolos hay"), (),
                 "Mostrar los protocolos", "Qué protocolos hay", PANEL, in_protocols=False,
+                record=False,
             ),
         )  # fmt: skip
 

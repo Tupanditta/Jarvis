@@ -801,7 +801,7 @@ def test_un_triple_clic_pasa_el_medidor_a_la_otra_esquina_y_las_pestanas_lo_rode
     size = (meter.width(), meter.height())
     for _ in range(3):
         click(ui, meter, meter.width() / 2, meter.height() / 2)
-    assert ui.resources.corner == "left"
+    assert ui.resources.corner == "left" and ui.noise.corner == "right"  # el de ruido, enfrente
     qtbot.waitUntil(lambda: meter.mapToScene(QPointF(0, 0)).x() < ui.screen.width() / 2,
                     timeout=2000)
     assert (meter.width(), meter.height()) == size  # no cambia de tamaño
@@ -850,7 +850,7 @@ def left_of(item: QQuickItem) -> float:
     return item.mapToScene(QPointF(0, 0)).x()
 
 
-def test_el_medidor_de_ruido_se_pone_al_lado_del_de_recursos_y_mide_mientras_se_ve(
+def test_el_medidor_de_ruido_va_en_la_esquina_opuesta_al_de_recursos_y_mide_mientras_se_ve(
     desk, qtbot, microphone
 ):
     ui, _ = desk
@@ -861,8 +861,10 @@ def test_el_medidor_de_ruido_se_pone_al_lado_del_de_recursos_y_mide_mientras_se_
     click(ui, button, 20, 18)
     qtbot.waitUntil(lambda: meter.isVisible() and ui.noise.watching, timeout=2000)
     assert len(microphone) == 1
-    # Misma esquina que el de recursos: a su lado, hacia dentro, a la misma altura.
-    qtbot.waitUntil(lambda: left_of(meter) + meter.width() < left_of(resources), timeout=2000)
+    # Los tres círculos no caben en una esquina: abajo a la izquierda, a la misma altura.
+    assert ui.noise.corner == "left" and ui.resources.corner == "right"
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
+    assert left_of(meter) + meter.width() < left_of(resources)
     bottom = meter.mapToScene(QPointF(0, meter.height())).y()
     assert bottom == pytest.approx(resources.mapToScene(QPointF(0, resources.height())).y())
     microphone[0].feed(0.01)
@@ -873,7 +875,7 @@ def test_el_medidor_de_ruido_se_pone_al_lado_del_de_recursos_y_mide_mientras_se_
     assert ui.warnings == []
 
 
-def test_sin_el_de_recursos_el_de_ruido_ocupa_la_esquina_y_su_triple_clic_lo_cambia(
+def test_el_triple_clic_del_de_ruido_cambia_de_esquina_los_dos_aunque_uno_este_oculto(
     desk, qtbot, microphone
 ):
     ui, _ = desk
@@ -882,16 +884,22 @@ def test_sin_el_de_recursos_el_de_ruido_ocupa_la_esquina_y_su_triple_clic_lo_cam
     ui.resources.toggle()  # oculta el de recursos
     ui.noise.toggle()
     qtbot.waitUntil(lambda: meter.isVisible() and not resources.isVisible(), timeout=2000)
-    right = meter.mapToScene(QPointF(meter.width(), 0)).x()
-    qtbot.waitUntil(lambda: ui.screen.width() - right < 60, timeout=2000)  # en la esquina
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)  # en su esquina, la izquierda
     for _ in range(3):
         click(ui, meter, meter.width() / 2, meter.height() / 2)
-    assert ui.noise.corner == "left" and ui.resources.corner == "right"
-    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
-    # Cada uno en su esquina: el de recursos vuelve a la derecha y el de ruido no se mueve.
+    assert ui.noise.corner == "right" and ui.resources.corner == "left"
+    qtbot.waitUntil(lambda: ui.screen.width() - left_of(meter) - meter.width() < 60,
+                    timeout=2000)  # en la esquina derecha
+    # El de recursos aparece ya en la otra esquina, la izquierda.
     ui.resources.toggle()
     qtbot.waitUntil(resources.isVisible, timeout=2000)
-    assert left_of(resources) > ui.screen.width() / 2 and left_of(meter) < 60
+    qtbot.waitUntil(lambda: left_of(resources) < 60, timeout=2000)
+    assert left_of(meter) > ui.screen.width() / 2
+    # Y vuelta: el triple clic del de recursos los cambia otra vez a los dos.
+    for _ in range(3):
+        click(ui, resources, resources.width() / 2, resources.height() / 2)
+    assert ui.resources.corner == "right" and ui.noise.corner == "left"
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
     # Abajo a la izquierda: su pestaña queda a la derecha del medidor de ruido.
     ui.workspace.show("busqueda")
     ui.workspace.set_aside("busqueda")

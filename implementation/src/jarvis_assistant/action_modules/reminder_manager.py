@@ -88,18 +88,19 @@ class ReminderManager:
                 "mostrar", ("recordatorios", "muestra los recordatorios",
                             "qué recordatorios tengo"),
                 (), "Mostrar los recordatorios", "Muestra los recordatorios", PANEL,
+                record=False,
             ),
             IntentSpec(
                 "leer", ("lee el recordatorio {n}", "recordatorio {n}", "lee el {n}"),
                 (index,), "Leer un recordatorio", "Lee el recordatorio uno", PANEL,
-                in_protocols=False,
+                in_protocols=False, record=False,
             ),
             # También tras un aviso, que la pide con los avisados en `avisados` (`_offer`).
             IntentSpec(
                 "dictar", ("léeme los recordatorios", "lee los recordatorios",
                            "díctame los recordatorios", "dicta los recordatorios"),
                 (), "Dictar todos los recordatorios", "Léeme los recordatorios", PANEL,
-                in_protocols=False,
+                in_protocols=False, record=False,
             ),
             # Sin panel: confirmar mira si el panel ya está activo antes de activarlo (RN-25).
             IntentSpec(

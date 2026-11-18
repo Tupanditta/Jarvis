@@ -8,7 +8,7 @@ acciones pedidas desde las ventanas.
 import asyncio
 
 import pytest
-from test_orders import Rig, settle
+from test_orders import Rig, said, settle
 
 from jarvis_assistant import main as main_module
 from jarvis_assistant.core import events
@@ -123,7 +123,9 @@ async def test_una_parte_no_reconocida_no_detiene_a_las_demas(rig):
     ]  # fmt: skip
     await rig.advance(1.0)
     await rig.advance(1.0)
-    assert [t[2] for t in rig.tasks()].count("completado") == 2
+    assert len(rig.of(events.DirectoryListed)) == 1
+    assert rig.spoken()[-1] == said("comandos.pwd", ruta=str(rig.home))
+    assert rig.tasks() == []  # consultas: no quedan como actividad
 
 
 async def test_el_separador_pegado_tambien_separa_y_una_opcion_de_un_programa_no(rig):

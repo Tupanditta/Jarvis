@@ -1061,16 +1061,17 @@ class Orchestrator:
 
         `error`: una entidad no se pudo resolver; la tarea se crea ya en `error` con esa frase.
         Con `quiet`, la respuesta solo se dice si es un error. `task`: una subtarea ya creada
-        con `ctx.subtask`, que es la que se ejecuta.
+        con `ctx.subtask`, que es la que se ejecuta. Una orden de consulta (`record=False`)
+        fuera de un protocolo se ejecuta sin tarea: no queda como actividad.
         """
         if self._session is None:
             raise RuntimeError("No hay sesión abierta")
-        if task is None:
+        if task is not None:
+            self._tasks.publish(task, "pendiente")
+        elif parent is not None or self._recorded(module, action):
             task = self._tasks.new(
                 self._session.id, module, description or f"{module} {action}", parent
             )
-        else:
-            self._tasks.publish(task, "pendiente")
         permitted = self._permitted(module)
         if not permitted:
             # Ni una orden escrita, ni una ventana, ni un protocolo: el módulo no se ejecuta.
@@ -1090,8 +1091,9 @@ class Orchestrator:
                 ctx = self._context(origin, task, speech)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
-            self._tasks.finish(task, "error", self._cancel_reason)
-            self._tasks.fail_unrun(task, self._cancel_reason)
+            if task is not None:
+                self._tasks.finish(task, "error", self._cancel_reason)
+                self._tasks.fail_unrun(task, self._cancel_reason)
             raise
         except Exception:
             logger.exception("La acción %s.%s ha fallado", module, action)
@@ -1099,19 +1101,25 @@ class Orchestrator:
         finally:
             self._executing -= 1
             self._refresh()
-        self._tasks.fail_unrun(task, CANCELLED_REASON)  # subtareas que el módulo no ha ejecutado
-        if result.description:
-            task.description = result.description
-        if result.background and result.status == "completado":
-            self._tasks.publish(task, "pendiente")  # sigue en segundo plano
-        else:
-            self._tasks.finish(task, result.status, self._tasks.detail(result))
+        if task is not None:
+            self._tasks.fail_unrun(task, CANCELLED_REASON)  # subtareas que no ha ejecutado
+            if result.description:
+                task.description = result.description
+            if result.background and result.status == "completado":
+                self._tasks.publish(task, "pendiente")  # sigue en segundo plano
+            else:
+                self._tasks.finish(task, result.status, self._tasks.detail(result))
         if result.speech is not None:
             speech.append(result.speech)
         if quiet and result.status == "completado":
             speech = []
         self._announce(*speech, on_delivered=result.on_spoken)
         return result
+
+    def _recorded(self, module: str, action: str) -> bool:
+        """La acción se registra como actividad salvo que todas sus intenciones digan que no."""
+        specs = self._router.specs_of(module, action)
+        return not specs or any(spec.record for spec in specs)
 
     async def _invoke(
         self,

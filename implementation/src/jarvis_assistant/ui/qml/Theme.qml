@@ -26,9 +26,10 @@ QtObject {
     readonly property color statusPending: "#F5B544"
     readonly property color statusDone: "#34D399"
     readonly property color statusError: "#F2555A"
-    readonly property color neonCyan: "#00F0FF"      // medidores de recursos
-    readonly property color neonMagenta: "#FF2BD6"
-    readonly property color neonLime: "#A3FF3D"      // medidor de ruido
+    readonly property color neonCyan: "#2FDCEB"      // medidores: CPU, RAM y ruido
+    readonly property color neonBlue: "#2F7FF2"      // arco secundario del de CPU
+    readonly property color neonDim: "#1E4352"       // pistas y segmentos apagados
+    readonly property color neonCore: "#071219"      // disco del centro de los medidores
 
     // Tipografía
     readonly property string fontDisplay: "Rajdhani"

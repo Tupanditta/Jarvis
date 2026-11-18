@@ -239,6 +239,7 @@ class History:
                 "mostrar", ("muestra el historial", "historial de sesiones",
                             "enséñame el historial"),
                 (), "Mostrar las sesiones recientes", "Muestra el historial", HISTORY_PANEL,
+                record=False,
             ),
             IntentSpec(
                 "actividades", ("actividades de la sesión {id}",
@@ -247,7 +248,7 @@ class History:
                                 "qué he hecho"),
                 (Slot("id", SlotType.INTEGER, optional=True),),
                 "Mostrar las actividades de una sesión", "Actividades de la sesión doce",
-                HISTORY_PANEL,
+                HISTORY_PANEL, record=False,
             ),
             IntentSpec(
                 "eliminar", ("elimina la sesión {id}", "borra la sesión {id}"),
