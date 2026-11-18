@@ -44,7 +44,6 @@ jarvis_assistant = [
     "ui/qml/*/*.js",
     "ui/assets/fonts/*",
     "ui/assets/icons/*",
-    "ui/assets/sounds/*",
     "configurator/qml/*.qml",
     "configurator/qml/*/*.qml",
 ]

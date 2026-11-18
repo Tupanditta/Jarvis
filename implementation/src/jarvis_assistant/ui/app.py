@@ -17,6 +17,7 @@ from PySide6.QtQuick import QQuickWindow
 from jarvis_assistant.config import UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.ui import window_controller as wc
+from jarvis_assistant.ui.noise import NoiseModel
 from jarvis_assistant.ui.panel_models import (
     DEFAULT_OUTPUT_LINES,
     AdminModel,
@@ -109,6 +110,7 @@ class UiApp(QObject):
         self.protocols = ProtocolModel(self, publish)
         self.help = HelpModel(self, publish)
         self.resources = ResourcesModel(parent=self)
+        self.noise = NoiseModel(parent=self)
         self.workspace = WorkspaceModel(parent=self)
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)
@@ -141,6 +143,7 @@ class UiApp(QObject):
             ("protocols", self.protocols),
             ("help", self.help),
             ("usage", self.resources),
+            ("noise", self.noise),
             ("workspace", self.workspace),
             ("profiles", self.profiles),
             ("access", self.access),
@@ -199,6 +202,7 @@ class UiApp(QObject):
         self._quitting = True
         self._collapse_timer.stop()
         self._close_timer.stop()
+        self.noise.close()
 
     @Slot(result=bool)
     def acceptClose(self) -> bool:

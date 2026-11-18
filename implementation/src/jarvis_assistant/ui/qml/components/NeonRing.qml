@@ -1,7 +1,8 @@
-// Anillo de porcentaje en neón: una pista de segmentos tenues y, encima, el arco del valor
-// como un tubo de luz (halo en capas y núcleo casi blanco), con un punto brillante en su
-// extremo. Crece desde arriba en el sentido de las agujas del reloj. Desde el 85 % se pone
-// rojo. En el centro, la cifra y la etiqueta en `fontTech`.
+// Anillo de neón: una pista de segmentos tenues y, encima, el arco del valor como un tubo de
+// luz (halo en capas y núcleo casi blanco), con un punto brillante en su extremo. Crece desde
+// arriba en el sentido de las agujas del reloj; da la vuelta entera en `maximum`. Desde
+// `alert` se pone rojo. En el centro, la cifra con su unidad y la etiqueta en `fontTech`.
+// Por defecto es un porcentaje: de 0 a 100, en rojo desde el 85 %.
 import QtQuick
 import QtQuick.Shapes
 import ".."
@@ -9,18 +10,21 @@ import ".."
 Item {
     id: ring
 
-    property real value: 0               // 0-100
+    property real value: 0               // 0-`maximum`
+    property real maximum: 100
+    property real alert: 85              // desde aquí, en rojo
+    property string unit: "%"
     property string label: ""
     property color color: Theme.neonCyan
     property bool animated: true
-    readonly property real shown: Math.max(0, Math.min(100, value))
-    readonly property color tint: shown >= 85 ? Theme.statusError : color
+    readonly property real shown: Math.max(0, Math.min(maximum, value))
+    readonly property color tint: shown >= alert ? Theme.statusError : color
     readonly property real thickness: Math.round(width * 0.055)
     readonly property real radius: width / 2 - thickness * 2.2   // deja sitio al halo
     readonly property real centre: width / 2
     readonly property int labelSize: Math.max(9, Math.round(width * 0.075))
 
-    property real sweep: 3.6 * shown
+    property real sweep: 360 * shown / maximum
     Behavior on sweep {
         enabled: ring.animated
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
@@ -163,7 +167,7 @@ Item {
             }
 
             Text {
-                text: "%"
+                text: ring.unit
                 color: ring.tint
                 font.family: Theme.fontTech
                 font.weight: Font.Medium

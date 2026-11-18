@@ -142,7 +142,7 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # (`core.security`), con su propia conexión. Nadie depende de ella salvo `main.py`.
     "configurator": (
         "config", "core.custody", "core.database", "core.events", "core.security",
-        "ui.app", "ui.resources", "ui.view_models", "ui.workspace",
+        "ui.app", "ui.noise", "ui.resources", "ui.view_models", "ui.workspace",
     ),
     "process": ("core.events",),
     "ui": (

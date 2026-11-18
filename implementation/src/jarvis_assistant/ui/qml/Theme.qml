@@ -28,6 +28,7 @@ QtObject {
     readonly property color statusError: "#F2555A"
     readonly property color neonCyan: "#00F0FF"      // medidores de recursos
     readonly property color neonMagenta: "#FF2BD6"
+    readonly property color neonLime: "#A3FF3D"      // medidor de ruido
 
     // Tipografía
     readonly property string fontDisplay: "Rajdhani"

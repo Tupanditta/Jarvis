@@ -65,7 +65,6 @@ Item {
     signal resized(real fx, real fy, real fw, real fh)
     signal closed()
     signal activated()
-    signal appeared()                    // ha pasado de oculta a visible
     signal asideRequested()              // triple clic en la cabecera
     signal restored()                    // clic en la pestaña de una ventana apartada
 
@@ -115,11 +114,6 @@ Item {
 
     readonly property bool shown: open && !held
     property real pop: shown ? 1 : 0.97  // escala al abrir y cerrar a mano
-
-    onShownChanged: {
-        if (shown)
-            appeared()
-    }
 
     visible: opacity > 0
     opacity: shown ? 1 : 0

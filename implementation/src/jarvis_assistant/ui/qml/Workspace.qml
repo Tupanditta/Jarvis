@@ -6,18 +6,15 @@
 // despertar del orbe y salen de él una a una, de la de abajo a la de arriba. Las que se abren
 // mientras tanto se suman a la cola.
 //
-// Cada ventana que aparece suena con un aviso corto. Si aparecen varias a la vez (sin
-// animaciones), suena una sola vez.
-//
 // Una ventana apartada queda como pestaña en el borde o la esquina más cercanos a su centro:
 // en el tercio de una esquina, en esa esquina; si no, en el borde más próximo, a su altura.
 // Las esquinas son de las filas de arriba y de abajo; las columnas de los lados empiezan
 // debajo de ellas. Las pestañas de un mismo borde se ponen en fila sin taparse, y en la fila
 // de arriba dejan libre el hueco del selector (`reserveLeft`, `reserveRight`). Las que no
-// caben en su fila pasan a otra, más hacia dentro. Tampoco tapan el medidor de recursos de
-// una esquina inferior (`reserveCorner`): la fila de abajo y la columna de ese lado lo rodean.
+// caben en su fila pasan a otra, más hacia dentro. Tampoco tapan los medidores de las
+// esquinas inferiores (`reserveBottomLeft`, `reserveBottomRight`): la fila de abajo y la
+// columna de ese lado los rodean.
 import QtQuick
-import QtMultimedia
 import "components"
 
 Item {
@@ -29,17 +26,15 @@ Item {
     property bool staging: false         // abriendo sesión: las ventanas esperan al orbe
     property real reserveLeft: 0         // hueco del selector en el borde de arriba, en x
     property real reserveRight: 0
-    property string reserveCorner: ""    // "left" o "right": esquina inferior ocupada
-    property real reserveCornerWidth: 0
-    property real reserveCornerHeight: 0
+    property size reserveBottomLeft: Qt.size(0, 0)   // medidores de esa esquina; 0 si no hay
+    property size reserveBottomRight: Qt.size(0, 0)
 
     onWidthChanged: placeTabs()
     onHeightChanged: placeTabs()
     onReserveLeftChanged: placeTabs()
     onReserveRightChanged: placeTabs()
-    onReserveCornerChanged: placeTabs()
-    onReserveCornerWidthChanged: placeTabs()
-    onReserveCornerHeightChanged: placeTabs()
+    onReserveBottomLeftChanged: placeTabs()
+    onReserveBottomRightChanged: placeTabs()
 
     // Recoloca las pestañas de las ventanas apartadas, una vez por vuelta del bucle de eventos.
     function placeTabs() {
@@ -132,9 +127,8 @@ Item {
             }
         }
 
-        var cornerLeft = reserveCorner === "left" ? reserveCornerWidth + gap : 0
-        var cornerRight = reserveCorner === "right" ? reserveCornerWidth + gap : 0
-        var cornerTop = h - reserveCornerHeight - gap
+        var cornerLeft = reserveBottomLeft.width > 0 ? reserveBottomLeft.width + gap : 0
+        var cornerRight = reserveBottomRight.width > 0 ? reserveBottomRight.width + gap : 0
         var bottomLines = 1
         pack(edges.bottom, margin + cornerLeft,
              Math.max(margin + cornerLeft + tabW, w - margin - cornerRight), tabW)
@@ -148,8 +142,10 @@ Item {
         // Columnas de los lados, entre las filas de arriba y de abajo.
         var columnTop = margin + topLines * (tabH + gap)
         var columnBottom = h - margin - bottomLines * (tabH + gap)
-        var leftBottom = cornerLeft > 0 ? Math.min(columnBottom, cornerTop) : columnBottom
-        var rightBottom = cornerRight > 0 ? Math.min(columnBottom, cornerTop) : columnBottom
+        var leftBottom = cornerLeft > 0
+            ? Math.min(columnBottom, h - reserveBottomLeft.height - gap) : columnBottom
+        var rightBottom = cornerRight > 0
+            ? Math.min(columnBottom, h - reserveBottomRight.height - gap) : columnBottom
         pack(edges.left, columnTop, Math.max(columnTop + tabH, leftBottom), tabH)
         for (var l = 0; l < edges.left.length; ++l) {
             edges.left[l].win.tabX = margin + edges.left[l].line * (tabW + gap)
@@ -205,25 +201,6 @@ Item {
         cancel()
     }
 
-    SoundEffect {
-        id: chime
-
-        property double lastPlayed: 0
-
-        source: Qt.resolvedUrl("../assets/sounds/window_open.wav")
-        volume: 0.6
-
-        function ring() {
-            if (!ui.sound)
-                return  // sonido del asistente desactivado en la configuración
-            var now = Date.now()
-            if (now - lastPlayed < 120)
-                return
-            lastPlayed = now
-            play()
-        }
-    }
-
     Timer {
         id: launches
 
@@ -277,7 +254,6 @@ Item {
             onResized: (left, top, wide, tall) => workspace.resize(windowId, left, top, wide, tall)
             onClosed: workspace.close(windowId)
             onActivated: workspace.raise_window(windowId)
-            onAppeared: chime.ring()
             onAsideRequested: workspace.set_aside(windowId)
             onRestored: workspace.restore(windowId)
             onAsideChanged: area.placeTabs()

@@ -795,6 +795,93 @@ def test_un_triple_clic_pasa_el_medidor_a_la_otra_esquina_y_las_pestanas_lo_rode
     assert ui.warnings == []
 
 
+@pytest.fixture
+def microphone(monkeypatch):
+    """Micrófono falso para el medidor de ruido: guarda los flujos abiertos."""
+    import numpy as np
+
+    from jarvis_assistant.ui import noise
+
+    class Stream:
+        def __init__(self, on_block) -> None:
+            self.on_block = on_block
+            self.closed = False
+
+        def stop(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+        def feed(self, amplitude: float) -> None:
+            self.on_block(np.full(480, amplitude, dtype=np.float32))
+
+    streams: list[Stream] = []
+
+    def open_input(on_block) -> Stream:
+        streams.append(Stream(on_block))
+        return streams[-1]
+
+    monkeypatch.setattr(noise, "open_input", open_input)
+    return streams
+
+
+def left_of(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, 0)).x()
+
+
+def test_el_medidor_de_ruido_se_pone_al_lado_del_de_recursos_y_mide_mientras_se_ve(
+    desk, qtbot, microphone
+):
+    ui, _ = desk
+    resources = visual(ui, "resourceMeter")
+    meter = visual(ui, "noiseMeter")
+    assert not meter.isVisible() and microphone == []  # empieza oculto, sin micrófono
+    button = visual(ui, "dock-ruido")
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: meter.isVisible() and ui.noise.watching, timeout=2000)
+    assert len(microphone) == 1
+    # Misma esquina que el de recursos: a su lado, hacia dentro, a la misma altura.
+    qtbot.waitUntil(lambda: left_of(meter) + meter.width() < left_of(resources), timeout=2000)
+    bottom = meter.mapToScene(QPointF(0, meter.height())).y()
+    assert bottom == pytest.approx(resources.mapToScene(QPointF(0, resources.height())).y())
+    microphone[0].feed(0.01)
+    qtbot.waitUntil(lambda: visual(ui, "noise-db").property("value") > 0, timeout=2000)
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: not meter.isVisible(), timeout=2000)
+    assert not ui.noise.watching and microphone[0].closed
+    assert ui.warnings == []
+
+
+def test_sin_el_de_recursos_el_de_ruido_ocupa_la_esquina_y_su_triple_clic_lo_cambia(
+    desk, qtbot, microphone
+):
+    ui, _ = desk
+    resources = visual(ui, "resourceMeter")
+    meter = visual(ui, "noiseMeter")
+    ui.resources.toggle()  # oculta el de recursos
+    ui.noise.toggle()
+    qtbot.waitUntil(lambda: meter.isVisible() and not resources.isVisible(), timeout=2000)
+    right = meter.mapToScene(QPointF(meter.width(), 0)).x()
+    qtbot.waitUntil(lambda: ui.screen.width() - right < 60, timeout=2000)  # en la esquina
+    for _ in range(3):
+        click(ui, meter, meter.width() / 2, meter.height() / 2)
+    assert ui.noise.corner == "left" and ui.resources.corner == "right"
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
+    # Cada uno en su esquina: el de recursos vuelve a la derecha y el de ruido no se mueve.
+    ui.resources.toggle()
+    qtbot.waitUntil(resources.isVisible, timeout=2000)
+    assert left_of(resources) > ui.screen.width() / 2 and left_of(meter) < 60
+    # Abajo a la izquierda: su pestaña queda a la derecha del medidor de ruido.
+    ui.workspace.show("busqueda")
+    ui.workspace.set_aside("busqueda")
+    tab = floating(ui, "busqueda")
+    qtbot.waitUntil(lambda: (tab.width(), tab.height()) == TAB, timeout=2000)
+    edge = meter.mapToScene(QPointF(meter.width(), 0)).x()
+    qtbot.waitUntil(lambda: left_of(tab) > edge, timeout=2000)
+    assert ui.warnings == []
+
+
 def test_las_ventanas_del_acedor_muestran_su_contenido_sin_avisos(desk, qtbot):
     from jarvis_assistant.core.content import CredentialItem, NamedItem
 

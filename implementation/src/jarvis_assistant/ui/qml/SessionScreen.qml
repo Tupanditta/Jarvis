@@ -148,7 +148,33 @@ Window {
         onAwake: desk.release()
     }
 
-    // --- Medidor de recursos -----------------------------------------------------------------
+    // --- Medidores ----------------------------------------------------------------------------
+
+    // Separación entre dos medidores en la misma esquina.
+    readonly property real meterGap: Theme.space24
+    // El de ruido se pone al lado del de recursos si comparten esquina: hacia dentro.
+    readonly property bool metersJoined: usage.shown && noise.shown
+                                         && usage.corner === noise.corner
+
+    // Ancho que ocupan los medidores en una esquina inferior, desde el borde de la pantalla
+    // (margen incluido); 0 si no hay ninguno. Con las posiciones finales, no las animadas.
+    function cornerSpan(side) {
+        var span = 0
+        if (meter.visible && usage.corner === side)
+            span += meter.width
+        if (noiseMeter.visible && noise.corner === side)
+            span += (span > 0 ? meterGap : 0) + noiseMeter.width
+        return span > 0 ? span + margin : 0
+    }
+
+    function cornerHeight(side) {
+        var tall = 0
+        if (meter.visible && usage.corner === side)
+            tall = meter.height
+        if (noiseMeter.visible && noise.corner === side)
+            tall = Math.max(tall, noiseMeter.height)
+        return tall > 0 ? tall + margin : 0
+    }
 
     // CPU y RAM del asistente, fijo en una esquina inferior y por debajo de las ventanas.
     ResourceMeter {
@@ -161,6 +187,31 @@ Window {
         y: screen.height - height - screen.margin
         opacity: screen.panels
         visible: usage.shown && opacity > 0
+        watching: visible && screen.drawing
+
+        Behavior on x {
+            NumberAnimation {
+                duration: ui.reduceMotion ? 0 : Theme.motionAside
+                easing.type: Easing.InOutCubic
+            }
+        }
+    }
+
+    // Ruido alrededor, en decibelios. Junto al de recursos si están en la misma esquina; si
+    // no, en la suya.
+    NoiseMeter {
+        id: noiseMeter
+
+        readonly property real inset: screen.metersJoined ? meter.width + screen.meterGap : 0
+
+        objectName: "noiseMeter"
+        width: implicitWidth
+        height: implicitHeight
+        x: noise.corner === "left" ? screen.margin + inset
+                                   : screen.width - width - screen.margin - inset
+        y: screen.height - height - screen.margin
+        opacity: screen.panels
+        visible: noise.shown && opacity > 0
         watching: visible && screen.drawing
 
         Behavior on x {
@@ -191,10 +242,11 @@ Window {
         readonly property bool dockOnTop: dock.y < Theme.space48
         reserveLeft: dockOnTop ? dock.x - x : 0
         reserveRight: dockOnTop ? dock.x + dock.width - x : 0
-        // Ni el medidor de recursos.
-        reserveCorner: meter.visible ? usage.corner : ""
-        reserveCornerWidth: meter.width + screen.margin - x
-        reserveCornerHeight: meter.height + screen.margin - y
+        // Ni los medidores de las esquinas inferiores.
+        reserveBottomLeft: Qt.size(Math.max(0, screen.cornerSpan("left") - x),
+                                   Math.max(0, screen.cornerHeight("left") - y))
+        reserveBottomRight: Qt.size(Math.max(0, screen.cornerSpan("right") - x),
+                                    Math.max(0, screen.cornerHeight("right") - y))
     }
 
     Dock {
