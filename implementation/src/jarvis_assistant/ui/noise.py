@@ -8,6 +8,10 @@ la otra esquina inferior (`switchCorner`). Ambas cosas duran lo que la ejecució
 Solo capta el nivel de entrada del micrófono predeterminado: no graba ni guarda el audio.
 Cada intervalo calcula la energía media (RMS) de lo captado y la pasa a decibelios.
 
+Lo que se muestra es el ruido de fondo: la mediana de las medidas de los últimos
+`WINDOW_MS`. Un golpe o una voz de un par de segundos no lo mueven; solo cuenta un ruido que
+dure más de media ventana. Una media (sobre todo la de energía) la dispararía cualquier pico.
+
 El micrófono da el nivel relativo a su máximo (dBFS, siempre negativo). Para mostrar una cifra
 comparable a la de un sonómetro se le suma `CALIBRATION_DB`. Sin calibrar cada micrófono, la
 cifra es aproximada: sirve para comparar momentos, no como medida exacta.
@@ -17,7 +21,9 @@ medidor oculto no capta nada.
 """
 import logging
 import math
+import statistics
 import threading
+from collections import deque
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -27,6 +33,7 @@ from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 logger = logging.getLogger(__name__)
 
 SAMPLE_MS = 300
+WINDOW_MS = 30_000  # ventana del ruido de fondo
 CALIBRATION_DB = 94.0  # dBFS → dB aproximados: 0 dBFS de un micrófono típico ≈ 94 dB
 MAX_DB = 120.0
 QUIET_DB = 50.0  # por debajo: concentración alta
@@ -61,7 +68,8 @@ def to_db(rms: float) -> float:
 
 
 class NoiseModel(QObject):
-    """El último nivel de ruido, refrescado cada `SAMPLE_MS` mientras hay alguna vista."""
+    """El ruido de fondo de los últimos `WINDOW_MS`, refrescado cada `SAMPLE_MS` mientras hay
+    alguna vista."""
 
     changed = Signal()
     shownChanged = Signal()
@@ -79,6 +87,7 @@ class NoiseModel(QObject):
         self._lock = threading.Lock()
         self._energy = 0.0  # suma de cuadrados desde la última medida
         self._samples = 0
+        self._readings: deque[float] = deque(maxlen=max(1, round(WINDOW_MS / interval_ms)))
         self._level = 0.0
         self._available = True
         self._watchers = 0
@@ -118,6 +127,7 @@ class NoiseModel(QObject):
         opener = self._open_stream or open_input
         with self._lock:
             self._energy, self._samples = 0.0, 0
+        self._readings.clear()  # cada vez que se mira, una ventana nueva
         try:
             self._stream = opener(self._on_block)
         except Exception as error:
@@ -140,7 +150,8 @@ class NoiseModel(QObject):
             self._energy, self._samples = 0.0, 0
         if samples == 0:
             return  # aún no ha llegado audio: se queda la última medida
-        self._set(round(to_db(math.sqrt(energy / samples)), 1), available=True)
+        self._readings.append(to_db(math.sqrt(energy / samples)))
+        self._set(round(statistics.median(self._readings), 1), available=True)
 
     def _set(self, level: float, available: bool) -> None:
         if (level, available) != (self._level, self._available):
@@ -174,7 +185,7 @@ class NoiseModel(QObject):
 
     @Property(float, notify=changed)
     def level(self) -> float:
-        """Decibelios aproximados, 0-`MAX_DB`."""
+        """Ruido de fondo en decibelios aproximados, 0-`MAX_DB`."""
         return self._level
 
     @Property(bool, notify=changed)

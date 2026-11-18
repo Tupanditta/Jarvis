@@ -89,6 +89,60 @@ def test_ruido_alto_baja_la_concentracion(qtbot):
     assert model.focusText == "CONCENTRACIÓN BAJA"
 
 
+def test_los_picos_breves_no_suben_el_ruido_de_fondo(qtbot):
+    mic = FakeMicrophone()
+    model = NoiseModel(mic)  # 300 ms por medida: 100 medidas en la ventana de 30 s
+    model.watch()
+    for _ in range(93):  # 28 s de silencio
+        mic.feed(0.001)  # -60 dBFS
+        model.refresh()
+    quiet = model.level
+    for _ in range(7):  # 2 s de golpes fuertes
+        mic.feed(1.0)  # 0 dBFS
+        model.refresh()
+    assert model.level == quiet == pytest.approx(CALIBRATION_DB - 60, abs=0.1)
+
+
+def test_un_ruido_que_dura_mas_de_media_ventana_si_cuenta(qtbot):
+    mic = FakeMicrophone()
+    model = NoiseModel(mic)
+    model.watch()
+    for _ in range(40):
+        mic.feed(0.001)
+        model.refresh()
+    for _ in range(60):
+        mic.feed(0.1)  # -20 dBFS
+        model.refresh()
+    assert model.level == pytest.approx(CALIBRATION_DB - 20, abs=0.1)
+
+
+def test_las_medidas_de_mas_de_30_segundos_salen_de_la_ventana(qtbot):
+    mic = FakeMicrophone()
+    model = NoiseModel(mic)
+    model.watch()
+    for _ in range(100):
+        mic.feed(0.1)
+        model.refresh()
+    for _ in range(100):  # 30 s de silencio: el ruido anterior ya no cuenta
+        mic.feed(0.001)
+        model.refresh()
+    assert model.level == pytest.approx(CALIBRATION_DB - 60, abs=0.1)
+
+
+def test_al_volver_a_mirar_empieza_una_ventana_nueva(qtbot):
+    mic = FakeMicrophone()
+    model = NoiseModel(mic)
+    model.watch()
+    for _ in range(10):
+        mic.feed(0.1)
+        model.refresh()
+    model.unwatch()
+    model.watch()
+    mic.feed(0.001)
+    model.refresh()
+    assert model.level == pytest.approx(CALIBRATION_DB - 60, abs=0.1)
+
+
 def test_sin_microfono_lo_dice_y_no_falla(qtbot):
     def missing(on_block):
         raise OSError("No Default Input Device Available")
