@@ -21,3 +21,6 @@
 # width = 0.38
 # height = 0.6
 # order = 1
+# [layouts.meters]        # medidores a la vista al abrir sesión; sin nombrar, los de fábrica
+# recursos = true         # CPU y RAM
+# ruido = false           # decibelios

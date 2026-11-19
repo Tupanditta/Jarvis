@@ -2,7 +2,8 @@
 
 El medidor forma parte de la pantalla de sesión: dos anillos fijos en una esquina inferior.
 Se muestra u oculta con su botón del selector (`toggle`) y un triple clic lo pasa a la otra
-esquina inferior (`switchCorner`). Ambas cosas duran lo que la ejecución.
+esquina inferior (`switchCorner`). Al abrir sesión, la plantilla del perfil dice si se ve y los
+permisos si el perfil puede usarlo (`ui/meter.py`).
 
 Solo mide el proceso del asistente: las aplicaciones que abre se lanzan como procesos hijos
 y, si se sumaran, el total sería el de esas aplicaciones, no el del asistente.
@@ -19,6 +20,8 @@ from dataclasses import dataclass
 
 import psutil
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+
+from jarvis_assistant.ui.meter import MeterModel
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +57,10 @@ def _size(value: int) -> str:
     return f"{mb / 1024:.1f} GB" if mb >= 1024 else f"{mb:.0f} MB"
 
 
-class ResourcesModel(QObject):
+class ResourcesModel(MeterModel):
     """La última medida, refrescada cada `SAMPLE_MS` mientras hay alguna vista."""
 
     changed = Signal()
-    shownChanged = Signal()
-    cornerChanged = Signal()
 
     def __init__(
         self,
@@ -67,12 +68,10 @@ class ResourcesModel(QObject):
         parent: QObject | None = None,
         interval_ms: int = SAMPLE_MS,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(True, parent)
         self._sample = sample
         self._usage = Usage(0.0, 0.0, 0, 0)
         self._watchers = 0
-        self._shown = True
-        self._corner = "right"
         self._timer = QTimer(self)
         self._timer.setInterval(interval_ms)
         self._timer.timeout.connect(self.refresh)
@@ -103,27 +102,6 @@ class ResourcesModel(QObject):
         if usage != self._usage:
             self._usage = usage
             self.changed.emit()
-
-    @Slot()
-    def toggle(self) -> None:
-        """Botón del selector: muestra u oculta el medidor."""
-        self._shown = not self._shown
-        self.shownChanged.emit()
-
-    @Slot()
-    def switchCorner(self) -> None:
-        """Triple clic: a la otra esquina inferior."""
-        self._corner = "left" if self._corner == "right" else "right"
-        self.cornerChanged.emit()
-
-    @Property(bool, notify=shownChanged)
-    def shown(self) -> bool:
-        return self._shown
-
-    @Property(str, notify=cornerChanged)
-    def corner(self) -> str:
-        """`left` o `right`: la esquina inferior donde está el medidor."""
-        return self._corner
 
     @property
     def watching(self) -> bool:

@@ -30,6 +30,11 @@ QtObject {
     readonly property color neonBlue: "#2F7FF2"      // arco secundario del de CPU
     readonly property color neonDim: "#1E4352"       // pistas y segmentos apagados
     readonly property color neonCore: "#071219"      // disco del centro de los medidores
+    // Niveles del medidor de ruido (`ui/noise.py`, TIERS).
+    readonly property color noiseSilence: statusDone // silencio
+    readonly property color noiseFocusHigh: neonBlue // concentración alta
+    readonly property color noiseFocusMid: "#FACC15" // concentración media
+    readonly property color noiseFocusLow: statusError // concentración baja
 
     // Tipografía
     readonly property string fontDisplay: "Rajdhani"

@@ -17,6 +17,7 @@ from PySide6.QtQuick import QQuickWindow
 from jarvis_assistant.config import UiSettings
 from jarvis_assistant.core import events
 from jarvis_assistant.ui import window_controller as wc
+from jarvis_assistant.ui.meter import keep_apart
 from jarvis_assistant.ui.noise import NoiseModel
 from jarvis_assistant.ui.panel_models import (
     DEFAULT_OUTPUT_LINES,
@@ -61,19 +62,6 @@ def load_fonts() -> list[str]:
             continue
         families += QFontDatabase.applicationFontFamilies(font_id)
     return families
-
-
-def keep_apart(first: ResourcesModel | NoiseModel, second: ResourcesModel | NoiseModel) -> None:
-    """Pone dos medidores en esquinas inferiores opuestas y los mantiene así: si uno cambia de
-    esquina, el otro pasa a la que deja libre. Juntos no caben en una esquina."""
-
-    def follow(moved: ResourcesModel | NoiseModel, other: ResourcesModel | NoiseModel) -> None:
-        if other.corner == moved.corner:
-            other.switchCorner()
-
-    first.cornerChanged.connect(lambda: follow(first, second))
-    second.cornerChanged.connect(lambda: follow(second, first))
-    follow(first, second)
 
 
 class UiApp(QObject):
@@ -125,7 +113,9 @@ class UiApp(QObject):
         self.resources = ResourcesModel(parent=self)
         self.noise = NoiseModel(parent=self)
         keep_apart(self.resources, self.noise)
-        self.workspace = WorkspaceModel(parent=self)
+        self.workspace = WorkspaceModel(
+            parent=self, meters={"recursos": self.resources, "ruido": self.noise}
+        )
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)
         self.admin = AdminModel(self, publish)

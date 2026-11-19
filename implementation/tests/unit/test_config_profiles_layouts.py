@@ -26,6 +26,7 @@ LAYOUT = cfg.ScreenLayout(
         "comandos": cfg.WindowPlacement(True, 0.1, 0.2, 0.3, 0.4, 2),
         "ayuda": cfg.WindowPlacement(False, 0.5, 0.1, 0.2, 0.3, 0),
     },
+    meters={"recursos": False, "ruido": True},
 )  # fmt: skip
 
 
@@ -124,6 +125,9 @@ x = 0.5
 y = 0.1
 width = 0.2
 height = 0.3
+[layouts.meters]
+recursos = false
+ruido = true
 """)
     config, errors = cfg.load(tmp_path)
     assert errors == []
@@ -139,6 +143,9 @@ def test_una_plantilla_sin_barras_usa_las_posiciones_de_fabrica(tmp_path):
     assert (layout.dock, layout.input, layout.input_width) == (
         cfg.FACTORY_LAYOUT.dock, cfg.FACTORY_LAYOUT.input, DEFAULT_INPUT_WIDTH
     )
+    assert [layout.meter_shown(meter) for meter in cfg.METERS] == [
+        meter.shown for meter in cfg.METERS
+    ]
 
 
 @pytest.mark.parametrize("body, key", [
@@ -148,6 +155,7 @@ def test_una_plantilla_sin_barras_usa_las_posiciones_de_fabrica(tmp_path):
     ('id = "a"\nname = "A"\n[layouts.input]\nwidth = 0.01', "layouts[0].input.width"),
     ('id = "a"\nname = "A"\n[layouts.windows.ayuda]\nwidth = 0.01',
      "layouts[0].windows.ayuda.width"),
+    ('id = "a"\nname = "A"\n[layouts.meters]\nruido = "si"', "layouts[0].meters.ruido"),
 ])  # fmt: skip
 def test_una_plantilla_invalida_se_descarta_con_error(tmp_path, body, key):
     write(tmp_path, "layouts.toml", f"[[layouts]]\n{body}\n")

@@ -125,6 +125,19 @@ async def test_restringir_un_modulo_lo_oculta_y_lo_rechaza_en_el_perfil(rig):
     assert PermissionRepository(rig.database).restricted("casa") == frozenset()
 
 
+async def test_los_medidores_se_restringen_como_un_modulo_y_se_ocultan(rig):
+    await enter(rig, ADMIN_PROFILE_ID, ADMIN_PASSWORD)
+    shown = last(rig, events.PermissionsShown)
+    assert {"recursos", "ruido"} <= {module.id for module in shown.modules}
+    await rig.order("quita permiso de ruido a Casa")
+    assert rig.spoken()[-1] == said("permisos.restringido", perfil="Casa", modulo="Ruido")
+    await leave(rig)
+
+    await enter(rig, "casa")
+    hidden = last(rig, events.PermissionsApplied).hidden_panels
+    assert "ruido" in hidden and "recursos" not in hidden
+
+
 async def test_un_perfil_normal_no_usa_los_modulos_del_acedor(rig):
     await enter(rig, "casa")
     hidden = last(rig, events.PermissionsApplied).hidden_panels

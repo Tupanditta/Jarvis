@@ -17,9 +17,13 @@ recuperarla. Dónde queda la pestaña lo calcula QML (`Workspace.qml`).
 
 La posición y el tamaño son fracciones del área de trabajo, no píxeles: la disposición vale
 igual en cualquier resolución. QML aplica los tamaños mínimos, que sí son píxeles.
+
+Los medidores (`config.METERS`) no son ventanas, pero la plantilla dice si se ven al abrir
+sesión y el perfil puede tenerlos restringidos. El modelo recibe sus modelos (`meters`) y les
+aplica ambas cosas.
 """
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -38,6 +42,7 @@ from PySide6.QtCore import (
 from jarvis_assistant.config import (
     ADMIN_PROFILE_ID,
     FACTORY_LAYOUT,
+    METERS,
     BarPosition,
     Config,
     ScreenLayout,
@@ -45,6 +50,7 @@ from jarvis_assistant.config import (
 )
 from jarvis_assistant.config.layouts import MIN_INPUT_WIDTH
 from jarvis_assistant.core import events
+from jarvis_assistant.ui.meter import MeterModel
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +163,12 @@ class WorkspaceModel(QAbstractListModel):
         self,
         specs: Sequence[WindowSpec] = WINDOWS,
         parent: QObject | None = None,
+        meters: Mapping[str, MeterModel] | None = None,
     ) -> None:
+        """`meters`: id del medidor (`config.METERS`) → su modelo."""
         super().__init__(parent)
         self._specs = tuple(specs)
+        self._meters = dict(meters or {})
         self._rows = {spec.id: row for row, spec in enumerate(self._specs)}
         self._config: Config | None = None
         self._in_session = False
@@ -171,6 +180,7 @@ class WorkspaceModel(QAbstractListModel):
         # ni se abren. Hasta saberlo, las del Acedor.
         self._hidden = frozenset(spec.id for spec in self._specs if spec.admin)
         self._placements = self._initial_placements(FACTORY_LAYOUT)
+        self._apply_meters(FACTORY_LAYOUT)
 
     def _initial_placements(self, layout: ScreenLayout) -> dict[str, Placement]:
         placements = {
@@ -297,6 +307,8 @@ class WorkspaceModel(QAbstractListModel):
             self.apply_layout(self._config.layout(self._config.profile(profile_id).layout))
 
     def _set_hidden(self, hidden: frozenset[str]) -> None:
+        for meter_id, meter in self._meters.items():
+            meter.set_allowed(meter_id not in hidden)
         hidden = frozenset(window for window in hidden if window in self._rows)
         if hidden == self._hidden:
             return
@@ -324,17 +336,27 @@ class WorkspaceModel(QAbstractListModel):
         if bars != (self._dock, self._input, self._input_width):
             self._dock, self._input, self._input_width = bars
             self.barsChanged.emit()
+        self._apply_meters(layout)
+
+    def _apply_meters(self, layout: ScreenLayout) -> None:
+        for spec in METERS:
+            meter = self._meters.get(spec.id)
+            if meter is not None:
+                meter.set_shown(layout.meter_shown(spec))
 
     def to_layout(self, layout_id: str, name: str) -> ScreenLayout:
-        """La disposición actual como plantilla: todas las ventanas, sin apartar, y las
-        barras. La usa el editor de plantillas."""
+        """La disposición actual como plantilla: todas las ventanas, sin apartar, las barras
+        y los medidores. La usa el editor de plantillas."""
         windows = {
             spec.id: WindowPlacement(p.open, p.x, p.y, p.width, p.height, p.order)
             for spec in self._specs
             for p in (self._placements[spec.id],)
         }
+        meters = {
+            spec.id: self._meters[spec.id].wanted for spec in METERS if spec.id in self._meters
+        }
         return ScreenLayout(
-            layout_id, name, self._dock, self._input, self._input_width, windows
+            layout_id, name, self._dock, self._input, self._input_width, windows, meters
         )
 
     def _find(self, name: str) -> str | None:

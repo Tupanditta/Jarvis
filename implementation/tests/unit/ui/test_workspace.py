@@ -12,6 +12,7 @@ from jarvis_assistant.config import (
 )
 from jarvis_assistant.config.layouts import MIN_INPUT_WIDTH
 from jarvis_assistant.core import events
+from jarvis_assistant.ui.meter import MeterModel
 from jarvis_assistant.ui.workspace import (
     WINDOWS,
     WindowSpec,
@@ -334,6 +335,37 @@ def test_aplicar_una_plantilla_no_reinicia_el_modelo_ni_avisa_si_no_cambia(model
     model.apply_layout(LAYOUT)
     model.apply_layout(LAYOUT)
     assert resets == [] and len(changes) == 1
+
+
+def with_meters():
+    meters = {"recursos": MeterModel(False), "ruido": MeterModel(False)}
+    return WorkspaceModel(SPECS, meters=meters), meters
+
+
+def test_los_medidores_empiezan_como_de_fabrica_y_la_plantilla_dice_si_se_ven():
+    model, meters = with_meters()
+    assert (meters["recursos"].shown, meters["ruido"].shown) == (True, False)
+    model.apply_layout(ScreenLayout("a", "A", meters={"recursos": False, "ruido": True}))
+    assert (meters["recursos"].shown, meters["ruido"].shown) == (False, True)
+    meters["ruido"].toggle()
+    model.reset()  # restablecer vuelve a lo que dice la plantilla
+    assert meters["ruido"].shown
+
+
+def test_la_plantilla_guarda_los_medidores():
+    model, meters = with_meters()
+    meters["ruido"].toggle()
+    assert model.to_layout("n", "N").meters == {"recursos": True, "ruido": True}
+
+
+def test_un_medidor_restringido_no_se_ve_ni_se_puede_mostrar():
+    model, meters = with_meters()
+    model.apply(events.PermissionsApplied(frozenset({"recursos"})))
+    assert not meters["recursos"].allowed and not meters["recursos"].shown
+    meters["recursos"].toggle()
+    assert not meters["recursos"].shown
+    model.apply(events.PermissionsApplied(frozenset()))
+    assert meters["recursos"].shown  # vuelve como lo dejó la plantilla
 
 
 def test_la_caja_de_texto_tiene_un_ancho_minimo(model):

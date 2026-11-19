@@ -77,7 +77,35 @@ def test_sin_audio_nuevo_conserva_la_ultima_medida(qtbot):
     level = model.level
     model.refresh()
     assert model.level == level
-    assert model.focusText == "CONCENTRACIÓN ALTA"
+
+
+@pytest.mark.parametrize("db, tier, text", [
+    (0.0, "silencio", "SILENCIO"),
+    (9.9, "silencio", "SILENCIO"),
+    (10.0, "alta", "CONCENTRACIÓN ALTA"),
+    (29.9, "alta", "CONCENTRACIÓN ALTA"),
+    (30.0, "media", "CONCENTRACIÓN MEDIA"),
+    (64.9, "media", "CONCENTRACIÓN MEDIA"),
+    (65.0, "baja", "CONCENTRACIÓN BAJA"),
+    (MAX_DB, "baja", "CONCENTRACIÓN BAJA"),
+])  # fmt: skip
+def test_cuatro_niveles_segun_los_decibelios(qtbot, db, tier, text):
+    mic = FakeMicrophone()
+    model = NoiseModel(mic)
+    model.watch()
+    mic.feed(10 ** ((db - CALIBRATION_DB) / 20) if db > 0 else 0.0)
+    model.refresh()
+    assert model.level == pytest.approx(db, abs=0.1)
+    assert (model.tier, model.focusText) == (tier, text)
+
+
+def test_sin_microfono_no_hay_nivel(qtbot):
+    def broken(_on_block):
+        raise OSError("sin micrófono")
+
+    model = NoiseModel(broken)
+    model.watch()
+    assert (model.tier, model.focusText) == ("sin_microfono", "SIN MICRÓFONO")
 
 
 def test_ruido_alto_baja_la_concentracion(qtbot):

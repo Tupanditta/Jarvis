@@ -5,6 +5,8 @@ redimensionan con el ratón; nada más responde: no hay asistente, la caja no ad
 selector no abre ventanas. La disposición vive en un `WorkspaceModel` propio, el mismo modelo
 que usa la pantalla de sesión, así lo que se ve es exactamente lo que quedará.
 
+Los medidores no miden aquí: sus modelos solo guardan si la plantilla los muestra.
+
 Aceptar devuelve la plantilla al apartado Plantillas (`finished`); solo queda registrada al
 pulsar Guardar en la ventana de configuración.
 """
@@ -15,6 +17,9 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from jarvis_assistant.config import FACTORY_LAYOUT, ScreenLayout
 from jarvis_assistant.core import events
 from jarvis_assistant.core.events import Activity
+from jarvis_assistant.ui.meter import keep_apart
+from jarvis_assistant.ui.noise import NoiseModel
+from jarvis_assistant.ui.resources import ResourcesModel
 from jarvis_assistant.ui.view_models import AssistantModel
 from jarvis_assistant.ui.workspace import WorkspaceModel
 
@@ -29,7 +34,12 @@ class LayoutEditor(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.workspace = WorkspaceModel(parent=self)
+        self.resources = ResourcesModel(parent=self)
+        self.noise = NoiseModel(parent=self)
+        keep_apart(self.resources, self.noise)
+        self.workspace = WorkspaceModel(
+            parent=self, meters={"recursos": self.resources, "ruido": self.noise}
+        )
         # Los componentes de la pantalla leen el estado del asistente; aquí está siempre
         # escuchando, con la sesión abierta, y lo que publica no va a ninguna parte.
         self.assistant = AssistantModel(parent=self)

@@ -1,8 +1,8 @@
 // Esfera de ruido: un anillo con la escala en decibelios alrededor y el valor como un arco
 // de luz que crece desde arriba en el sentido de las agujas del reloj (vuelta entera en
 // `maximum`), con un espectro de barras a cada lado que se agita más cuanto más ruido hay.
-// En el centro, la cifra y "RUIDO". Desde `alert`, en rojo. Sin movimiento (`animated`
-// falso), las barras se quedan quietas.
+// En el centro, la cifra y "RUIDO", del color `tint` (por defecto, desde `alert` en rojo). Sin
+// movimiento (`animated` falso), las barras se quedan quietas.
 import QtQuick
 import QtQuick.Shapes
 import ".."
@@ -16,7 +16,12 @@ Item {
     property bool animated: true
     property real ringSize: 140
     readonly property real shown: Math.max(0, Math.min(maximum, value))
-    readonly property color tint: shown >= alert ? Theme.statusError : Theme.neonCyan
+    property color tint: shown >= alert ? Theme.statusError : Theme.neonCyan
+
+    Behavior on tint {
+        enabled: gauge.animated
+        ColorAnimation { duration: 600 }
+    }
     readonly property real r: ringSize / 2
     readonly property real wing: ringSize * 0.46     // ancho del espectro de cada lado
     readonly property int bars: 16                   // barras por lado

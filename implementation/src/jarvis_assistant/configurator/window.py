@@ -25,8 +25,6 @@ from jarvis_assistant.configurator.registry import SECTIONS, SectionContext, Sec
 from jarvis_assistant.configurator.sections.base import Section
 from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.ui.app import load_fonts
-from jarvis_assistant.ui.noise import NoiseModel
-from jarvis_assistant.ui.resources import ResourcesModel
 from jarvis_assistant.ui.view_models import UiOptions
 
 logger = logging.getLogger(__name__)
@@ -157,10 +155,10 @@ class ConfigWindow(QObject):
             # Lo que necesitan los componentes de la pantalla de sesión en el editor.
             ("workspace", self.editor.workspace),
             ("assistant", self.editor.assistant),
-            # Los botones de los medidores de recursos y de ruido del selector. Aquí no hay
-            # medidores: no miden nada.
-            ("usage", ResourcesModel(parent=self)),
-            ("noise", NoiseModel(parent=self)),
+            # Los medidores de recursos y de ruido: si la plantilla los muestra. Aquí no
+            # miden nada.
+            ("usage", self.editor.resources),
+            ("noise", self.editor.noise),
             ("ui", self._options),
         ):
             context.setContextProperty(name, value)

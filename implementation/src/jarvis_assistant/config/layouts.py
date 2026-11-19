@@ -7,6 +7,9 @@ fracciones de la pantalla, para que valga en cualquier resolución.
 Las ventanas se nombran por su id (`ui/workspace.py`, `WINDOWS`). Este módulo no conoce el
 registro: una ventana que la plantilla no nombra toma su disposición de fábrica, y la interfaz
 ignora las que ya no existen.
+
+La plantilla dice también qué medidores (`METERS`) se ven al abrir sesión. Un medidor que no
+nombra toma su valor de fábrica.
 """
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -24,6 +27,24 @@ MIN_INPUT_WIDTH = 0.1
 
 _UNIT = (0.0, 1.0)
 _WINDOW_SIZE = (MIN_WINDOW_FRACTION, 1.0)
+
+
+@dataclass(frozen=True)
+class MeterSpec:
+    """Medidor de la pantalla de sesión. No es una ventana ni un módulo de acción, pero las
+    plantillas dicen si se ve al abrir sesión y el Acedor puede restringirlo como un módulo
+    (su id es el del permiso)."""
+
+    id: str
+    title: str
+    shown: bool  # a la vista en la disposición de fábrica
+
+
+METERS: tuple[MeterSpec, ...] = (
+    MeterSpec("recursos", "Recursos", True),  # CPU y RAM del asistente
+    MeterSpec("ruido", "Ruido", False),  # decibelios alrededor
+)
+METER_IDS = frozenset(meter.id for meter in METERS)
 
 
 @dataclass(frozen=True)
@@ -61,6 +82,12 @@ class ScreenLayout:
     windows: Mapping[str, WindowPlacement] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    meters: Mapping[str, bool] = field(  # id del medidor → a la vista al abrir sesión
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def meter_shown(self, meter: MeterSpec) -> bool:
+        return self.meters.get(meter.id, meter.shown)
 
 
 # Siempre existe, no se edita ni se elimina. Sin ventanas: todas toman su disposición de
@@ -103,10 +130,16 @@ def _parse_layout(item: Reader) -> ScreenLayout:
             order=window.integer("order", 0, (0, 1000)),
         )
         window.close()
+    meters_table = item.table("meters")
+    meters = {
+        meter_id: meters_table.boolean(meter_id, False) for meter_id, _value in meters_table.items()
+    }
+    meters_table.close()
     item.close()
     return ScreenLayout(
-        layout_id, name, dock, bar_input, input_width, MappingProxyType(windows)
-    )
+        layout_id, name, dock, bar_input, input_width, MappingProxyType(windows),
+        MappingProxyType(meters),
+    )  # fmt: skip
 
 
 def parse_layouts(reader: Reader) -> tuple[ScreenLayout, ...]:
@@ -164,5 +197,10 @@ def dump_layouts(document: Any, layouts: Sequence[ScreenLayout]) -> None:
             windows[window_id] = window
         if layout.windows:
             table["windows"] = windows
+        if layout.meters:
+            meters = tomlkit.table()
+            for meter_id, shown in layout.meters.items():
+                meters[meter_id] = shown
+            table["meters"] = meters
         array.append(table)
     document["layouts"] = array

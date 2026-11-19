@@ -14,6 +14,14 @@ Item {
 
     property bool watching: false        // a la vista: lo decide la pantalla
     readonly property int ringSize: 140
+    // Color de cada nivel (`noise.tier`): verde en silencio, azul con concentración alta,
+    // amarillo con media y rojo con baja.
+    readonly property color tint: ({
+        "silencio": Theme.noiseSilence,
+        "alta": Theme.noiseFocusHigh,
+        "media": Theme.noiseFocusMid,
+        "baja": Theme.noiseFocusLow
+    })[noise.tier] ?? Theme.statusError
 
     implicitWidth: ring.width
     implicitHeight: ring.height + caption.height + Theme.space4
@@ -32,6 +40,7 @@ Item {
         value: noise.level
         maximum: 100
         alert: 65                        // ruido que ya no deja concentrarse
+        tint: meter.tint
         animated: !ui.reduceMotion
     }
 
@@ -45,7 +54,7 @@ Item {
         height: 14
         horizontalAlignment: Text.AlignHCenter
         text: noise.focusText
-        color: noise.available ? Theme.textSecondary : Theme.statusError
+        color: meter.tint
         font.family: Theme.fontTech
         font.pixelSize: 9
         font.letterSpacing: 1.2

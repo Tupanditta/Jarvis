@@ -2,7 +2,7 @@
 // Las ventanas que la plantilla muestra se mueven y se redimensionan como en la sesión; las
 // dos barras se arrastran y la caja de texto cambia de ancho desde sus extremos. Nada más
 // responde: no hay asistente, la caja no admite texto y el selector no abre ventanas. Una
-// paleta flotante reúne el nombre, qué ventanas se muestran y Aceptar o Cancelar.
+// paleta flotante reúne el nombre, qué ventanas y medidores se muestran y Aceptar o Cancelar.
 //
 // Usa el mismo modelo (`workspace`) y los mismos componentes que la pantalla de sesión, con la
 // misma área de trabajo: lo que se ve aquí es lo que se verá al abrir sesión.
@@ -66,6 +66,30 @@ Window {
             text: "Orbe"
             color: Theme.textMuted
         }
+    }
+
+    // --- Medidores: donde estarán al abrir sesión, sin medir -------------------------------
+
+    // El margen de la pantalla de sesión (`SessionScreen.qml`).
+    readonly property real meterMargin: Math.round(
+        Theme.space48 * Math.min(1, Math.min(width / 1920, height / 1080)))
+
+    ResourceMeter {
+        objectName: "resourceMeterPreview"
+        width: implicitWidth
+        height: implicitHeight
+        x: usage.corner === "left" ? screen.meterMargin : screen.width - width - screen.meterMargin
+        y: screen.height - height - screen.meterMargin
+        visible: usage.shown
+    }
+
+    NoiseMeter {
+        objectName: "noiseMeterPreview"
+        width: implicitWidth
+        height: implicitHeight
+        x: noise.corner === "left" ? screen.meterMargin : screen.width - width - screen.meterMargin
+        y: screen.height - height - screen.meterMargin
+        visible: noise.shown
     }
 
     // --- Ventanas: la misma área de trabajo que la pantalla de sesión -----------------------
@@ -284,6 +308,35 @@ Window {
                         checked: open
                         onToggled: (value) => workspace.set_open(windowId, value)
                     }
+                }
+            }
+
+            Text {
+                width: parent.width
+                text: "Medidores al abrir sesión"
+                color: Theme.textSecondary
+                font.family: Theme.fontBody
+                font.pixelSize: Theme.sizeLabel
+            }
+
+            Column {
+                width: parent.width
+                spacing: Theme.space8
+
+                Toggle {
+                    objectName: "show-recursos"
+                    width: parent.width
+                    text: "Recursos (CPU y RAM)"
+                    checked: usage.shown
+                    onToggled: (value) => { if (value !== usage.shown) usage.toggle() }
+                }
+
+                Toggle {
+                    objectName: "show-ruido"
+                    width: parent.width
+                    text: "Ruido (decibelios)"
+                    checked: noise.shown
+                    onToggled: (value) => { if (value !== noise.shown) noise.toggle() }
                 }
             }
 

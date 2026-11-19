@@ -21,8 +21,8 @@ Rectangle {
     border.width: 1
     border.color: Theme.lineSoft
 
-    // Botón de un medidor de la pantalla de sesión (`meter`: su modelo, con `shown` y
-    // `toggle`). El punto bajo el icono marca que está a la vista.
+    // Botón de un medidor de la pantalla de sesión (`meter`: su modelo, con `shown`, `allowed`
+    // y `toggle`). El punto bajo el icono marca que está a la vista. Sin permiso, no se ofrece.
     component MeterButton: Item {
         id: button
 
@@ -31,13 +31,15 @@ Rectangle {
         property string icon: ""
         readonly property bool active: meter ? meter.shown : false
         readonly property string label: (active ? "Ocultar " : "Mostrar ") + what
+        readonly property bool allowed: meter ? meter.allowed : true
 
         onLabelChanged: {
             if (buttonHover.hovered)
                 dock.hint = label
         }
 
-        width: 40
+        visible: allowed
+        width: allowed ? 40 : 0
         height: 36
 
         Rectangle {

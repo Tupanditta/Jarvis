@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jarvis_assistant.config import (
     ADMIN_PROFILE_ID,
+    METERS,
     Config,
     ConfigError,
     Profile,
@@ -920,11 +921,13 @@ class Orchestrator:
 
     def _restrictable(self) -> tuple[tuple[str, str], ...]:
         """Módulos que el Acedor puede conceder o restringir: los de acción normales, menos
-        los que el asistente necesita siempre (`always_allowed`)."""
-        return tuple(
+        los que el asistente necesita siempre (`always_allowed`), y los medidores de la
+        pantalla de sesión."""
+        modules = tuple(
             (name, module.title) for name, module in self._modules.items()
             if not getattr(module, "admin", False) and not getattr(module, "always_allowed", False)
         )  # fmt: skip
+        return modules + tuple((meter.id, meter.title) for meter in METERS)
 
     def _apply_permissions(self) -> None:
         """Al abrir sesión: los módulos del perfil, en el enrutador y en la interfaz."""
@@ -935,6 +938,7 @@ class Orchestrator:
             if getattr(module, "always_allowed", False)
         }  # fmt: skip
         if profile_id == ADMIN_PROFILE_ID:
+            restricted: frozenset[str] = frozenset()
             allowed = frozenset(always | admin)
         else:
             restricted = self._permissions.restricted(profile_id)
@@ -949,6 +953,8 @@ class Orchestrator:
             panel for (module, _a), panel in self._panels.items()
             if module not in allowed and panel is not None and panel not in shown
         }  # fmt: skip
+        # Los medidores no son módulos: solo se ocultan. El Acedor los ve siempre.
+        hidden |= {meter.id for meter in METERS if meter.id in restricted}
         self._bus.publish(events.PermissionsApplied(frozenset(hidden)))
 
     def _permitted(self, module: str) -> bool:

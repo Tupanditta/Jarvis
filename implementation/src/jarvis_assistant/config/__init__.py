@@ -11,7 +11,10 @@ from jarvis_assistant.config.commands import DEFAULT_BINARIES, Binary
 from jarvis_assistant.config.layouts import (
     FACTORY_LAYOUT,
     FACTORY_LAYOUT_ID,
+    METER_IDS,
+    METERS,
     BarPosition,
+    MeterSpec,
     ScreenLayout,
     WindowPlacement,
 )
@@ -58,6 +61,8 @@ __all__ = [
     "DEFAULT_BINARIES",
     "FACTORY_LAYOUT",
     "FACTORY_LAYOUT_ID",
+    "METERS",
+    "METER_IDS",
     "AppEntry",
     "BarPosition",
     "Binary",
@@ -68,6 +73,7 @@ __all__ = [
     "DialogueSettings",
     "InputSettings",
     "LoggingSettings",
+    "MeterSpec",
     "PageEntry",
     "Profile",
     "ProtocolDef",

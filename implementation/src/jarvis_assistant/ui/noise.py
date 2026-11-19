@@ -1,9 +1,10 @@
 """Ruido ambiente en decibelios, en tiempo real, para el medidor de ruido.
 
 El medidor ayuda a medir la concentración: cuánto ruido hay alrededor. Forma parte de la
-pantalla de sesión, como el de recursos: un anillo fijo en una esquina inferior. Empieza
-oculto; se muestra u oculta con su botón del selector (`toggle`) y un triple clic lo pasa a
-la otra esquina inferior (`switchCorner`). Ambas cosas duran lo que la ejecución.
+pantalla de sesión, como el de recursos: un anillo fijo en una esquina inferior. De fábrica
+empieza oculto; se muestra u oculta con su botón del selector (`toggle`) y un triple clic lo
+pasa a la otra esquina inferior (`switchCorner`). Al abrir sesión, la plantilla del perfil dice
+si se ve y los permisos si el perfil puede usarlo (`ui/meter.py`).
 
 Solo capta el nivel de entrada del micrófono predeterminado: no graba ni guarda el audio.
 Cada intervalo calcula la energía media (RMS) de lo captado y la pasa a decibelios.
@@ -30,14 +31,23 @@ from typing import Any, Protocol
 import numpy as np
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
+from jarvis_assistant.ui.meter import MeterModel
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_MS = 300
 WINDOW_MS = 30_000  # ventana del ruido de fondo
 CALIBRATION_DB = 94.0  # dBFS → dB aproximados: 0 dBFS de un micrófono típico ≈ 94 dB
 MAX_DB = 120.0
-QUIET_DB = 50.0  # por debajo: concentración alta
-LOUD_DB = 65.0  # desde aquí: concentración baja
+# Niveles del medidor, de menos a más ruido: (id, rótulo, por debajo de cuántos dB). El último
+# no tiene tope. QML pinta cada uno de su color (`NoiseMeter.qml`).
+TIERS: tuple[tuple[str, str, float], ...] = (
+    ("silencio", "SILENCIO", 10.0),
+    ("alta", "CONCENTRACIÓN ALTA", 30.0),
+    ("media", "CONCENTRACIÓN MEDIA", 65.0),
+    ("baja", "CONCENTRACIÓN BAJA", math.inf),
+)
+UNAVAILABLE_TIER = ("sin_microfono", "SIN MICRÓFONO")
 
 Block = Callable[[np.ndarray], None]
 
@@ -67,13 +77,11 @@ def to_db(rms: float) -> float:
     return max(0.0, min(MAX_DB, 20 * math.log10(rms) + CALIBRATION_DB))
 
 
-class NoiseModel(QObject):
+class NoiseModel(MeterModel):
     """El ruido de fondo de los últimos `WINDOW_MS`, refrescado cada `SAMPLE_MS` mientras hay
     alguna vista."""
 
     changed = Signal()
-    shownChanged = Signal()
-    cornerChanged = Signal()
 
     def __init__(
         self,
@@ -81,7 +89,7 @@ class NoiseModel(QObject):
         parent: QObject | None = None,
         interval_ms: int = SAMPLE_MS,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(False, parent)
         self._open_stream = open_stream
         self._stream: InputStream | None = None
         self._lock = threading.Lock()
@@ -91,8 +99,6 @@ class NoiseModel(QObject):
         self._level = 0.0
         self._available = True
         self._watchers = 0
-        self._shown = False
-        self._corner = "right"
         self._timer = QTimer(self)
         self._timer.setInterval(interval_ms)
         self._timer.timeout.connect(self.refresh)
@@ -158,27 +164,6 @@ class NoiseModel(QObject):
             self._level, self._available = level, available
             self.changed.emit()
 
-    @Slot()
-    def toggle(self) -> None:
-        """Botón del selector: muestra u oculta el medidor."""
-        self._shown = not self._shown
-        self.shownChanged.emit()
-
-    @Slot()
-    def switchCorner(self) -> None:
-        """Triple clic: a la otra esquina inferior."""
-        self._corner = "left" if self._corner == "right" else "right"
-        self.cornerChanged.emit()
-
-    @Property(bool, notify=shownChanged)
-    def shown(self) -> bool:
-        return self._shown
-
-    @Property(str, notify=cornerChanged)
-    def corner(self) -> str:
-        """`left` o `right`: la esquina inferior donde está el medidor."""
-        return self._corner
-
     @property
     def watching(self) -> bool:
         return self._timer.isActive()
@@ -193,13 +178,18 @@ class NoiseModel(QObject):
         """Falso si no se ha podido abrir el micrófono."""
         return self._available
 
+    def _tier(self) -> tuple[str, str]:
+        if not self._available:
+            return UNAVAILABLE_TIER
+        return next((key, text) for key, text, below in TIERS if self._level < below)
+
+    @Property(str, notify=changed)
+    def tier(self) -> str:
+        """Nivel del ruido (`TIERS`): `silencio`, `alta`, `media` o `baja`; sin micrófono,
+        `sin_microfono`."""
+        return self._tier()[0]
+
     @Property(str, notify=changed)
     def focusText(self) -> str:
         """Lo que el ruido deja concentrarse, para el rótulo del medidor."""
-        if not self._available:
-            return "SIN MICRÓFONO"
-        if self._level < QUIET_DB:
-            return "CONCENTRACIÓN ALTA"
-        if self._level < LOUD_DB:
-            return "CONCENTRACIÓN MEDIA"
-        return "CONCENTRACIÓN BAJA"
+        return self._tier()[1]
