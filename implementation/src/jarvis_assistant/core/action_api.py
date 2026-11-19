@@ -195,6 +195,17 @@ async def _no_dialogue(*_args: object, **_kwargs: object) -> DialogueAnswer:
     return DialogueAnswer(cancelled=True)
 
 
+# Guarda en sus archivos las aplicaciones y páginas (`catalog.toml`) o los binarios permitidos
+# (`commands.toml`) y los aplica en la sesión en curso. `save_launchers(catalog=None,
+# binaries=None)`: lo que es None no se toca. Devuelve el motivo si no se ha podido guardar;
+# vacío si se ha guardado.
+SaveLaunchers = Callable[..., Awaitable[str]]
+
+
+async def _cannot_save(*_args: object, **_kwargs: object) -> str:
+    return "no se puede escribir la configuración"
+
+
 @dataclass(frozen=True)
 class CommandLine:
     """Entidad `COMMAND_LINE` resuelta: un binario permitido y sus argumentos (RN-45)."""
@@ -303,6 +314,8 @@ class ActionContext:
     # reutiliza) la consola propia de `key`; desde ahí, la tarea y sus subtareas trabajan en
     # ella. Empieza en la carpeta del usuario o, con `inherit`, en la de la consola que deja.
     open_console: Callable[[str, str, bool], None] = lambda _key, _title, _inherit=False: None
+    # Solo lo usa el módulo Catálogo (ver `SaveLaunchers`).
+    save_launchers: SaveLaunchers = _cannot_save
 
 
 class ActionModule(Protocol):
@@ -318,6 +331,9 @@ class ActionModule(Protocol):
 
 # Miembros opcionales de un módulo:
 #   async def on_session_opened(self, ctx) / on_session_closed(self, ctx)
+#   async def on_config_changed(self, ctx)
+#       Durante la sesión ha cambiado el catálogo o la lista de binarios (`save_launchers`):
+#       `ctx.config` ya trae lo nuevo.
 #   def catalogs(self) -> Mapping[str, Sequence[Callable[[], Sequence[str]]]]
 #       Catálogos para las entidades `CATALOG`. Cada uno es una lista de fuentes, por orden
 #       de prioridad: gana la primera con una coincidencia que supere el umbral.

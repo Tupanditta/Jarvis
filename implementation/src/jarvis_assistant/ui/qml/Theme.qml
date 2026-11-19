@@ -6,34 +6,34 @@ import QtQuick
 QtObject {
     // Color
     readonly property color bgBase: "#05070B"
-    readonly property color bgPanel: Qt.rgba(12 / 255, 18 / 255, 28 / 255, 0.78)
-    readonly property color bgRaised: "#121B28"
-    readonly property color bgWindow: Qt.rgba(8 / 255, 13 / 255, 21 / 255, 0.92)
-    readonly property color bgHover: Qt.rgba(34 / 255, 211 / 255, 238 / 255, 0.09)
-    readonly property color bgSelected: Qt.rgba(34 / 255, 211 / 255, 238 / 255, 0.16)
+    readonly property color bgPanel: Qt.rgba(10 / 255, 32 / 255, 56 / 255, 0.78)
+    readonly property color bgRaised: "#123352"
+    readonly property color bgWindow: Qt.rgba(8 / 255, 28 / 255, 50 / 255, 0.90)
+    readonly property color bgHover: Qt.rgba(75 / 255, 235 / 255, 250 / 255, 0.10)
+    readonly property color bgSelected: Qt.rgba(75 / 255, 235 / 255, 250 / 255, 0.18)
     readonly property color shadowNear: Qt.rgba(0, 0, 0, 0.30)
     readonly property color shadowFar: Qt.rgba(0, 0, 0, 0.16)
-    readonly property color lineSoft: "#1B2A3A"
-    readonly property color lineStrong: "#2A4560"
-    readonly property color primary: "#22D3EE"
-    readonly property color primaryBright: "#7DF3FF"
-    readonly property color primaryHot: "#E8FDFF"
-    readonly property color primaryDim: "#0E7490"
-    readonly property color primaryDeep: "#0B2A4A"
-    readonly property color textPrimary: "#E6F1F8"
-    readonly property color textSecondary: "#8FA6B8"
-    readonly property color textMuted: "#5B7083"
-    readonly property color statusPending: "#F5B544"
-    readonly property color statusDone: "#34D399"
-    readonly property color statusError: "#F2555A"
-    readonly property color neonCyan: "#2FDCEB"      // medidores: CPU, RAM y ruido
-    readonly property color neonBlue: "#2F7FF2"      // arco secundario del de CPU
-    readonly property color neonDim: "#1E4352"       // pistas y segmentos apagados
-    readonly property color neonCore: "#071219"      // disco del centro de los medidores
+    readonly property color lineSoft: "#1F4D6E"
+    readonly property color lineStrong: "#3388B5"
+    readonly property color primary: "#40E6F8"
+    readonly property color primaryBright: "#8EF8FF"
+    readonly property color primaryHot: "#F0FEFF"
+    readonly property color primaryDim: "#1597BC"
+    readonly property color primaryDeep: "#104475"
+    readonly property color textPrimary: "#F0FAFF"
+    readonly property color textSecondary: "#A0CDE6"
+    readonly property color textMuted: "#6C98B5"
+    readonly property color statusPending: "#FFC24D"
+    readonly property color statusDone: "#3EE8A8"
+    readonly property color statusError: "#FF5C63"
+    readonly property color neonCyan: "#4BEBFA"      // medidores: CPU, RAM y ruido
+    readonly property color neonBlue: "#3D95FF"      // arco secundario del de CPU
+    readonly property color neonDim: "#235A72"       // pistas y segmentos apagados
+    readonly property color neonCore: "#081D30"      // disco del centro de los medidores
     // Niveles del medidor de ruido (`ui/noise.py`, TIERS).
     readonly property color noiseSilence: statusDone // silencio
     readonly property color noiseFocusHigh: neonBlue // concentración alta
-    readonly property color noiseFocusMid: "#FACC15" // concentración media
+    readonly property color noiseFocusMid: "#FFD62E" // concentración media
     readonly property color noiseFocusLow: statusError // concentración baja
 
     // Tipografía

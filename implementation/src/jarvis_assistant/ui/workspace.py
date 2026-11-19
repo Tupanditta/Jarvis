@@ -111,6 +111,8 @@ WINDOWS: tuple[WindowSpec, ...] = (
                0.24, 0.60, 0.19, 0.38),
     WindowSpec("protocolo", "Protocolo", "protocolo", "ProtocolPanel.qml",
                0.57, 0.60, 0.18, 0.38, style="cut"),
+    WindowSpec("catalogo", "Catálogo", "aplicacion", "CatalogPanel.qml",
+               0.38, 0.10, 0.24, 0.62, min_width=340, min_height=320, style="bracket"),
     # Las del Acedor.
     WindowSpec("permisos", "Permisos", "candado", "PermissionsPanel.qml",
                0.015, 0.03, 0.30, 0.60, open=True, min_width=420, admin=True),

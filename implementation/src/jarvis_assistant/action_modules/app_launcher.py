@@ -101,6 +101,16 @@ class AppLauncher:
         self._catalog = ctx.config.catalog
         self._items.clear()
         self._publish(ctx)
+        self._publish_targets(ctx)
+        if self._catalog.discover_installed_apps:
+            self._discovery = asyncio.ensure_future(self.discover(ctx.platform))
+
+    async def on_config_changed(self, ctx: ActionContext) -> None:
+        """El catálogo ha cambiado en la sesión (módulo Catálogo): lo nuevo ya se puede abrir."""
+        self._catalog = ctx.config.catalog
+        self._publish_targets(ctx)
+
+    def _publish_targets(self, ctx: ActionContext) -> None:
         ctx.publish(
             events.LaunchTargetsChanged(
                 tuple(
@@ -112,8 +122,6 @@ class AppLauncher:
                 )
             )
         )  # fmt: skip
-        if self._catalog.discover_installed_apps:
-            self._discovery = asyncio.ensure_future(self.discover(ctx.platform))
 
     async def on_session_closed(self, ctx: ActionContext) -> None:
         """La lista se vacía; las aplicaciones abiertas no se cierran."""

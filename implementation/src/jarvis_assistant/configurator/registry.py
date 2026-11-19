@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from jarvis_assistant.configurator.editor import LayoutEditor
 from jarvis_assistant.configurator.sections.base import Section
-from jarvis_assistant.configurator.sections.catalog import CatalogSection
 from jarvis_assistant.configurator.sections.layouts import LayoutsSection
 from jarvis_assistant.configurator.sections.profiles import ProfilesSection
 from jarvis_assistant.configurator.sections.sound import SoundSection
@@ -48,6 +47,4 @@ SECTIONS: tuple[SectionSpec, ...] = (
                 lambda context: LayoutsSection(context.editor)),
     SectionSpec("perfiles", "Perfiles", "sesion", "ProfilesPage.qml", _profiles),
     SectionSpec("sonido", "Sonido", "silencio", "SoundPage.qml", lambda _context: SoundSection()),
-    SectionSpec("aplicaciones", "Aplicaciones", "aplicacion", "CatalogPage.qml",
-                lambda _context: CatalogSection()),
 )  # fmt: skip

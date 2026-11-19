@@ -22,20 +22,21 @@ from jarvis_assistant.action_modules.administration import (
     ProfileManager,
 )
 from jarvis_assistant.action_modules.app_launcher import AppLauncher
+from jarvis_assistant.action_modules.catalog_manager import CatalogManager
 from jarvis_assistant.action_modules.command_runner import CommandRunner
 from jarvis_assistant.action_modules.file_manager import FileCreation, FileSearch
 from jarvis_assistant.action_modules.protocol_runner import ProtocolRunner
 from jarvis_assistant.action_modules.reminder_manager import ReminderManager
 from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
-from jarvis_assistant.config.writer import remove_profile
+from jarvis_assistant.config.writer import remove_profile, save_launchers
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import ActionModule
 from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.orchestrator import Orchestrator, Reload
+from jarvis_assistant.core.orchestrator import Orchestrator, Reload, SaveLaunchersFile
 from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Scheduler
 from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.core.state_machine import StateMachine
@@ -65,7 +66,7 @@ _MISSING_MODELS_NOTICE_MS = 6000
 # va aparte, antes que todos: también lo usa el orquestador para abrir y cerrar la sesión.
 ACTION_MODULES: list[Callable[[], ActionModule]] = [
     CommandRunner, AppLauncher, FileSearch, FileCreation, History, ReminderManager,
-    ProtocolRunner,
+    ProtocolRunner, CatalogManager,
     # Solo para el Acedor (`admin = True`).
     PermissionManager, CredentialVault, ProfileManager,
 ]
@@ -107,6 +108,7 @@ def build_app(
     reload_config: Reload | None = None,
     windows: Sequence[str] = (),
     remove_profile: Callable[[str], None] | None = None,
+    save_launchers: SaveLaunchersFile | None = None,
 ) -> App:
     """Construye el grafo completo sin lanzar hilos ni abrir dispositivos.
 
@@ -147,6 +149,7 @@ def build_app(
         on_exit=on_exit,
         scheduler=adapters.scheduler or ClockScheduler(adapters.clock),
         remove_profile=remove_profile,
+        save_launchers=save_launchers,
     )
     return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters, workdir)
 
@@ -210,10 +213,12 @@ class CoreThread:
         reload_config: Reload | None = None,
         windows: Sequence[str] = (),
         remove_profile: Callable[[str], None] | None = None,
+        save_launchers: SaveLaunchersFile | None = None,
     ) -> None:
         self._config = config
         self._windows = tuple(windows)
         self._remove_profile = remove_profile
+        self._save_launchers = save_launchers
         self._bus = bus
         self._make_adapters = make_adapters
         self._on_exit = on_exit
@@ -251,6 +256,7 @@ class CoreThread:
         app = build_app(
             self._config, adapters, bus=self._bus, reload_config=self._reload_config,
             windows=self._windows, remove_profile=self._remove_profile,
+            save_launchers=self._save_launchers,
         )
         self.app = app
         try:
@@ -454,6 +460,9 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         reload_config=lambda previous: config_module.load(paths.config_dir, previous=previous),
         windows=[spec.title for spec in WINDOWS],
         remove_profile=lambda profile_id: remove_profile(paths.config_dir, profile_id),
+        save_launchers=lambda catalog, binaries: save_launchers(
+            paths.config_dir, catalog, binaries
+        ),
     )
     core.start()
     tray.show()

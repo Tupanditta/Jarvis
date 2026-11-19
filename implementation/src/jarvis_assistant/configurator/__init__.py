@@ -4,7 +4,7 @@ Edita la configuración con el ratón, sin el asistente: no se le dan órdenes n
 Todo lo que se cambia queda en un borrador; solo al pulsar Guardar se escribe en los archivos
 TOML, y el asistente lo aplica al abrir la siguiente sesión.
 
-Cada apartado (plantillas, perfiles, sonido, aplicaciones…) es una clase de `sections/` con su
+Cada apartado (plantillas, perfiles, sonido…) es una clase de `sections/` con su
 página QML, registrada en `registry.SECTIONS`. Añadir un apartado es añadir su clase, su página
 y su fila en el registro.
 

@@ -38,6 +38,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from jarvis_assistant.config import (
     ADMIN_PROFILE_ID,
     METERS,
+    Binary,
+    Catalog,
     Config,
     ConfigError,
     Profile,
@@ -121,6 +123,9 @@ _AWAITING = (AssistantState.AWAITING_CONFIRMATION, AssistantState.AWAITING_PARAM
 Origin = Literal["voz", "protocolo"]
 Reload = Callable[[Config], tuple[Config, Sequence[ConfigError]]]
 RemoveProfile = Callable[[str], None]  # quita un perfil de `profiles.toml`
+# Escribe el catálogo y los binarios (`config.writer.save_launchers` sin la carpeta). Lanza una
+# excepción si no se puede.
+SaveLaunchersFile = Callable[[Catalog | None, Sequence[Binary] | None], None]
 
 
 class Sessions(Protocol):
@@ -210,10 +215,12 @@ class Orchestrator:
         on_exit: Callable[[], None] = lambda: None,
         scheduler: "Scheduler | None" = None,
         remove_profile: RemoveProfile | None = None,
+        save_launchers: SaveLaunchersFile | None = None,
     ) -> None:
         """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos.
-        `remove_profile`: quita un perfil de `profiles.toml` (lo usa el Acedor). `workdir`:
-        las consolas de Comandos, o el directorio de la principal si solo hay esa."""
+        `remove_profile`: quita un perfil de `profiles.toml` (lo usa el Acedor).
+        `save_launchers`: escribe el catálogo y los binarios (lo usa el módulo Catálogo).
+        `workdir`: las consolas de Comandos, o el directorio de la principal si solo hay esa."""
         self._machine = machine
         self._bus = bus
         self._clock = clock
@@ -236,6 +243,7 @@ class Orchestrator:
         self._allowed: frozenset[str] | None = None  # módulos del perfil de la sesión
         self._admin: _AdminTools | None = None  # solo en la sesión del Acedor
         self._remove_profile_file = remove_profile
+        self._save_launchers_file = save_launchers
         self._profiles_changed = False  # el Acedor ha eliminado perfiles en esta sesión
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
@@ -976,6 +984,29 @@ class Orchestrator:
     def _permitted(self, module: str) -> bool:
         return self._allowed is None or module in self._allowed
 
+    async def _save_launchers(
+        self, catalog: Catalog | None = None, binaries: Sequence[Binary] | None = None
+    ) -> str:
+        """`ctx.save_launchers`: escribe el catálogo o los binarios y los aplica ya, en la
+        sesión en curso; el resto de la configuración sigue esperando a la siguiente (RF-96).
+        Devuelve el motivo si no se ha podido; vacío si se ha guardado."""
+        if self._save_launchers_file is None:
+            return "no se puede escribir la configuración"
+        try:
+            self._save_launchers_file(catalog, binaries)
+        except Exception as error:
+            logger.exception("No se ha podido guardar el catálogo")
+            return str(error) or "no se ha podido escribir la configuración"
+        changes: dict[str, object] = {}
+        if catalog is not None:
+            changes["catalog"] = catalog
+        if binaries is not None:
+            changes["binaries"] = tuple(binaries)
+        for error in self._apply_config(dataclasses.replace(self._config, **changes)):
+            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+        await self._session_hook("on_config_changed")
+        return ""
+
     def _remove_profile(self, profile_id: str) -> bool:
         """El Acedor elimina un perfil: fuera de `profiles.toml` y sus datos retirados."""
         if self._remove_profile_file is None or profile_id == ADMIN_PROFILE_ID:
@@ -1255,6 +1286,7 @@ class Orchestrator:
             admin=self._admin,
             console=console,
             open_console=open_console,
+            save_launchers=self._save_launchers,
         )
         return ctx
 

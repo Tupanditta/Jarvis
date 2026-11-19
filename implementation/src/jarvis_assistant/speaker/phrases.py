@@ -618,6 +618,32 @@ PHRASES: dict[str, list[str]] = {
     "perfiles.no_eliminado": [
         "No he podido eliminar el perfil, señor.",
     ],
+    # --- Catálogo ---
+    "catalogo.mostrado": [
+        "Aquí tiene el catálogo, señor.",
+    ],
+    "catalogo.usar_ventana": [
+        "Complete los datos en la ventana del catálogo, señor.",
+    ],
+    "catalogo.anadido": [
+        "Hecho, señor. {nombre} ya está en el catálogo.",
+        "{nombre} añadido al catálogo, señor.",
+    ],
+    "catalogo.no_valido": [
+        "No puedo añadirlo, señor. Tiene el motivo en la ventana del catálogo.",
+    ],
+    "catalogo.confirmar": [
+        "¿Elimino {nombre} del catálogo, señor?",
+    ],
+    "catalogo.eliminado": [
+        "{nombre} eliminado del catálogo, señor.",
+    ],
+    "catalogo.no_encontrado": [
+        "No encuentro eso en el catálogo, señor.",
+    ],
+    "catalogo.no_guardado": [
+        "No he podido guardar el catálogo, señor.",
+    ],
     "protocolos.ninguno": [
         "No hay ningún protocolo definido, señor.",
         "Todavía no tiene protocolos, señor. Puede definirlos en la configuración.",

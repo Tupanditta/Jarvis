@@ -324,6 +324,85 @@ class OpenedModel(QObject):
         return self._focus_supported
 
 
+class CatalogModel(QObject):
+    """Ventana Catálogo: aplicaciones, páginas y comandos de terminal, con su formulario para
+    añadir y el botón de eliminar de cada fila (eliminar lo confirma el asistente).
+
+    `problem` es el motivo por el que no se ha podido hacer lo último que se pidió desde la
+    ventana; `added` avisa a QML de que se ha añadido lo que envió, para vaciar el formulario.
+    """
+
+    MODULE = "catalogo"
+
+    changed = Signal()
+    problemChanged = Signal()
+    added = Signal()
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._items: list[dict[str, Any]] = []
+        self._problem = ""
+        self._submitting = False  # se ha enviado el formulario y falta la respuesta
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.CatalogShown):
+            self._items = [
+                {"id": item.id, "kind": item.kind, "name": item.name, "target": item.target,
+                 "aliases": ", ".join(item.aliases), "args": " ".join(item.args)}
+                for item in event.items
+            ]  # fmt: skip
+            self.changed.emit()
+            if self._submitting:
+                self._submitting = False
+                if not event.problem:
+                    self.added.emit()
+            self._set_problem(event.problem)
+        elif isinstance(event, events.SessionClosed):
+            self._submitting = False
+            self._set_problem("")
+
+    def _set_problem(self, problem: str) -> None:
+        if problem != self._problem:
+            self._problem = problem
+            self.problemChanged.emit()
+
+    @Slot(str, str, str, str, str)
+    def add(self, kind: str, name: str, target: str, aliases: str, args: str) -> None:
+        """Botón «Añadir» del formulario. Los alias y los argumentos, uno por línea o
+        separados por comas."""
+        self._submitting = True
+        self._set_problem("")
+        params = {"tipo": kind, "nombre": name, "destino": target, "alias": aliases}
+        if args.strip():
+            params["argumentos"] = args
+        self._publish(events.ActionRequested(self.MODULE, "añadir", params))
+
+    @Slot(str)
+    def remove(self, item_id: str) -> None:
+        """Botón «Eliminar» de una fila: el asistente pide confirmación."""
+        self._set_problem("")
+        self._publish(events.ActionRequested(self.MODULE, "eliminar", {"entrada": item_id}))
+
+    @Slot()
+    def load(self) -> None:
+        self._publish(events.ActionRequested(self.MODULE, "ver"))
+
+    @Slot()
+    def dismissProblem(self) -> None:
+        self._set_problem("")
+
+    @Property("QVariantList", notify=changed)
+    def items(self) -> list:
+        return self._items
+
+    @Property(str, notify=problemChanged)
+    def problem(self) -> str:
+        return self._problem
+
+
 class SearchModel(QObject):
     """Panel de búsqueda: resultados numerados; el número es lo que el usuario escribe."""
 

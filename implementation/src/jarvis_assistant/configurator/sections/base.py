@@ -14,12 +14,6 @@ def comparable(text: str) -> str:
     return "".join(char for char in plain if not unicodedata.combining(char)).casefold()
 
 
-def split_lines(text: str) -> tuple[str, ...]:
-    """Una entrada por línea (o separada por comas), sin vacías."""
-    parts = [part.strip() for line in text.splitlines() for part in line.split(",")]
-    return tuple(part for part in parts if part)
-
-
 class Section(QObject):
     """Un apartado: carga su parte de la configuración, la edita en memoria, la valida y la
     vuelca en los documentos TOML al guardar.

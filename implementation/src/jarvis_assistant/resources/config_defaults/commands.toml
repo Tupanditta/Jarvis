@@ -1,5 +1,5 @@
 # Lista cerrada de binarios que se pueden ejecutar por voz.
-# El asistente solo lee este archivo.
+# También se edita desde la ventana Catálogo de la pantalla de sesión.
 #
 # name: nombre que se escribe. executable: nombre en el PATH o ruta absoluta.
 # aliases: otras formas de escribirlo.

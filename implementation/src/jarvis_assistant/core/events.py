@@ -16,6 +16,7 @@ from typing import Literal
 from jarvis_assistant.config import Config
 from jarvis_assistant.core.action_api import HelpGroup
 from jarvis_assistant.core.content import (
+    CatalogItem,
     CredentialItem,
     Entry,
     IntrusionItem,
@@ -309,6 +310,16 @@ class LaunchTargetsChanged(Event):
     """Aplicaciones y páginas del catálogo, para abrirlas desde la ventana de aperturas."""
 
     targets: tuple[LaunchTarget, ...]
+
+
+@dataclass(frozen=True)
+class CatalogShown(Event):
+    """Ventana Catálogo: lista completa de aplicaciones, páginas y comandos, tras cada cambio.
+    `problem`: por qué no se ha podido añadir o eliminar lo último que se pidió; vacío si se
+    ha hecho (el formulario de la ventana se vacía)."""
+
+    items: tuple[CatalogItem, ...]
+    problem: str = ""
 
 
 @dataclass(frozen=True)

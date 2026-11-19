@@ -37,10 +37,6 @@ class Rig:
     def sound(self):
         return self.sections["sonido"]
 
-    @property
-    def catalog(self):
-        return self.sections["aplicaciones"]
-
     def files(self) -> set[str]:
         if not self.directory.exists():
             return set()
@@ -102,10 +98,10 @@ def test_con_problemas_no_se_escribe_nada(rig):
 
 
 def test_un_archivo_con_errores_bloquea_su_apartado(rig):
-    write(rig.directory, "catalog.toml", '[[pages]]\nname = "X"\nurl = "ftp://x"\n')
+    write(rig.directory, "settings.toml", "[sound]\nenabled = 3\n")
     rig.draft.open()
-    assert "catalog.toml" in rig.catalog.locked
-    assert rig.sound.locked == ""
+    assert "settings.toml" in rig.sound.locked
+    assert rig.profiles.locked == ""
 
 
 # --- Perfiles --------------------------------------------------------------------------------
@@ -206,49 +202,3 @@ def test_volver_al_valor_inicial_sigue_contando_como_cambio_pero_guarda_lo_mismo
     rig.sound.setEnabled(True)
     assert rig.draft.save().saved
     assert rig.loaded().settings.sound.enabled is True
-
-
-# --- Aplicaciones y páginas ------------------------------------------------------------------
-
-
-def test_anadir_una_aplicacion_y_una_pagina(rig):
-    problem = rig.catalog.submit(-1, "app", " Editor ", "C:/editor.exe", "--nuevo", "ed, el editor")
-    assert problem == ""
-    assert rig.catalog.submit(-1, "page", "Ejemplo", "https://example.com", "", "ej") == ""
-    assert [item["kind"] for item in rig.catalog.items] == ["app", "page"]
-    assert rig.draft.save().saved
-    catalog = rig.loaded().catalog
-    editor = cfg.AppEntry("Editor", "C:/editor.exe", ("ed", "el editor"), ("--nuevo",))
-    assert catalog.apps == (editor,)
-    assert catalog.pages == (cfg.PageEntry("Ejemplo", "https://example.com", ("ej",)),)
-
-
-@pytest.mark.parametrize("kind, name, target, aliases, fragment", [
-    ("app", "", "x.exe", "", "nombre"),
-    ("app", "A", "", "", "ruta"),
-    ("page", "P", "example.com", "", "http"),
-    ("page", "Otra", "https://example.com", "editor", "ya es el nombre"),
-])  # fmt: skip
-def test_un_formulario_invalido_no_se_guarda_en_el_borrador(
-    rig, kind, name, target, aliases, fragment
-):
-    rig.catalog.submit(-1, "app", "Editor", "C:/editor.exe", "", "")
-    rig.draft.save()
-    problem = rig.catalog.submit(-1, kind, name, target, "", aliases)
-    assert fragment in problem
-    assert len(rig.catalog.items) == 1
-    assert not rig.draft.dirty
-
-
-def test_editar_y_eliminar_entradas(rig):
-    rig.catalog.submit(-1, "app", "Editor", "C:/editor.exe", "", "")
-    assert rig.catalog.submit(0, "app", "Editor", "D:/editor.exe", "", "") == ""
-    assert rig.catalog.entry(0)["target"] == "D:/editor.exe"
-    rig.catalog.remove(0)
-    assert rig.catalog.items == []
-
-
-def test_una_ruta_que_no_existe_solo_avisa(rig, tmp_path):
-    assert rig.catalog.warning("app", "code") == ""  # nombre del PATH
-    assert rig.catalog.warning("app", str(tmp_path / "no.exe"))
-    assert rig.catalog.warning("page", "https://example.com") == ""

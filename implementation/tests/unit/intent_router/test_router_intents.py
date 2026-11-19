@@ -404,7 +404,7 @@ def test_la_ayuda_sale_del_registro(router):
     groups = router.help()
     assert [group.module for group in groups] == [
         "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
-        "protocolos", "permisos", "credenciales", "perfiles", "nucleo",
+        "protocolos", "catalogo", "permisos", "credenciales", "perfiles", "nucleo",
     ]  # fmt: skip
     assert groups[0].title == "Comandos"
     for group in groups:

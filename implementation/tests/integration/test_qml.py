@@ -13,6 +13,7 @@ from PySide6.QtTest import QTest
 
 from jarvis_assistant.config import Config, Profile, UiSettings
 from jarvis_assistant.core import events
+from jarvis_assistant.core.content import CatalogItem
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.ui.app import FONTS_DIR, QML_DIR, UiApp, load_fonts
 from jarvis_assistant.ui.preview import PreviewDriver, panel_tour, script
@@ -966,4 +967,43 @@ def test_cada_ventana_de_comandos_muestra_su_consola_y_la_copia_se_cierra_del_to
     qtbot.waitUntil(lambda: "comandos:protocolo-a" not in
                     [spec.id for spec in ui.workspace.specs], timeout=2000)  # fmt: skip
     assert events.ConsoleClosed("comandos:protocolo-a") in published
+    assert ui.warnings == []
+
+
+def test_la_ventana_del_catalogo_anade_con_su_formulario_y_elimina_con_su_boton(desk, qtbot):
+    ui, published = desk
+    ui.on_event(events.CatalogShown((
+        CatalogItem("pagina:GitHub", "pagina", "GitHub", "https://github.com"),
+    )))  # fmt: skip
+    shown(ui, qtbot, "catalogo")
+    published.clear()
+
+    def press(name: str) -> None:
+        item = visual(ui, name)
+        click(ui, item, item.width() / 2, item.height() / 2)
+        qtbot.wait(50)
+
+    press("catalogRemove-pagina:GitHub")
+    press("catalogAdd")
+    assert visual(ui, "catalogForm").isVisible()
+    press("formKind-pagina")
+    press("catalogName")
+    type_text(ui.screen, "Docs")
+    press("catalogTarget")
+    type_text(ui.screen, "https://example.com")
+    press("catalogSubmit")
+    requests = [e for e in published if isinstance(e, events.ActionRequested)]
+    assert [(e.module, e.action, dict(e.params)) for e in requests] == [
+        ("catalogo", "eliminar", {"entrada": "pagina:GitHub"}),
+        ("catalogo", "añadir", {"tipo": "pagina", "nombre": "Docs",
+                                "destino": "https://example.com", "alias": ""}),
+    ]  # fmt: skip
+    assert input_of(ui.screen).property("text") == ""  # no ha ido a la caja de órdenes
+    # El módulo responde con la lista nueva: el formulario se cierra.
+    ui.on_event(events.CatalogShown((
+        CatalogItem("pagina:GitHub", "pagina", "GitHub", "https://github.com"),
+        CatalogItem("pagina:Docs", "pagina", "Docs", "https://example.com"),
+    )))  # fmt: skip
+    qtbot.wait(50)
+    assert not visual(ui, "catalogForm").isVisible()
     assert ui.warnings == []

@@ -1,5 +1,5 @@
 # Catálogo de aplicaciones y páginas que se pueden abrir con «abre {nombre}».
-# El asistente solo lee este archivo; también se edita desde la ventana de configuración. Guía: PERSONALIZAR.md, en la raíz del repositorio.
+# También se edita desde la ventana Catálogo de la pantalla de sesión. Guía: PERSONALIZAR.md, en la raíz del repositorio.
 
 # Añadir al catálogo las aplicaciones del menú Inicio.
 discover_installed_apps = true

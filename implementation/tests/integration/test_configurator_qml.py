@@ -47,7 +47,7 @@ def open_tab(window, section_id: str, qtbot) -> None:
 def test_la_ventana_y_todos_sus_apartados_cargan_sin_avisos(settings, qtbot):
     window, _saved, _directory = settings
     qtbot.waitUntil(lambda: window.window.isVisible(), timeout=2000)
-    for section in ("plantillas", "perfiles", "sonido", "aplicaciones"):
+    for section in ("plantillas", "perfiles", "sonido"):
         open_tab(window, section, qtbot)
     assert window.warnings == []
     assert not find(window.window, "saveButton").isEnabled()

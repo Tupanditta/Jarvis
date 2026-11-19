@@ -46,6 +46,22 @@ class LaunchTarget:
     kind: OpenedKind
 
 
+CatalogKind = Literal["aplicacion", "pagina", "comando"]
+
+
+@dataclass(frozen=True)
+class CatalogItem:
+    """Entrada de la ventana Catálogo: una aplicación o una página de `catalog.toml`, o un
+    comando de terminal (binario permitido) de `commands.toml`. `id`: «{tipo}:{nombre}»."""
+
+    id: str
+    kind: CatalogKind
+    name: str
+    target: str  # ruta o nombre del programa, dirección de la página o ejecutable
+    aliases: tuple[str, ...] = ()
+    args: tuple[str, ...] = ()  # solo las aplicaciones
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """Resultado numerado de una búsqueda. `index`: lo que el usuario escribe (RN-50)."""

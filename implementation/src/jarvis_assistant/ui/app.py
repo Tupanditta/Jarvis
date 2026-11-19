@@ -22,6 +22,7 @@ from jarvis_assistant.ui.noise import NoiseModel
 from jarvis_assistant.ui.panel_models import (
     DEFAULT_OUTPUT_LINES,
     AdminModel,
+    CatalogModel,
     ConsolesModel,
     HelpModel,
     HistoryModel,
@@ -108,6 +109,7 @@ class UiApp(QObject):
         self.consoles = ConsolesModel(output_lines, self, publish)
         self.commands = self.consoles.main
         self.opened = OpenedModel(publish, self)
+        self.catalog = CatalogModel(self, publish)
         self.search = SearchModel(self, publish)
         self.history = HistoryModel(self, publish)
         self.reminders = RemindersModel(self, publish)
@@ -126,7 +128,7 @@ class UiApp(QObject):
         self._models = (
             self.options, self.assistant, self.access, self.tasks, self.dialogue, self.hud,
             self.workspace, self.profiles, self.consoles, self.opened, self.search, self.history,
-            self.reminders, self.protocols, self.help, self.admin,
+            self.reminders, self.protocols, self.help, self.admin, self.catalog,
         )  # fmt: skip
         self.controller = wc.WindowController()
         self._collapse_timer = self._single_shot(self.hud.collapse)
@@ -145,6 +147,7 @@ class UiApp(QObject):
             ("hud", self.hud),
             ("consoles", self.consoles),
             ("opened", self.opened),
+            ("catalog", self.catalog),
             ("search", self.search),
             ("history", self.history),
             ("reminders", self.reminders),

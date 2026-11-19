@@ -1,5 +1,7 @@
 """`commands.toml`: lista cerrada de binarios que se pueden ejecutar (RN-45)."""
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from jarvis_assistant.config.reader import InvalidError, Reader
 
@@ -40,3 +42,27 @@ def parse_binaries(reader: Reader) -> tuple[Binary, ...]:
         )
         item.close()
     return tuple(binaries)
+
+
+def dump_binaries(document: Any, binaries: Sequence[Binary]) -> None:
+    """Sustituye la lista `[[binaries]]` de un documento `tomlkit`. Los comentarios y el resto
+    de claves se conservan. Sin binarios se escribe una lista vacía: si faltara la clave, se
+    volverían a permitir los de fábrica."""
+    import tomlkit
+
+    if "binaries" in document:
+        del document["binaries"]
+    if not binaries:
+        document["binaries"] = tomlkit.array()
+        return
+    array = tomlkit.aot()
+    for binary in binaries:
+        table = tomlkit.table()
+        table["name"] = binary.name
+        table["executable"] = binary.executable
+        if binary.aliases:
+            table["aliases"] = list(binary.aliases)
+        if binary.timeout_seconds is not None:
+            table["timeout_seconds"] = binary.timeout_seconds
+        array.append(table)
+    document["binaries"] = array
