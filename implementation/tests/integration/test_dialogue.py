@@ -248,7 +248,7 @@ async def test_dos_ordenes_a_la_vez_preguntan_de_una_en_una(rig):
         await rig.order("otras notas punto txt")
     assert len(rig.of(events.DialogueOpened)) == 2
     assert (rig.home / "otras notas.txt").is_file()
-    assert rig.sessions.get(session).is_deleted
+    assert rig.sessions.get(session) is None
     assert rig.state is S.LISTENING_COMMAND
 
 
@@ -295,11 +295,12 @@ async def test_cu10_a1_la_desplazada_se_elimina_al_cerrar(rig):
         session_id = rig.sessions.create(f"vieja {index}", start + timedelta(days=index))
         rig.sessions.set_importance(session_id, True, by_user=True)
         rig.sessions.close(session_id, start + timedelta(days=index, hours=1), "voz")
-        if index == 0:
-            oldest = session_id
     await rig.order("marca la sesión como importante")
     await rig.order("buenas noches jarvis")
-    assert rig.sessions.get(oldest).is_deleted
+    # Borrado físico: la desplazada desaparece y las demás quedan numeradas 1..10.
+    remaining = rig.sessions.visible_history(None)
+    assert "vieja 0" not in [s.name for s in remaining]
+    assert sorted(s.id for s in remaining) == list(range(1, 11))
 
 
 async def test_cu10_flujo_secundario_eliminar_con_confirmacion(rig):
@@ -319,9 +320,57 @@ async def test_cu10_flujo_secundario_eliminar_con_confirmacion(rig):
     rig.events.clear()
     await rig.order("Sí")
     assert rig.spoken() == [said("historial.eliminada", id=session)]
-    assert rig.sessions.get(session).is_deleted
+    assert rig.sessions.get(session) is None
     await rig.order("muestra el historial")
     assert session not in [s.id for s in rig.of(events.HistoryShown)[-1].sessions]
+
+
+async def test_eliminar_varias_sesiones_respondiendo_con_ids_y_renumerar(tmp_path, monkeypatch):
+    """Se muestra el historial, se eligen «1-2, 4», se confirma y se borran todas a la vez. La
+    actual baja de la 5 a la 2 y lo que se hace después se registra con su id nuevo."""
+    rig = Rig(tmp_path, monkeypatch)
+    for event_type in DIALOGUE:
+        rig.app.bus.subscribe(event_type, rig.events.append)
+    await rig.start()
+    for name in ("a", "b", "c", "d"):
+        old_session(rig, name)
+    await rig.open_session()
+    try:
+        assert current_id(rig) == 5
+        rig.sessions.set_importance(2, True, by_user=True)
+        rig.events.clear()
+        await rig.order("elimina sesiones")
+        assert rig.state is S.AWAITING_PARAMETER
+        (opened,) = rig.of(events.DialogueOpened)
+        assert (opened.question, opened.expected_type, opened.hints) == (
+            said("historial.cuales_eliminar"), "SESSION_IDS", ("1, 3, 5", "1-5", "Cancelar"),
+        )  # fmt: skip
+        assert len(rig.of(events.HistoryShown)[-1].sessions) == 5
+        rig.events.clear()
+        await rig.order("1-2, 4")
+        assert rig.state is S.AWAITING_CONFIRMATION
+        assert rig.spoken() == [
+            said("historial.aviso_importantes", sesiones="la sesión 2"),
+            said("historial.confirmar_eliminar_varias", sesiones="1, 2 y 4"),
+        ]  # fmt: skip
+        rig.events.clear()
+        await rig.order("sí")
+        assert rig.spoken() == [said("historial.eliminadas", sesiones="1, 2 y 4")]
+        (first, current) = sorted(rig.sessions.visible_history(None), key=lambda s: s.id)
+        assert (first.id, first.name) == (1, "c")
+        assert current.id == 2 and current.closed_at is None
+        assert rig.of(events.SessionChanged)[-1].session_id == 2
+        await rig.order("llama a la sesión trabajo")
+        assert rig.sessions.get(2).name == "trabajo"
+        assert "nombrar la sesión trabajo" in [
+            a.description for a in rig.activities.of_session(2)
+        ]
+        # La siguiente sesión que se abra será la 3.
+        await rig.order("buenas noches jarvis")
+        await rig.open_session()
+        assert current_id(rig) == 3
+    finally:
+        await rig.stop()
 
 
 @pytest.mark.parametrize("answer", ["No", "cancelar"])

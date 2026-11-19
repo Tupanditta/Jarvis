@@ -640,10 +640,12 @@ async def test_eliminar_con_un_no_no_hace_nada(tmp_path):
 
 
 def test_ningun_delete_fisico():
+    """Los recordatorios nunca se borran del todo. Solo las sesiones y sus actividades."""
     for module in (reminder_manager, repositories):
         source = inspect.getsource(module)
         strings = [
             node.value for node in ast.walk(ast.parse(source))
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         ]  # fmt: skip
-        assert not any("DELETE" in text.upper().split() for text in strings), module.__name__
+        deletes = [text for text in strings if "DELETE" in text.upper().split()]
+        assert all("reminder" not in text.lower() for text in deletes), module.__name__

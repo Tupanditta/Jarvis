@@ -11,7 +11,8 @@ from rapidfuzz import fuzz
 from jarvis_assistant.core.action_api import ExpectedType, ReminderAction
 from jarvis_assistant.core.state_machine import Answer
 from jarvis_assistant.intent_router import patterns
-from jarvis_assistant.intent_router.slots import datetimes, names
+from jarvis_assistant.intent_router.normalizer import normalize
+from jarvis_assistant.intent_router.slots import datetimes, names, numbers
 
 # Ya normalizadas: sin tildes.
 AFFIRMATIONS = ("si", "vale", "de acuerdo", "confirmo", "adelante", "correcto", "hazlo")
@@ -23,6 +24,11 @@ REMINDER_PREFIXES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("otro", "aviso"), "aviso"),
     (("fecha", "limite"), "limite"),
 )
+
+# SESSION_IDS: palabras que acompañan a los números («las sesiones 1 y 3») y el intervalo más
+# largo admitido, para que «1-999999» no sea una respuesta válida.
+_SESSION_FILLER = ("y", "la", "las", "sesion", "sesiones")
+_MAX_RANGE = 1000
 
 _SHORT = 3  # una frase de 3 caracteres o menos exige coincidencia exacta
 _TEXT_EDGES = " .,;:!?¿¡\"'«»"
@@ -58,7 +64,48 @@ def validate(
             return INVALID if found is None else Answer(found)
         case ExpectedType.REMINDER_ACTION:
             return _reminder_action(normalized, threshold, moment, default_hour, tz)
+        case ExpectedType.SESSION_IDS:
+            return _session_ids(text)
     return INVALID
+
+
+def _session_ids(text: str) -> Answer:
+    """Ids de sesión separados por comas, «1, 3, 5», o un intervalo, «1-5»; se pueden
+    combinar: «1-3, 7». Valen también en letras: «uno, tres y cinco»."""
+    found: set[int] = set()
+    for piece in text.replace(";", ",").split(","):
+        if not piece.strip():
+            continue
+        if "-" in piece:
+            bounds = piece.split("-")
+            if len(bounds) != 2:
+                return INVALID
+            first, last = (_session_number(bound) for bound in bounds)
+            if first is None or last is None or first > last or last - first > _MAX_RANGE:
+                return INVALID
+            found.update(range(first, last + 1))
+            continue
+        numbers_found = _session_numbers(piece)
+        if numbers_found is None:
+            return INVALID
+        found.update(numbers_found)
+    return Answer(tuple(sorted(found))) if found else INVALID
+
+
+def _session_number(text: str) -> int | None:
+    return numbers.parse(normalize(text))
+
+
+def _session_numbers(piece: str) -> list[int] | None:
+    """Un número («treinta y dos») o varios seguidos («1 3 5», «tres y cinco»)."""
+    whole = _session_number(piece)
+    if whole is not None:
+        return [whole]
+    words = [word for word in normalize(piece).split() if word not in _SESSION_FILLER]
+    found = [numbers.parse(word) for word in words]
+    if not found or any(number is None for number in found):
+        return None
+    return found  # type: ignore[return-value]
 
 
 def _boolean(normalized: str, threshold: float) -> Answer:

@@ -231,6 +231,31 @@ PHRASES: dict[str, list[str]] = {
         "He eliminado la sesión {id}, señor.",
         "La sesión {id} ya no aparece en el historial, señor.",
     ],
+    "historial.cuales_eliminar": [
+        "¿Qué sesiones elimino, señor? Puede decirme, por ejemplo, 1, 3, 5 o 1-5.",
+        "Indíqueme las sesiones que quiere eliminar, señor. Por ejemplo, 1, 3, 5 o 1-5.",
+        "¿Cuáles elimino, señor? Separadas por comas o como intervalo, como 1-5.",
+    ],
+    "historial.nada_que_eliminar": [
+        "No hay sesiones que eliminar, señor. Solo está la actual.",
+        "El historial solo contiene la sesión actual, señor. No hay nada que eliminar.",
+        "No tengo sesiones que eliminar, señor, aparte de la actual.",
+    ],
+    "historial.aviso_importantes": [
+        "Atención, señor: hay importancia marcada en {sesiones}.",
+        "Le aviso, señor: está marcada la importancia en {sesiones}.",
+        "Cuidado, señor. Tenga en cuenta la importancia de {sesiones}.",
+    ],
+    "historial.confirmar_eliminar_varias": [
+        "¿Elimino las sesiones {sesiones}, señor?",
+        "¿Quiere que elimine las sesiones {sesiones}, señor?",
+        "¿Confirma que elimino las sesiones {sesiones}, señor?",
+    ],
+    "historial.eliminadas": [
+        "Sesiones {sesiones} eliminadas, señor.",
+        "He eliminado las sesiones {sesiones}, señor.",
+        "Las sesiones {sesiones} ya no aparecen en el historial, señor.",
+    ],
     # Sesión
     "sesion.nombrada": [
         "Hecho, señor. La sesión se llama ahora {nombre}.",

@@ -190,13 +190,16 @@ async def test_desmarcar_la_actual_restaura_la_desplazada(rig):
     assert not restored.pending_purge_on_close and restored.displaced_by is None
 
 
-async def test_cerrar_la_actual_elimina_la_desplazada_de_forma_logica(rig):
-    old = important_sessions(rig, 10)
-    open_current(rig)
+async def test_cerrar_la_actual_borra_la_desplazada_y_renumera(rig):
+    important_sessions(rig, 10)
+    current = open_current(rig)
     await run(rig, "marcar_importante")
     rig.manager.close_session("voz")
-    purged = row(rig, old[0])
-    assert purged is not None and purged.is_deleted  # no hay DELETE físico
+    remaining = sorted((s.id, s.name) for s in rig.sessions.visible_history(None))
+    # La desplazada («vieja 0») desaparece del todo y las demás bajan un puesto: 1..10.
+    assert remaining == [
+        *((index, f"vieja {index}") for index in range(1, 10)), (10, current.name),
+    ]  # fmt: skip
 
 
 async def test_el_desbordamiento_tambien_vale_para_un_protocolo(rig):

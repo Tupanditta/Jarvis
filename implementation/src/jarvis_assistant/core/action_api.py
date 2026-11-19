@@ -134,6 +134,7 @@ class ExpectedType(Enum):
     NEW_FILENAME = "new_filename"  # un nombre de archivo o carpeta → AWAITING_PARAMETER
     DATETIME = "datetime"  # una fecha y hora → AWAITING_PARAMETER
     REMINDER_ACTION = "reminder_action"  # «otro aviso …» / «fecha límite …» / «no»
+    SESSION_IDS = "session_ids"  # «1, 3, 5» o «1-5» → AWAITING_PARAMETER
 
 
 @dataclass(frozen=True)
@@ -150,8 +151,9 @@ class DialogueAnswer:
     """Respuesta a `ctx.ask`. `cancelled`: «cancelar», tiempo agotado o respuesta no válida
     dos veces. Si no, `value` ya está validado: `bool` para `BOOLEAN`, `str` para
     `NEW_FILENAME`, `datetime` para `DATETIME` (sin comprobar que sea futura),
-    `ReminderAction` o `False` para `REMINDER_ACTION`. Una negación es `value=False`, no una
-    cancelación. `by_user`: la cancelación es un «cancelar» del usuario, no el tiempo agotado
+    `ReminderAction` o `False` para `REMINDER_ACTION`, `tuple[int, ...]` ordenada y sin
+    repetidos para `SESSION_IDS` (sin comprobar que existan). Una negación es `value=False`,
+    no una cancelación. `by_user`: la cancelación es un «cancelar» del usuario, no el tiempo agotado
     ni una respuesta no válida."""
 
     cancelled: bool

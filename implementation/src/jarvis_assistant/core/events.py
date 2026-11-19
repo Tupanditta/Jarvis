@@ -116,6 +116,16 @@ class SessionChanged(Event):
 
 
 @dataclass(frozen=True)
+class SessionsDeleted(Event):
+    """Se han borrado sesiones del historial y las demás se han renumerado (ids 1..N).
+    `deleted`: los ids borrados. `renumbered`: {id anterior: id nuevo} de las que cambian; la
+    sesión actual puede estar entre ellas."""
+
+    deleted: tuple[int, ...]
+    renumbered: Mapping[int, int]
+
+
+@dataclass(frozen=True)
 class SessionOverflowed(Event):
     """Ya había 10 sesiones importantes: la más antigua deja de serlo y se eliminará al cerrar
     la actual (RN-07, RN-08)."""

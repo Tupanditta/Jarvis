@@ -31,6 +31,7 @@ HINTS: Mapping[ExpectedType, tuple[str, ...]] = {
     ExpectedType.NEW_FILENAME: ("Otro nombre", "Cancelar"),
     ExpectedType.DATETIME: ("Una fecha", "Cancelar"),
     ExpectedType.REMINDER_ACTION: ("Otro aviso", "Fecha límite", "No"),
+    ExpectedType.SESSION_IDS: ("1, 3, 5", "1-5", "Cancelar"),
 }
 
 

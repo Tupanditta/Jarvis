@@ -7,7 +7,7 @@ from fakes.clock import FakeClock
 from jarvis_assistant.action_modules.session_manager import SessionManager
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.events import SessionChanged
+from jarvis_assistant.core.events import SessionChanged, SessionsDeleted
 from jarvis_assistant.core.repositories import ActivityRepository, SessionRepository
 
 START = datetime(2026, 11, 14, 22, 30, tzinfo=UTC)
@@ -88,8 +88,32 @@ def test_cerrar_elimina_las_sesiones_desplazadas_por_desbordamiento(manager, db,
     current = manager.open_session()
     sessions.mark_pending_purge(displaced, True, current.id)
     manager.close_session("salida")
-    assert sessions.get(displaced).is_deleted
-    assert sessions.get(current.id).close_reason == "salida"
+    # La desplazada se borra del todo y la actual pasa a ser la 1.
+    (remaining,) = sessions.visible_history(None)
+    assert (remaining.id, remaining.name, remaining.close_reason) == (1, current.name, "salida")
+
+
+def test_borrar_sesiones_anteriores_renumera_la_actual(manager, db, bus):
+    sessions = SessionRepository(db)
+    old = sessions.create("antigua", START - timedelta(days=3))
+    current = manager.open_session()
+    published = []
+    bus.subscribe(SessionChanged, published.append)
+    moves = sessions.delete([old])
+    bus.publish(SessionsDeleted((old,), moves))
+    assert manager.current.id == 1 == moves[current.id]
+    assert published == [SessionChanged(1, current.name, False)]
+    # Al cerrar se cierra la fila con su id nuevo.
+    manager.close_session("voz")
+    assert sessions.get(1).close_reason == "voz"
+
+
+def test_borrar_sesiones_posteriores_no_cambia_la_actual(manager, db, bus):
+    current = manager.open_session()
+    published = []
+    bus.subscribe(SessionChanged, published.append)
+    bus.publish(SessionsDeleted((current.id + 1,), {}))
+    assert manager.current == current and published == []
 
 
 def test_cerrar_sin_sesion_no_hace_nada(manager):
@@ -113,7 +137,7 @@ def test_recuperar_cierra_la_sesion_huerfana_en_su_ultima_actividad(manager, db,
     assert row.closed_at == last
     assert activities.of_session(orphan)[1].id == pending
     assert all(a.status == "error" for a in activities.of_session(orphan))
-    assert sessions.get(displaced).is_deleted
+    assert sessions.get(displaced) is None  # borrada del todo; era la última, nadie se mueve
     assert sessions.find_open() == []
 
 

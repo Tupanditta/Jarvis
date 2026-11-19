@@ -150,7 +150,8 @@ class SessionRepository:
             )
 
     def purge_pending(self, displaced_by: int) -> list[int]:
-        """Elimina (borrado lógico) las sesiones desplazadas por `displaced_by` (RN-09)."""
+        """Elimina las sesiones desplazadas por `displaced_by` (RN-09), como `delete`.
+        Devuelve sus ids de antes del borrado."""
         with self._db.transaction() as conn:
             rows = conn.execute(
                 "SELECT id FROM sessions WHERE displaced_by = ? AND pending_purge_on_close = 1"
@@ -158,7 +159,7 @@ class SessionRepository:
                 (displaced_by,),
             ).fetchall()
             ids = [row["id"] for row in rows]
-            conn.executemany("UPDATE sessions SET is_deleted = 1 WHERE id = ?", [(i,) for i in ids])
+            self.delete(ids)
             return ids
 
     def restore_displaced(self, displaced_by: int) -> list[int]:
@@ -178,16 +179,65 @@ class SessionRepository:
             )
             return ids
 
-    def soft_delete(self, session_id: int) -> None:
-        with self._db.transaction() as conn:
-            conn.execute("UPDATE sessions SET is_deleted = 1 WHERE id = ?", (session_id,))
+    def delete(self, session_ids: Sequence[int]) -> dict[int, int]:
+        """Borra del todo las sesiones y sus actividades, y renumera las demás para que los
+        ids sigan siendo 1..N por orden de creación. La siguiente sesión será la N+1.
 
-    def visible_history(self, limit: int = 10) -> list[SessionRow]:
-        """Sesiones visibles: primero las importantes y, después, las más recientes (RN-10)."""
+        Devuelve, de las sesiones que quedan, las que cambian de id: {id anterior: id nuevo}.
+        """
+        doomed = sorted(set(session_ids))
+        if not doomed:
+            return {}
+        with self._db.transaction() as conn:
+            marks = ",".join("?" * len(doomed))
+            # `parent_id` es ON DELETE RESTRICT, que se comprueba fila a fila aunque las claves
+            # estén aplazadas: una tarea madre no se puede borrar antes que sus hijas. Se
+            # sueltan primero las hijas y después se borra todo.
+            conn.execute(
+                "UPDATE session_activities SET parent_id = NULL WHERE parent_id IN"
+                f" (SELECT id FROM session_activities WHERE session_id IN ({marks}))",
+                doomed,
+            )
+            # Con la primera escritura ya hay transacción: el aplazamiento vale hasta confirmarla.
+            conn.execute(
+                f"DELETE FROM session_activities WHERE session_id IN ({marks})", doomed
+            )
+            conn.execute("PRAGMA defer_foreign_keys = ON")
+            conn.execute(
+                "UPDATE sessions SET displaced_by = NULL, pending_purge_on_close = 0"
+                f" WHERE displaced_by IN ({marks})",
+                doomed,
+            )
+            conn.execute(f"DELETE FROM sessions WHERE id IN ({marks})", doomed)
+            kept = [row["id"] for row in conn.execute("SELECT id FROM sessions ORDER BY id")]
+            moves = {old: new for new, old in enumerate(kept, start=1) if old != new}
+            if moves:
+                pairs = list(moves.items())
+                conn.executemany(
+                    "UPDATE session_activities SET session_id = ? WHERE session_id = ?",
+                    [(new, old) for old, new in pairs],
+                )
+                conn.executemany(
+                    "UPDATE sessions SET displaced_by = ? WHERE displaced_by = ?",
+                    [(new, old) for old, new in pairs],
+                )
+                # En orden ascendente, el id nuevo siempre está libre: es menor que el
+                # anterior y los de las sesiones previas ya se han movido por debajo.
+                conn.executemany(
+                    "UPDATE sessions SET id = ? WHERE id = ?", [(new, old) for old, new in pairs]
+                )
+            conn.execute(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'sessions'", (len(kept),)
+            )
+            return moves
+
+    def visible_history(self, limit: int | None = 10) -> list[SessionRow]:
+        """Sesiones visibles: primero las importantes y, después, las más recientes (RN-10).
+        Sin `limit`, todas."""
         rows = self._db.conn.execute(
             "SELECT * FROM sessions WHERE is_deleted = 0"
             " ORDER BY is_important DESC, opened_at DESC, id DESC LIMIT ?",
-            (limit,),
+            (-1 if limit is None else limit,),
         )
         return [_session(row) for row in rows]
 

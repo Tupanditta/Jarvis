@@ -306,6 +306,7 @@ class Orchestrator:
         bus.subscribe(events.PanelActivated, self._panel_activated)
         bus.subscribe(events.SpeechStarted, lambda _e: self._refresh())
         bus.subscribe(events.SpeechFinished, lambda _e: self._refresh())
+        bus.subscribe(events.SessionsDeleted, self._sessions_deleted)
 
     @property
     def state(self) -> AssistantState:
@@ -317,6 +318,14 @@ class Orchestrator:
 
     def _panel_activated(self, event: events.PanelActivated) -> None:
         self._active_panel = event.panel
+
+    def _sessions_deleted(self, event: events.SessionsDeleted) -> None:
+        """Borrar sesiones anteriores renumera la actual: las tareas siguientes se registran
+        con su id nuevo."""
+        if self._session is not None and self._session.id in event.renumbered:
+            self._session = dataclasses.replace(
+                self._session, id=event.renumbered[self._session.id]
+            )
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop

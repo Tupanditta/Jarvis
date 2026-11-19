@@ -124,7 +124,7 @@ def test_count_important_no_cuenta_las_eliminadas(sessions):
     ids = [sessions.create(f"s{i}", at(i)) for i in range(3)]
     for session_id in ids:
         sessions.set_importance(session_id, True, by_user=True)
-    sessions.soft_delete(ids[0])
+    sessions.delete([ids[0]])
     assert sessions.count_important() == 2
 
 
@@ -137,8 +137,8 @@ def test_oldest_important_es_la_de_apertura_mas_antigua_distinta_de_la_excluida(
         sessions.set_importance(session_id, True, by_user=True)
     assert sessions.oldest_important(excluding=new).id == old
     assert sessions.oldest_important(excluding=old).id == middle
-    sessions.soft_delete(old)
-    assert sessions.oldest_important(excluding=new).id == middle
+    moves = sessions.delete([old])
+    assert sessions.oldest_important(excluding=moves[new]).name == "media"
     assert plain not in {old, middle, new}
 
 
@@ -171,24 +171,72 @@ def test_purge_pending_elimina_solo_las_marcadas_por_esa_sesion(sessions):
     sessions.mark_pending_purge(restored, False, displaced_by=None)
 
     assert sessions.purge_pending(displaced_by=current) == [marked]
-    assert sessions.get(marked).is_deleted is True
-    assert sessions.get(other).is_deleted is False
-    assert sessions.get(restored).is_deleted is False
-    assert sessions.purge_pending(displaced_by=current) == []
+    # Borrado físico: las demás bajan un puesto y conservan a quién apuntan.
+    names = {row.name: row for row in sessions.visible_history(None)}
+    assert set(names) == {"de otra", "restaurada", "actual", "otra actual"}
+    assert sorted(row.id for row in names.values()) == [1, 2, 3, 4]
+    assert names["de otra"].displaced_by == names["otra actual"].id
+    assert sessions.purge_pending(displaced_by=names["actual"].id) == []
 
 
-def test_soft_delete_conserva_la_fila(sessions):
+def test_delete_borra_las_sesiones_y_sus_actividades_y_renumera(sessions, activities):
+    ids = [sessions.create(f"s{i}", at(i)) for i in range(1, 7)]
+    for session_id in ids:
+        activities.add(session_id, "m", f"tarea de {session_id}", at(0))
+    moves = sessions.delete([ids[1], ids[3]])
+    assert moves == {ids[2]: 2, ids[4]: 3, ids[5]: 4}
+    rows = sessions.visible_history(None)
+    assert sorted((row.id, row.name) for row in rows) == [
+        (1, "s1"), (2, "s3"), (3, "s5"), (4, "s6"),
+    ]  # fmt: skip
+    # Cada sesión conserva sus actividades; las de las borradas ya no existen.
+    assert [a.description for a in activities.of_session(2)] == [f"tarea de {ids[2]}"]
+    assert [a.description for a in activities.of_session(4)] == [f"tarea de {ids[5]}"]
+    assert sessions.get(5) is None and sessions.get(6) is None
+
+
+def test_delete_borra_tambien_las_sesiones_con_subtareas(sessions, activities):
+    """Un protocolo deja tareas madre e hijas (`parent_id`, ON DELETE RESTRICT): la madre no
+    puede borrarse antes que sus hijas."""
+    doomed = sessions.create("con protocolo", at(0))
+    kept = sessions.create("otra", at(1))
+    parent = activities.add(doomed, "protocolos", "ejecutar el protocolo", at(0))
+    for index in range(3):
+        activities.add(doomed, "comandos", f"paso {index}", at(0), parent_id=parent)
+    activities.add(kept, "comandos", "ls", at(1))
+    assert sessions.delete([doomed]) == {kept: 1}
+    assert [(row.id, row.name) for row in sessions.visible_history(None)] == [(1, "otra")]
+    assert [a.description for a in activities.of_session(1)] == ["ls"]
+
+
+def test_tras_un_borrado_la_siguiente_sesion_es_la_n_mas_1(sessions):
+    ids = [sessions.create(f"s{i}", at(i)) for i in range(3)]
+    sessions.delete([ids[2]])
+    assert sessions.create("nueva", at(10)) == 3
+    sessions.delete([1, 2])
+    assert sessions.create("otra", at(11)) == 2
+
+
+def test_delete_sin_ids_no_hace_nada(sessions):
     session_id = sessions.create("a", at(0))
-    sessions.soft_delete(session_id)
-    row = sessions.get(session_id)
-    assert row is not None and row.is_deleted is True
+    assert sessions.delete([]) == {}
+    assert sessions.get(session_id) is not None
+
+
+def test_delete_suelta_las_marcadas_por_una_sesion_borrada(sessions):
+    displaced = sessions.create("desplazada", at(0))
+    displacer = sessions.create("la que desplaza", at(1))
+    sessions.mark_pending_purge(displaced, True, displaced_by=displacer)
+    sessions.delete([displacer])
+    row = sessions.get(displaced)
+    assert (row.pending_purge_on_close, row.displaced_by) == (False, None)
 
 
 def test_el_historial_muestra_primero_las_importantes_y_despues_las_mas_recientes(sessions):
     ids = {name: sessions.create(name, at(i)) for i, name in enumerate("abcde")}
     sessions.set_importance(ids["b"], True, by_user=True)
     sessions.set_importance(ids["d"], True, by_user=False)
-    sessions.soft_delete(ids["e"])
+    sessions.delete([ids["e"]])
     assert [row.name for row in sessions.visible_history()] == ["d", "b", "c", "a"]
 
 
@@ -198,12 +246,13 @@ def test_el_historial_muestra_como_maximo_10_sesiones(sessions):
     history = sessions.visible_history()
     assert [row.name for row in history] == [f"s{i:02}" for i in range(11, 1, -1)]
     assert len(sessions.visible_history(limit=3)) == 3
+    assert len(sessions.visible_history(None)) == 12
 
 
 def test_name_exists_ignora_mayusculas_espacios_y_sesiones_eliminadas(sessions):
     kept = sessions.create("Modo Trabajo", at(0))
     deleted = sessions.create("Antigua", at(1))
-    sessions.soft_delete(deleted)
+    sessions.delete([deleted])
     assert sessions.name_exists("  modo trabajo ")
     assert not sessions.name_exists("antigua")
     assert not sessions.name_exists("otra")

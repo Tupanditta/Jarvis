@@ -358,11 +358,58 @@ def test_una_base_sana_no_se_aparta(tmp_path):
 # --- Borrado lógico (RES-34) -----------------------------------------------------------------
 
 
-def test_el_codigo_no_contiene_ninguna_sentencia_delete():
-    pattern = re.compile(r"\bDELETE\s+FROM\b", re.IGNORECASE)
+def test_la_migracion_0004_borra_las_eliminadas_y_numera_las_sesiones_de_1_a_n(tmp_path):
+    previous = tmp_path / "previas"
+    previous.mkdir()
+    for path in sorted(database.MIGRATIONS_DIR.glob("*.sql"))[:3]:
+        shutil.copy(path, previous / path.name)
+    db = Database(tmp_path / "jarvis.db", migrations_dir=previous)
+    db.migrate()
+    conn = db.conn
+    for session_id, deleted in ((159, 0), (160, 1), (162, 0), (170, 0)):
+        conn.execute(
+            "INSERT INTO sessions (id, name, opened_at, is_deleted) VALUES (?, ?, 'x', ?)",
+            (session_id, f"s{session_id}", deleted),
+        )
+    conn.execute(
+        "UPDATE sessions SET displaced_by = 170, pending_purge_on_close = 1 WHERE id = 162"
+    )
+    for session_id in (159, 160, 170):
+        conn.execute(INSERT_ACTIVITY, (session_id, "completado"))
+    # Una subtarea de la eliminada: su madre (ON DELETE RESTRICT) se borra con ella.
+    conn.execute(
+        "INSERT INTO session_activities (session_id, parent_id, module_name, task_description,"
+        " status, executed_at) SELECT 160, id, 'm', 'hija', 'completado', 'x'"
+        " FROM session_activities WHERE session_id = 160"
+    )
+    conn.commit()
+    db.close()
+
+    db = Database(tmp_path / "jarvis.db")
+    db.migrate()
+    rows = db.conn.execute("SELECT id, name, displaced_by FROM sessions ORDER BY id").fetchall()
+    assert [tuple(row) for row in rows] == [(1, "s159", None), (2, "s162", 3), (3, "s170", None)]
+    activities = db.conn.execute("SELECT session_id FROM session_activities ORDER BY id")
+    assert [row[0] for row in activities] == [1, 3]
+    sequence = db.conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'sessions'")
+    assert sequence.fetchone()[0] == 3
+    assert db.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    db.close()
+
+
+# Única excepción: eliminar una sesión la borra del todo, con sus actividades, y renumera las
+# demás (ids 1..N).
+PHYSICAL_DELETE_TABLES = {"sessions", "session_activities"}
+
+
+def test_el_codigo_solo_borra_fisicamente_sesiones_y_actividades():
+    pattern = re.compile(r"\bDELETE\s+FROM\s+(\w+)", re.IGNORECASE)
     files = [*SRC.rglob("*.py"), *SRC.rglob("*.sql")]
     assert len(files) > 5
     offenders = [
-        str(path.relative_to(SRC)) for path in files if pattern.search(path.read_text("utf-8"))
+        f"{path.relative_to(SRC)}: {table}"
+        for path in files
+        for table in pattern.findall(path.read_text("utf-8"))
+        if table not in PHYSICAL_DELETE_TABLES
     ]
     assert offenders == []
