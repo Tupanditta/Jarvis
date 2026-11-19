@@ -39,7 +39,7 @@ from jarvis_assistant.core.state_machine import (
     NoMatch,
     WakeWord,
 )
-from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.core.workdir import Consoles, Workdir
 from jarvis_assistant.intent_router import answers, patterns
 from jarvis_assistant.intent_router.normalizer import Tokens, normalize, tokenize
 from jarvis_assistant.intent_router.slots import (
@@ -210,7 +210,7 @@ class IntentRouter:
         *,
         binaries: Sequence[Binary] = DEFAULT_BINARIES,
         places: Mapping[str, Path] | None = None,
-        workdir: Workdir | None = None,
+        workdir: Workdir | Consoles | None = None,
         now: Callable[[], datetime] | None = None,
         local_tz: tzinfo | None = None,
         windows: Sequence[str] = (),

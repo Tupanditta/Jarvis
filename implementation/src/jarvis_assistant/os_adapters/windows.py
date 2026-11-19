@@ -260,10 +260,22 @@ class WindowsAdapter:
         return LaunchHandle(None, Path(path).name or str(path), known)
 
     async def open_terminal(self, cwd: Path) -> LaunchHandle:
-        """Windows Terminal en `cwd`; si no está, `cmd.exe` en una consola nueva."""
+        """Ubuntu (WSL) situada en `cwd`, dentro de Windows Terminal si está.
+
+        `wsl.exe --cd` traduce la ruta de Windows y entra en ella: el perfil de WSL de
+        Windows Terminal arranca en `~` aunque se le pase `-d`. Sin WSL, Windows Terminal
+        en `cwd`; sin ninguno de los dos, `cmd.exe` en una consola nueva.
+        """
         known = self._snapshot()
         terminal = self._which("wt.exe")
-        if terminal is not None:
+        wsl = self._which("wsl.exe")
+        if wsl is not None:
+            shell = [wsl, "--cd", str(cwd)]
+            if terminal is not None:
+                process = self._popen([terminal, "-d", str(cwd), *shell])
+            else:
+                process = self._popen(shell, cwd=str(cwd), creationflags=CREATE_NEW_CONSOLE)
+        elif terminal is not None:
             process = self._popen([terminal, "-d", str(cwd)])
         else:
             process = self._popen(["cmd.exe"], cwd=str(cwd), creationflags=CREATE_NEW_CONSOLE)

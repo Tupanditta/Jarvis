@@ -78,7 +78,7 @@ from jarvis_assistant.core.security import AccessOrigin, AttemptOutcome, Profile
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.tasks import TaskRecord, TaskRegistry
-from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.core.workdir import MAIN_CONSOLE, Consoles, Workdir
 from jarvis_assistant.intent_router.batch import split_orders
 from jarvis_assistant.intent_router.router import (
     ASIDE_WINDOW,
@@ -169,6 +169,7 @@ class _UserAction:
     module: str
     action: str
     params: Mapping[str, object]
+    console: str | None = None  # la ventana de Comandos que la pide
 
 
 class _AdminTools:
@@ -203,7 +204,7 @@ class Orchestrator:
         sessions: Sessions,
         database: Database,
         platform: "PlatformAdapter",
-        workdir: Workdir,
+        workdir: Workdir | Consoles,
         modules: Sequence[ActionModule] = (),
         reload_config: Reload | None = None,
         on_exit: Callable[[], None] = lambda: None,
@@ -211,7 +212,8 @@ class Orchestrator:
         remove_profile: RemoveProfile | None = None,
     ) -> None:
         """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos.
-        `remove_profile`: quita un perfil de `profiles.toml` (lo usa el Acedor)."""
+        `remove_profile`: quita un perfil de `profiles.toml` (lo usa el Acedor). `workdir`:
+        las consolas de Comandos, o el directorio de la principal si solo hay esa."""
         self._machine = machine
         self._bus = bus
         self._clock = clock
@@ -221,7 +223,7 @@ class Orchestrator:
         self._sessions = sessions
         self._database = database
         self._platform = platform
-        self._workdir = workdir
+        self._consoles = workdir if isinstance(workdir, Consoles) else Consoles(workdir)
         self._reload_config = reload_config
         self._on_exit = on_exit
         self._scheduler = scheduler
@@ -286,8 +288,11 @@ class Orchestrator:
         bus.subscribe(events.WindowPressed, lambda _e: self.submit(fsm.WindowPressed()))
         bus.subscribe(
             events.ActionRequested,
-            lambda e: self.submit(_UserAction(e.module, e.action, e.params)),
+            lambda e: self.submit(_UserAction(e.module, e.action, e.params, e.console)),
         )
+        bus.subscribe(events.ConsoleRequested, self.submit)
+        bus.subscribe(events.ConsoleClosed, self.submit)
+        bus.subscribe(events.ConsoleFocused, self.submit)
         # El botón de silencio calla la respuesta en curso y las que esperaban su turno.
         bus.subscribe(events.SilenceRequested, lambda _e: self._announcer.clear())
         bus.subscribe(events.PanelActivated, self._panel_activated)
@@ -395,6 +400,12 @@ class Orchestrator:
             self._jobs.finish(entry.job)
         elif isinstance(entry, _UserAction):
             await self._on_user_action(entry)
+        elif isinstance(entry, events.ConsoleRequested):
+            self._new_console(entry.source)
+        elif isinstance(entry, events.ConsoleClosed):
+            await self._close_console(entry.console)
+        elif isinstance(entry, events.ConsoleFocused):
+            self._consoles.focus(entry.console)
         elif isinstance(entry, _Poke):
             pass  # `_pump` hace el resto
         elif isinstance(entry, _ConfigSaved):
@@ -462,7 +473,7 @@ class Orchestrator:
         intent = Intent(
             entry.module, entry.action, entry.params,
             description=entry.action.replace("_", " "),
-            panel=self._panels.get((entry.module, entry.action)),
+            panel=self._panels.get((entry.module, entry.action)), console=entry.console,
         )  # fmt: skip
         await self._handle(fsm.IntentMatched(intent))
 
@@ -687,7 +698,7 @@ class Orchestrator:
     async def _open_session(self) -> None:
         self._reload()
         self._session = self._sessions.open_session()
-        self._workdir.reset()  # RN-14
+        self._consoles.reset()  # RN-14
         self._speaker.open_output()
         self._apply_permissions()
         await self._session_hook("on_session_opened")
@@ -797,7 +808,11 @@ class Orchestrator:
                 work = job.payload
                 if work.intent is None:
                     assert work.order is not None
-                    work.intent = intent = self._router.resolve(work.order)
+                    # Las rutas se resuelven en la consola activa, la que ejecutará la orden.
+                    intent = self._router.resolve(work.order)
+                    work.intent = intent = dataclasses.replace(
+                        intent, console=self._consoles.active
+                    )
                     specs = self._router.specs_of(intent.module, intent.action)
                     self._jobs.narrow(job, self._claim((intent.module, spec) for spec in specs))
                 work.runner = self._spawn(job, work.intent)
@@ -876,6 +891,7 @@ class Orchestrator:
             await self.run_task(
                 intent.module, intent.action, intent.params, origin="voz",
                 description=intent.description, error=intent.error, quiet=intent.quiet,
+                console=intent.console,
             )  # fmt: skip
 
     def _run_core(self, intent: Intent) -> None:
@@ -1060,6 +1076,7 @@ class Orchestrator:
         error: Phrase | None = None,
         quiet: bool = False,
         task: TaskRecord | None = None,
+        console: str | None = None,
     ) -> ActionResult:
         """Ejecuta una acción como tarea: la registra en `pendiente`, llama al módulo, captura
         cualquier excepción (RNF-23), fija el estado final y deja la respuesta en la cola de
@@ -1068,10 +1085,13 @@ class Orchestrator:
         `error`: una entidad no se pudo resolver; la tarea se crea ya en `error` con esa frase.
         Con `quiet`, la respuesta solo se dice si es un error. `task`: una subtarea ya creada
         con `ctx.subtask`, que es la que se ejecuta. Una orden de consulta (`record=False`)
-        fuera de un protocolo se ejecuta sin tarea: no queda como actividad.
+        fuera de un protocolo se ejecuta sin tarea: no queda como actividad. `console`: la
+        consola de Comandos donde se ejecuta; sin ella (o si ya no existe), la activa.
         """
         if self._session is None:
             raise RuntimeError("No hay sesión abierta")
+        if console is None or not self._consoles.exists(console):
+            console = self._consoles.active
         if task is not None:
             self._tasks.publish(task, "pendiente")
         elif parent is not None or self._recorded(module, action):
@@ -1084,7 +1104,11 @@ class Orchestrator:
             logger.info("Módulo %s no autorizado en este perfil", module)
             title = getattr(self._modules.get(module), "title", module)
             error = Phrase("permisos.denegado", {"modulo": title})
+        if task is not None and module == MAIN_CONSOLE:
+            task.console = console  # al cerrar su ventana se detiene lo que siga en marcha
         panel = self._panels.get((module, action)) if permitted else None
+        if panel == MAIN_CONSOLE:
+            panel = console  # la ventana de su consola
         if panel is not None:
             self._bus.publish(events.PanelActivated(panel))
         self._executing += 1
@@ -1094,7 +1118,7 @@ class Orchestrator:
             if error is not None:
                 result = ActionResult("error", error)
             else:
-                ctx = self._context(origin, task, speech)
+                ctx = self._context(origin, task, speech, console)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
             if task is not None:
@@ -1139,6 +1163,7 @@ class Orchestrator:
         subtask: Subtask | None = None,
         description: str | None = None,
         resolve: bool = False,
+        console: str | None = None,
     ) -> ActionResult:
         """`ctx.invoke`: ejecuta una acción como subtarea de `parent`, por la misma interfaz y
         con el mismo `run_task` que una orden del usuario. Lo que la tarea llevaba dicho se
@@ -1152,20 +1177,26 @@ class Orchestrator:
         error = None
         if resolve:
             try:
-                params = self._router.resolve_params(module, action, params)
+                with self._consoles.using(console or self._consoles.active):
+                    params = self._router.resolve_params(module, action, params)
             except ParamError as unresolved:
                 error = unresolved.phrase
             except KeyError:
                 error = Phrase("general.error")
         return await self.run_task(
             module, action, params, origin="protocolo", parent=parent.id,
-            description=description, error=error, quiet=quiet, task=task,
+            description=description, error=error, quiet=quiet, task=task, console=console,
         )  # fmt: skip
 
     def _context(
-        self, origin: Origin, task: TaskRecord | None, speech: list[Phrase] | None = None
+        self,
+        origin: Origin,
+        task: TaskRecord | None,
+        speech: list[Phrase] | None = None,
+        console: str = MAIN_CONSOLE,
     ) -> ActionContext:
-        """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola."""
+        """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola.
+        `console`: la consola de Comandos de la tarea."""
 
         async def say(phrase: Phrase) -> None:
             if speech is None:
@@ -1193,12 +1224,18 @@ class Orchestrator:
         async def invoke(
             module: str, action: str, params: Mapping[str, object], **options: Any
         ) -> ActionResult:
+            options.setdefault("console", ctx.console)  # las subtareas, en la misma consola
             return await self._invoke(task, speech, module, action, params, **options)
 
-        return ActionContext(
+        def open_console(key: str, title: str, inherit: bool = False) -> None:
+            opened = self._open_console(key, title, ctx.workdir.path if inherit else None)
+            if opened is not None:
+                ctx.console, ctx.workdir = opened, self._consoles.get(opened)
+
+        ctx = ActionContext(
             session=self._session,
             origin=origin,
-            workdir=self._workdir,
+            workdir=self._consoles.get(console),
             clock=self._clock,
             config=self._config,
             db=self._database,
@@ -1216,7 +1253,10 @@ class Orchestrator:
             invoke=invoke,
             profile=self._profile().id,
             admin=self._admin,
+            console=console,
+            open_console=open_console,
         )
+        return ctx
 
     def _subtask_of(self, task: TaskRecord | None) -> Callable[[str, str], Subtask]:
         """`ctx.subtask` de la tarea `task`."""
@@ -1227,6 +1267,35 @@ class Orchestrator:
             return self._tasks.subtask(self._session.id, task, module, description)
 
         return subtask
+
+    # --- Consolas de Comandos ----------------------------------------------------------------
+
+    def _open_console(self, key: str, title: str, start: Path | None = None) -> str | None:
+        """`ctx.open_console`: la consola propia de `key` (un protocolo), nueva o la que ya
+        tenía, en `start` (o la carpeta del usuario) y activa. None si el perfil no puede usar
+        Comandos: la tarea sigue en la consola que tenía."""
+        if self._session is None or not self._permitted(MAIN_CONSOLE):
+            return None
+        console, _created = self._consoles.open_for(key, title, start)
+        self._show_console(console)
+        return console
+
+    def _new_console(self, source: str) -> None:
+        """Botón de una ventana de Comandos: consola nueva en la carpeta de `source`."""
+        if self._session is None or not self._permitted(MAIN_CONSOLE):
+            return
+        self._show_console(self._consoles.open_copy(source))
+
+    def _show_console(self, console: str) -> None:
+        self._consoles.focus(console)
+        self._bus.publish(events.ConsoleOpened(console, self._consoles.title(console)))
+        self._bus.publish(events.WorkdirChanged(str(self._consoles.get(console).path), console))
+
+    async def _close_console(self, console: str) -> None:
+        """La ventana de una consola extra se ha cerrado: lo que sigue en marcha en ella (un
+        programa lanzado con «ejecuta») se detiene."""
+        if self._consoles.close(console):
+            await self._tasks.cancel_background(CANCELLED_REASON, console=console)
 
     # --- Cuenta de inactividad ---------------------------------------------------------------
 

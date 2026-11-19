@@ -15,6 +15,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from jarvis_assistant.core import events
+from jarvis_assistant.core.action_api import MAIN_CONSOLE
 
 Publish = Callable[[events.Event], None]
 
@@ -35,8 +36,11 @@ def _crumbs(path: str) -> list[dict[str, str]]:
 
 
 class CommandsModel(QObject):
-    """Panel de comandos: el directorio de trabajo y, debajo, el último resultado (listado,
-    árbol o salida de un binario). `clear` lo vacía."""
+    """Panel de una consola de comandos: el directorio de trabajo y, debajo, el último
+    resultado (listado, árbol o salida de un binario). `clear` lo vacía.
+
+    Solo atiende los eventos de su consola (`console`) y sus controles piden las acciones en
+    ella: cada ventana de Comandos es independiente de las demás."""
 
     changed = Signal()
 
@@ -47,12 +51,16 @@ class CommandsModel(QObject):
         output_lines: int = DEFAULT_OUTPUT_LINES,
         parent: QObject | None = None,
         publish: Publish = lambda _event: None,
+        console: str = MAIN_CONSOLE,
+        home: str = "",
     ) -> None:
+        """`home`: la carpeta personal, si ya se sabe (una consola abierta en plena sesión)."""
         super().__init__(parent)
         self._output_lines = output_lines
         self._publish = publish
+        self.console = console
         self._path = ""
-        self._home = ""  # la carpeta en la que empieza la sesión
+        self._home = home  # la carpeta en la que empieza la sesión
         self._reset()
 
     def _reset(self) -> None:
@@ -67,6 +75,8 @@ class CommandsModel(QObject):
         self._lines: list[dict[str, Any]] = []
 
     def apply(self, event: object) -> None:
+        if getattr(event, "console", self.console) != self.console:
+            return  # de otra consola
         if isinstance(event, events.WorkdirChanged):
             self._path = event.path
             self._home = self._home or event.path  # el primero de la sesión
@@ -103,7 +113,7 @@ class CommandsModel(QObject):
     # --- Acciones de la ventana --------------------------------------------------------------
 
     def _request(self, action: str, **params: object) -> None:
-        self._publish(events.ActionRequested(self.MODULE, action, params))
+        self._publish(events.ActionRequested(self.MODULE, action, params, self.console))
 
     @Slot(str)
     def goTo(self, path: str) -> None:
@@ -146,7 +156,12 @@ class CommandsModel(QObject):
     @Slot()
     def reveal(self) -> None:
         """Abre el directorio de trabajo en el gestor de archivos."""
-        self._publish(events.ActionRequested("apertura", "abrir_carpeta"))
+        self._publish(events.ActionRequested("apertura", "abrir_carpeta", console=self.console))
+
+    @Slot()
+    def duplicate(self) -> None:
+        """Abre otra ventana de Comandos, independiente, en la carpeta de esta."""
+        self._publish(events.ConsoleRequested(self.console))
 
     @Slot(result=str)
     def outputText(self) -> str:
@@ -154,6 +169,11 @@ class CommandsModel(QObject):
         return "\n".join(line["text"] for line in self._lines)
 
     # --- Propiedades -------------------------------------------------------------------------
+
+    @property
+    def home_path(self) -> str:
+        """La carpeta en la que empezó la sesión: la de «Carpeta personal»."""
+        return self._home
 
     @Property(str, notify=changed)
     def path(self) -> str:
@@ -199,6 +219,56 @@ class CommandsModel(QObject):
     @Property("QVariantList", notify=changed)
     def lines(self) -> list:
         return self._lines
+
+
+class ConsolesModel(QObject):
+    """Los paneles de las consolas de Comandos: el de la principal y uno por cada consola
+    extra (`ConsoleOpened`). La ventana de una consola toma el suyo con `get`."""
+
+    def __init__(
+        self,
+        output_lines: int = DEFAULT_OUTPUT_LINES,
+        parent: QObject | None = None,
+        publish: Publish = lambda _event: None,
+    ) -> None:
+        super().__init__(parent)
+        self._output_lines = output_lines
+        self._publish = publish
+        self.main = CommandsModel(output_lines, self, publish)
+        self._models: dict[str, CommandsModel] = {MAIN_CONSOLE: self.main}
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.ConsoleOpened) and event.console not in self._models:
+            self._models[event.console] = CommandsModel(
+                self._output_lines, self, self._publish, event.console, self.main.home_path
+            )
+        elif isinstance(event, events.ConsoleClosed):
+            self.remove(event.console)
+            return
+        elif isinstance(event, events.SessionOpened | events.SessionClosed):
+            self._drop_extras()
+        for model in list(self._models.values()):
+            model.apply(event)
+
+    def _drop_extras(self) -> None:
+        for console in [key for key in self._models if key != MAIN_CONSOLE]:
+            self.remove(console)
+
+    def remove(self, console: str) -> None:
+        """La ventana de la consola se ha cerrado: su panel desaparece."""
+        if console == MAIN_CONSOLE:
+            return
+        model = self._models.pop(console, None)
+        if model is not None:
+            model.deleteLater()
+
+    def __contains__(self, console: str) -> bool:
+        return console in self._models
+
+    @Slot(str, result=QObject)
+    def get(self, console: str) -> QObject:
+        """El panel de la consola; el de la principal si no la hay."""
+        return self._models.get(console, self.main)
 
 
 class OpenedModel(QObject):

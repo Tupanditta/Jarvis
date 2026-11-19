@@ -269,6 +269,7 @@ Item {
                 asynchronous: true
                 source: Qt.resolvedUrl("panels/" + win.component)
                 onLoaded: {
+                    item.windowId = win.windowId
                     item.embedded = true
                     item.active = Qt.binding(() => win.focused)
                 }

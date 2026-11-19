@@ -380,3 +380,83 @@ def test_cada_ventana_tiene_una_forma_de_marco_conocida_y_el_modelo_la_expone():
     assert len({spec.style for spec in WINDOWS}) > 1  # no son todas iguales
     full = WorkspaceModel(WINDOWS)
     assert rows(full, "style") == [spec.style for spec in WINDOWS]
+
+
+# --- Copias de la ventana de Comandos --------------------------------------------------------
+
+
+def test_una_consola_nueva_abre_una_copia_de_comandos_encima(model):
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert rows(model, "windowId")[-1] == "comandos:protocolo-a"
+    assert rows(model, "title")[-1] == "Comandos · a"
+    assert rows(model, "component")[-1] == "CommandsPanel.qml"
+    copy = model.placement("comandos:protocolo-a")
+    assert copy.open and rows(model, "focused")[-1]
+    assert geometry(model, "comandos:protocolo-a") != geometry(model, "comandos")
+    assert published == [events.ConsoleFocused("comandos:protocolo-a")]
+
+
+def test_la_misma_consola_reutiliza_su_ventana(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.show("busqueda")
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert rows(model, "windowId").count("comandos:protocolo-a") == 1
+    assert rows(model, "focused")[-1]
+
+
+def test_varias_copias_son_ventanas_independientes(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.ConsoleOpened("comandos:protocolo-b", "Comandos · b"))
+    assert rows(model, "windowId")[-2:] == ["comandos:protocolo-a", "comandos:protocolo-b"]
+    model.move("comandos:protocolo-a", 0.1, 0.1)
+    assert geometry(model, "comandos:protocolo-a")[:2] == (0.1, 0.1)
+    assert geometry(model, "comandos:protocolo-b")[:2] != (0.1, 0.1)
+
+
+def test_cerrar_una_copia_la_quita_y_avisa_al_nucleo():
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    published.clear()
+    model.close("comandos:protocolo-a")
+    assert "comandos:protocolo-a" not in rows(model, "windowId")
+    assert published == [
+        events.ConsoleFocused("comandos"), events.ConsoleClosed("comandos:protocolo-a")
+    ]
+    model.close("comandos")  # la principal solo se cierra
+    assert "comandos" in rows(model, "windowId")
+
+
+def test_la_consola_activa_es_la_de_la_ventana_de_comandos_de_delante():
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.ConsoleOpened("comandos:protocolo-b", "Comandos · b"))
+    model.show("busqueda")  # otra ventana delante no cambia la consola
+    model.raise_window("comandos:protocolo-a")
+    model.set_aside("comandos:protocolo-a")
+    assert published == [
+        events.ConsoleFocused("comandos:protocolo-a"),
+        events.ConsoleFocused("comandos:protocolo-b"),
+        events.ConsoleFocused("comandos:protocolo-a"),
+        events.ConsoleFocused("comandos:protocolo-b"),
+    ]
+
+
+def test_las_copias_no_entran_en_la_plantilla_y_desaparecen_con_la_sesion(model):
+    model.apply(events.ConfigApplied(Config()))
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert "comandos:protocolo-a" not in model.to_layout("mia", "Mía").windows
+    model.reset()  # la plantilla no se lleva las copias
+    assert model.placement("comandos:protocolo-a").open
+    model.apply(events.SessionOpened(1, "", ""))
+    assert "comandos:protocolo-a" not in rows(model, "windowId")
+
+
+def test_una_copia_no_se_ve_si_el_perfil_no_puede_usar_comandos(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.PermissionsApplied(frozenset({"comandos"})))
+    assert not model.placement("comandos:protocolo-a").open
+    assert rows(model, "available")[-1] is False

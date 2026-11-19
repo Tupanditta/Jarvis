@@ -217,9 +217,10 @@ class WindowAsideRequested(Event):
 
 @dataclass(frozen=True)
 class WorkdirChanged(Event):
-    """Directorio de trabajo que muestra el panel de comandos."""
+    """Directorio de trabajo que muestra el panel de comandos de `console`."""
 
     path: str
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,7 @@ class DirectoryListed(Event):
     path: str
     entries: tuple[Entry, ...]
     total: int
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -240,6 +242,7 @@ class DirectoryTreeBuilt(Event):
     dirs: int
     files: int
     truncated: bool
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -250,11 +253,46 @@ class CommandOutputAppended(Event):
     command: str
     lines: tuple[str, ...]
     stream: Literal["out", "err"]
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
 class CommandPanelCleared(Event):
-    """`clear`: el panel de comandos se vacía."""
+    """`clear`: el panel de comandos de `console` se vacía."""
+
+    console: str = "comandos"
+
+
+@dataclass(frozen=True)
+class ConsoleOpened(Event):
+    """Hay una consola de Comandos extra (`core/workdir.py`): su ventana se abre, o se trae al
+    frente si ya estaba. La abre un protocolo o el botón de una ventana de Comandos."""
+
+    console: str
+    title: str
+
+
+@dataclass(frozen=True)
+class ConsoleRequested(Event):
+    """Botón de una ventana de Comandos: una consola nueva en la carpeta de `source`."""
+
+    source: str
+
+
+@dataclass(frozen=True)
+class ConsoleClosed(Event):
+    """El usuario ha cerrado la ventana de una consola extra: desaparece con lo que tenía en
+    marcha."""
+
+    console: str
+
+
+@dataclass(frozen=True)
+class ConsoleFocused(Event):
+    """La ventana de Comandos que está delante ha cambiado: las órdenes sin consola van a la
+    suya."""
+
+    console: str
 
 
 @dataclass(frozen=True)
@@ -375,6 +413,7 @@ class ActionRequested(Event):
     module: str
     action: str
     params: Mapping[str, object] = field(default_factory=dict)
+    console: str | None = None  # la ventana de Comandos que la pide; None: la activa
 
 
 @dataclass(frozen=True)

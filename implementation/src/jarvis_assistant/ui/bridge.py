@@ -48,6 +48,8 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.DirectoryTreeBuilt,
     events.CommandOutputAppended,
     events.CommandPanelCleared,
+    events.ConsoleOpened,
+    events.ConsoleClosed,
     events.OpenedItemsChanged,
     events.LaunchTargetsChanged,
     events.SearchResultsReady,

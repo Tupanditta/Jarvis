@@ -4,7 +4,11 @@ Ejecuta con una sola orden una secuencia de tareas de varios módulos, definida 
 `protocols.toml` (RN-33, RES-36). Cada tarea se ejecuta con `ctx.invoke`: la misma interfaz y
 el mismo `run_task` que una orden del usuario, como subtarea de la del protocolo. Sus
 parámetros se resuelven al llegarle el turno, no al cargar: una ruta relativa usa el directorio
-de trabajo que dejó la tarea anterior.
+de trabajo que dejó la tarea anterior. Un protocolo con tareas de Comandos trabaja en su propia
+consola (`ctx.open_console`): la reutiliza si ya la tenía abierta de otra vez. Si cambia de
+carpeta (`comandos.cd`) después de haber trabajado en la anterior, abre otra ventana de
+Comandos para la carpeta nueva (`_windows`): un protocolo que prepara dos asignaturas deja una
+ventana en cada una.
 
 El orquestador valida los protocolos contra el registro de intenciones al aplicar la
 configuración (`config.validate_protocols`): aquí solo llegan los válidos.
@@ -30,6 +34,7 @@ from jarvis_assistant.speaker.phrases import count
 logger = logging.getLogger(__name__)
 
 PANEL = "protocolo"
+COMMANDS = "comandos"  # el módulo cuyas tareas piden una consola propia
 CATALOG = "protocolos"
 STOPPED_REASON = "protocolo detenido"  # RN-34
 
@@ -100,6 +105,10 @@ class ProtocolRunner:
         importancia y las tareas en orden. Las respuestas de cada tarea no se dicen, salvo los
         errores y las preguntas; al final, el resumen."""
         name = protocol.name
+        windows = _windows(protocol)
+        if windows[0] is not None:
+            # Su propia ventana de Comandos: dos protocolos no comparten carpeta ni salida.
+            ctx.open_console(*windows[0], False)
         steps = [_describe(task) for task in protocol.tasks]
         subtasks = [
             ctx.subtask(task.module, step)
@@ -134,6 +143,10 @@ class ProtocolRunner:
                 # Lo que dejó en marcha la tarea anterior (localizar la ventana de lo que se
                 # ha abierto, por ejemplo) avanza antes de la siguiente, como entre dos órdenes.
                 await asyncio.sleep(0)
+                if position and windows[position] is not None:
+                    # Otra carpeta de trabajo: otra ventana, que parte de la de la anterior
+                    # (así una ruta relativa se resuelve como sin ventanas).
+                    ctx.open_console(*windows[position], True)
                 result = await ctx.invoke(
                     task.module, task.action, task.params, subtask=subtask, resolve=True
                 )
@@ -175,6 +188,40 @@ class ProtocolRunner:
             return ActionResult("completado", Phrase("protocolos.ninguno"), description)
         n = count(len(rows), "protocolo", "protocolos")
         return ActionResult("completado", Phrase("protocolos.lista", {"n": n}), description)
+
+
+def _windows(protocol: ProtocolDef) -> list[tuple[str, str] | None]:
+    """Para cada tarea, la ventana de Comandos (clave y título) que se abre justo antes de
+    ella, o None si sigue en la que hay.
+
+    La primera se abre al empezar, si el protocolo tiene alguna tarea de Comandos. Después,
+    un `cd` abre otra si en la ventana actual ya se ha hecho algo más que cambiar de carpeta;
+    dos `cd` seguidos («proyectos», luego «jarvis») navegan en la misma. El título es la
+    carpeta del primer `cd` de la ventana, o el nombre del protocolo si no empieza con uno.
+    """
+    windows: list[tuple[str, str] | None] = [None] * len(protocol.tasks)
+    if not any(task.module == COMMANDS for task in protocol.tasks):
+        return windows
+    count, used = 1, False
+    first = _destination(protocol.tasks[0]) if protocol.tasks else None
+    windows[0] = (f"protocolo-{protocol.id}", f"Comandos · {first or protocol.name}")
+    for position, task in enumerate(protocol.tasks):
+        destination = _destination(task)
+        if destination is None:
+            used = True
+            continue
+        if used:
+            count += 1
+            windows[position] = (f"protocolo-{protocol.id}-{count}", f"Comandos · {destination}")
+            used = False
+    return windows
+
+
+def _destination(task: ProtocolTask) -> str | None:
+    """La carpeta, tal como se escribió, si la tarea es un `cd`."""
+    if task.module != COMMANDS or task.action != "cd":
+        return None
+    return str(task.params.get("ruta", "")) or "carpeta"
 
 
 def _names(protocol: ProtocolDef) -> tuple[str, ...]:

@@ -39,7 +39,7 @@ from jarvis_assistant.core.orchestrator import Orchestrator, Reload
 from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Scheduler
 from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.core.state_machine import StateMachine
-from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.core.workdir import Consoles, Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.os_adapters.base import PlatformAdapter
 from jarvis_assistant.paths import PROFILE_FILE_NAME, AppPaths, missing_models
@@ -124,9 +124,10 @@ def build_app(
         clock=adapters.clock,
         settings=settings.tts,
     )
-    workdir = Workdir(home or Path.home())
+    workdir = Workdir(home or Path.home())  # el de la consola principal
+    consoles = Consoles(workdir)
     router = IntentRouter(
-        settings.router, config.aliases, workdir=workdir, now=adapters.clock.now,
+        settings.router, config.aliases, workdir=consoles, now=adapters.clock.now,
         windows=windows,
     )
     sessions = SessionManager(adapters.database, adapters.clock, bus)
@@ -140,7 +141,7 @@ def build_app(
         sessions=sessions,
         database=adapters.database,
         platform=adapters.platform,
-        workdir=workdir,
+        workdir=consoles,
         modules=[sessions, *(create() for create in ACTION_MODULES)],
         reload_config=reload_config,
         on_exit=on_exit,

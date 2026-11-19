@@ -31,6 +31,7 @@ class TaskRecord:
     module: str
     description: str
     reason: str = CANCELLED_REASON  # motivo si se cancela mientras sigue en segundo plano
+    console: str | None = None  # la consola de Comandos donde se ejecuta
 
 
 class TaskRegistry:
@@ -133,8 +134,12 @@ class TaskRegistry:
         self._background[job] = task
         job.add_done_callback(self._background_done)
 
-    async def cancel_background(self, reason: str) -> None:
-        jobs = list(self._background)
+    async def cancel_background(self, reason: str, *, console: str | None = None) -> None:
+        """Cancela lo que sigue en segundo plano; con `console`, solo lo de esa consola."""
+        jobs = [
+            job for job, task in self._background.items()
+            if console is None or task.console == console
+        ]  # fmt: skip
         for job in jobs:
             self._background[job].reason = reason
             job.cancel()

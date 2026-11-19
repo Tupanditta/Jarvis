@@ -22,7 +22,7 @@ from jarvis_assistant.ui.noise import NoiseModel
 from jarvis_assistant.ui.panel_models import (
     DEFAULT_OUTPUT_LINES,
     AdminModel,
-    CommandsModel,
+    ConsolesModel,
     HelpModel,
     HistoryModel,
     OpenedModel,
@@ -48,6 +48,7 @@ UI_DIR = Path(__file__).resolve().parent
 QML_DIR = UI_DIR / "qml"
 FONTS_DIR = UI_DIR / "assets" / "fonts"
 TRANSITION_MS = 2000  # motion.transition
+COPY_REMOVAL_MS = 400  # una copia cerrada de Comandos se desvanece antes de desaparecer
 
 Publish = Callable[[events.Event], None]
 
@@ -103,7 +104,9 @@ class UiApp(QObject):
             parent=self,
         )
         self.options = UiOptions(settings, debug, self)
-        self.commands = CommandsModel(output_lines, self, publish)
+        # Un panel por consola de Comandos; `commands` es el de la principal.
+        self.consoles = ConsolesModel(output_lines, self, publish)
+        self.commands = self.consoles.main
         self.opened = OpenedModel(publish, self)
         self.search = SearchModel(self, publish)
         self.history = HistoryModel(self, publish)
@@ -114,14 +117,15 @@ class UiApp(QObject):
         self.noise = NoiseModel(parent=self)
         keep_apart(self.resources, self.noise)
         self.workspace = WorkspaceModel(
-            parent=self, meters={"recursos": self.resources, "ruido": self.noise}
-        )
+            parent=self, meters={"recursos": self.resources, "ruido": self.noise},
+            publish=publish, removal_delay_ms=COPY_REMOVAL_MS,
+        )  # fmt: skip
         self.profiles = ProfilesModel(publish, ProfileMemory(profile_path), self)
         self.access = AccessModel(publish, self)
         self.admin = AdminModel(self, publish)
         self._models = (
             self.options, self.assistant, self.access, self.tasks, self.dialogue, self.hud,
-            self.workspace, self.profiles, self.commands, self.opened, self.search, self.history,
+            self.workspace, self.profiles, self.consoles, self.opened, self.search, self.history,
             self.reminders, self.protocols, self.help, self.admin,
         )  # fmt: skip
         self.controller = wc.WindowController()
@@ -139,7 +143,7 @@ class UiApp(QObject):
             ("tasks", self.tasks),
             ("dialogue", self.dialogue),
             ("hud", self.hud),
-            ("commands", self.commands),
+            ("consoles", self.consoles),
             ("opened", self.opened),
             ("search", self.search),
             ("history", self.history),

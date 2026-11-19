@@ -934,3 +934,36 @@ def test_las_ventanas_del_acedor_muestran_su_contenido_sin_avisos(desk, qtbot):
     click(ui, switch, switch.width() / 2, switch.height() / 2)
     assert published[-1] == events.PermissionChangeRequested("casa", "comandos", True)
     assert ui.warnings == []
+
+
+def panel_of(window: QQuickItem) -> QQuickItem:
+    """El panel cargado en la ventana flotante."""
+    pending = [window]
+    while pending:
+        item = pending.pop()
+        if item.property("embedded") is True:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError("La ventana no tiene panel")
+
+
+def test_cada_ventana_de_comandos_muestra_su_consola_y_la_copia_se_cierra_del_todo(desk, qtbot):
+    ui, published = desk
+    home, algebra = str(Path.home()), str(Path.home() / "Algebra")
+    ui.on_event(events.WorkdirChanged(home))
+    ui.on_event(events.PanelActivated("comandos"))
+    ui.on_event(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    ui.on_event(events.WorkdirChanged(algebra, "comandos:protocolo-a"))
+    main, copy = floating(ui, "comandos"), floating(ui, "comandos:protocolo-a")
+    qtbot.waitUntil(lambda: main.isVisible() and copy.isVisible(), timeout=2000)
+    qtbot.waitUntil(lambda: panel_of(copy).property("windowId") == "comandos:protocolo-a",
+                    timeout=2000)  # fmt: skip
+    qtbot.waitUntil(lambda: panel_of(main).property("windowId") == "comandos", timeout=2000)
+    assert copy.property("title") == "Comandos · a" and copy.property("focused")
+    assert panel_of(copy).property("commands").property("path") == algebra
+    assert panel_of(main).property("commands").property("path") == home
+    click(ui, copy, copy.width() - 18, 20)  # ✕
+    qtbot.waitUntil(lambda: "comandos:protocolo-a" not in
+                    [spec.id for spec in ui.workspace.specs], timeout=2000)  # fmt: skip
+    assert events.ConsoleClosed("comandos:protocolo-a") in published
+    assert ui.warnings == []

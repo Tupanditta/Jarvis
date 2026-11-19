@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 # los recursos que leen y que cambian; el planificador usa esa declaración para decidir qué
 # tareas pueden ejecutarse a la vez (`core/task_queue.py`).
 WORKDIR = "workdir"
+# Consolas de Comandos (`core/workdir.py`): la principal; las extra son «comandos:<clave>». El
+# nombre de una consola es también el de su ventana y su panel.
+MAIN_CONSOLE = "comandos"
+
+
+def is_console(name: str) -> bool:
+    """`name` es la ventana o el panel de una consola: la principal o una extra."""
+    return name == MAIN_CONSOLE or name.startswith(MAIN_CONSOLE + ":")
 
 # Motivo de una tarea que termina sin hacer nada porque el usuario la ha cancelado (RN-52).
 CANCELLED_REASON = "cancelada"
@@ -218,6 +226,8 @@ class Intent:
     # La respuesta solo se dice si es un error: el resultado ya se ve en la ventana que
     # pidió la acción.
     quiet: bool = field(default=False, compare=False)
+    # La consola de Comandos donde se ejecuta (`core/workdir.py`); None: la activa al empezar.
+    console: str | None = field(default=None, compare=False)
 
     @property
     def key(self) -> str:
@@ -286,6 +296,13 @@ class ActionContext:
     # recordatorios, se leen y se escriben con él.
     profile: str = ""
     admin: AdminTools | None = None  # solo en la sesión del Acedor
+    # La consola de Comandos de la tarea: `workdir` es su directorio de trabajo y los eventos
+    # del panel de comandos la llevan para llegar a su ventana (`core/workdir.py`).
+    console: str = MAIN_CONSOLE
+    # Solo lo usa el módulo Protocolos: `open_console(key, title, inherit)` abre (o
+    # reutiliza) la consola propia de `key`; desde ahí, la tarea y sus subtareas trabajan en
+    # ella. Empieza en la carpeta del usuario o, con `inherit`, en la de la consola que deja.
+    open_console: Callable[[str, str, bool], None] = lambda _key, _title, _inherit=False: None
 
 
 class ActionModule(Protocol):
