@@ -73,6 +73,16 @@ def _activity(row: sqlite3.Row) -> ActivityRow:
     )
 
 
+# Sesión vacía (alias `s`): no se ha registrado ninguna actividad y no hay nada más que
+# conservar. Una sesión importante o que ha desplazado a otra por desbordamiento no cuenta como
+# vacía aunque no tenga actividades. El nombre, aunque lo haya puesto el usuario, no la salva.
+_EMPTY = (
+    "s.is_important = 0"
+    " AND NOT EXISTS (SELECT 1 FROM session_activities a WHERE a.session_id = s.id)"
+    " AND NOT EXISTS (SELECT 1 FROM sessions d WHERE d.displaced_by = s.id)"
+)
+
+
 class SessionRepository:
     """Tabla `sessions`. Lo usan Sesión e Historial."""
 
@@ -230,6 +240,21 @@ class SessionRepository:
                 "UPDATE sqlite_sequence SET seq = ? WHERE name = 'sessions'", (len(kept),)
             )
             return moves
+
+    def is_empty(self, session_id: int) -> bool:
+        """Si la sesión existe y está vacía: no se guarda en el historial (ver `_EMPTY`)."""
+        row = self._db.conn.execute(
+            f"SELECT 1 FROM sessions s WHERE s.id = ? AND {_EMPTY}", (session_id,)
+        ).fetchone()
+        return row is not None
+
+    def closed_empty(self) -> list[int]:
+        """Ids de las sesiones cerradas que están vacías (ver `_EMPTY`), por orden."""
+        rows = self._db.conn.execute(
+            f"SELECT s.id FROM sessions s WHERE s.closed_at IS NOT NULL AND {_EMPTY}"
+            " ORDER BY s.id"
+        )
+        return [row["id"] for row in rows]
 
     def visible_history(self, limit: int | None = 10) -> list[SessionRow]:
         """Sesiones visibles: primero las importantes y, después, las más recientes (RN-10).

@@ -261,6 +261,7 @@ class CoreThread:
         self.app = app
         try:
             app.sessions.recover_interrupted()
+            app.sessions.discard_empty()  # las vacías que se guardaron antes
             await app.speaker.preload()
             logger.info("Listo en %.1f s", time.monotonic() - started)
             if self._config.settings.startup.open_session_on_start:

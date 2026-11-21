@@ -13,7 +13,7 @@ from jarvis_assistant.config import Config
 from jarvis_assistant.core import events
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.repositories import SessionRepository
+from jarvis_assistant.core.repositories import ActivityRepository, SessionRepository
 from jarvis_assistant.core.state_machine import AssistantState
 from jarvis_assistant.main import ACTION_MODULES, CoreThread, build_app, parse_args
 from jarvis_assistant.os_adapters.windows import WindowsAdapter
@@ -101,11 +101,17 @@ def test_una_segunda_instancia_sale_sin_efectos(tmp_path, monkeypatch):
     assert not (platform.data_dir() / "jarvis.db").exists()
 
 
-def test_el_nucleo_recupera_al_arrancar_y_al_salir_deja_la_sesion_cerrada(tmp_path):
+def test_el_nucleo_recupera_al_arrancar_y_no_guarda_las_sesiones_vacias(tmp_path):
     path = tmp_path / "jarvis.db"
     seed = Database(path)
     seed.migrate()
-    orphan = SessionRepository(seed).create("huérfana", FakeClock().now())
+    now = FakeClock().now()
+    seeded = SessionRepository(seed)
+    empty_closed = seeded.create("vacía y cerrada", now)  # guardada antes de esta regla
+    seeded.close(empty_closed, now, "voz")
+    orphan = seeded.create("huérfana", now)
+    ActivityRepository(seed).add(orphan, "comandos", "ls", now)
+    seeded.create("vacía y abierta", now)
     seed.close()
     made = {}
 
@@ -130,10 +136,14 @@ def test_el_nucleo_recupera_al_arrancar_y_al_salir_deja_la_sesion_cerrada(tmp_pa
     assert core.join(3)
 
     check = Database(path)
-    sessions = SessionRepository(check)
-    reasons = [sessions.get(session_id).close_reason for session_id in (orphan, orphan + 1)]
+    sessions = SessionRepository(check).visible_history(None)
+    stored = [(s.id, s.name, s.close_reason) for s in sessions]
+    activities = ActivityRepository(check).of_session(1)
     check.close()
-    assert reasons == ["interrumpida", "salida"]
+    # Solo queda la huérfana con su actividad, renumerada a la 1. Las vacías (la cerrada, la
+    # abierta y la de esta ejecución, que se cierra al salir sin actividades) no se guardan.
+    assert stored == [(1, "huérfana", "interrumpida")]
+    assert [a.module for a in activities] == ["comandos"]
 
 
 def test_un_fallo_al_arrancar_el_nucleo_termina_el_proceso(caplog):

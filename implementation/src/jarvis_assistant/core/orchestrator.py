@@ -37,7 +37,6 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jarvis_assistant.config import (
     ADMIN_PROFILE_ID,
-    METERS,
     Binary,
     Catalog,
     Config,
@@ -46,7 +45,7 @@ from jarvis_assistant.config import (
     admin_profile,
     validate_protocols,
 )
-from jarvis_assistant.core import events
+from jarvis_assistant.core import events, permissions
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import (
     CANCELLED_REASON,
@@ -280,7 +279,7 @@ class Orchestrator:
         for module in modules:
             self._register(module)
         for error in self._apply_config(config):
-            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            _log_config_error(error)
 
         bus.subscribe(
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
@@ -740,7 +739,7 @@ class Orchestrator:
             if error.warning:
                 logger.warning("Configuración: %s, %s: %s", error.file, error.key, error.reason)
                 continue
-            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            _log_config_error(error)
             if not notify:
                 continue
             self._bus.publish(events.ConfigReloadFailed(error.file, error.reason))
@@ -947,48 +946,22 @@ class Orchestrator:
 
     # --- Permisos ----------------------------------------------------------------------------
 
-    def _admin_modules(self) -> frozenset[str]:
-        return frozenset(
-            name for name, module in self._modules.items() if getattr(module, "admin", False)
-        )
-
     def _restrictable(self) -> tuple[tuple[str, str], ...]:
-        """Módulos que el Acedor puede conceder o restringir: los de acción normales, menos
-        los que el asistente necesita siempre (`always_allowed`), y los medidores de la
-        pantalla de sesión."""
-        modules = tuple(
-            (name, module.title) for name, module in self._modules.items()
-            if not getattr(module, "admin", False) and not getattr(module, "always_allowed", False)
-        )  # fmt: skip
-        return modules + tuple((meter.id, meter.title) for meter in METERS)
+        """Módulos y medidores que el Acedor puede conceder o restringir."""
+        return permissions.restrictable(self._modules)
 
     def _apply_permissions(self) -> None:
         """Al abrir sesión: los módulos del perfil, en el enrutador y en la interfaz."""
         profile_id = self._profile().id
-        admin = self._admin_modules()
-        always = {CORE_MODULE} | {
-            name for name, module in self._modules.items()
-            if getattr(module, "always_allowed", False)
-        }  # fmt: skip
-        if profile_id == ADMIN_PROFILE_ID:
-            restricted: frozenset[str] = frozenset()
-            allowed = frozenset(always | admin)
-        else:
-            restricted = self._permissions.restricted(profile_id)
-            allowed = frozenset(
-                name for name in (*self._modules, CORE_MODULE)
-                if name in always or (name not in admin and name not in restricted)
-            )  # fmt: skip
-        self._allowed = allowed
-        self._router.set_scope(allowed)
-        shown = {panel for (module, _a), panel in self._panels.items() if module in allowed}
-        hidden = {
-            panel for (module, _a), panel in self._panels.items()
-            if module not in allowed and panel is not None and panel not in shown
-        }  # fmt: skip
-        # Los medidores no son módulos: solo se ocultan. El Acedor los ve siempre.
-        hidden |= {meter.id for meter in METERS if meter.id in restricted}
-        self._bus.publish(events.PermissionsApplied(frozenset(hidden)))
+        restricted = (
+            () if profile_id == ADMIN_PROFILE_ID else self._permissions.restricted(profile_id)
+        )
+        scope = permissions.session_scope(
+            self._modules, self._panels, profile_id, restricted, core_module=CORE_MODULE
+        )
+        self._allowed = scope.allowed
+        self._router.set_scope(scope.allowed)
+        self._bus.publish(events.PermissionsApplied(scope.hidden_panels))
 
     def _permitted(self, module: str) -> bool:
         return self._allowed is None or module in self._allowed
@@ -1012,7 +985,7 @@ class Orchestrator:
         if binaries is not None:
             changes["binaries"] = tuple(binaries)
         for error in self._apply_config(dataclasses.replace(self._config, **changes)):
-            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            _log_config_error(error)
         await self._session_hook("on_config_changed")
         return ""
 
@@ -1390,6 +1363,10 @@ class Orchestrator:
         self._bus.publish(events.AudioLevel(min(1.0, max(0.0, level)), source))
         if source != "none" and not self._stopping:
             self._schedule_level()
+
+
+def _log_config_error(error: ConfigError) -> None:
+    logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
 
 
 def _changes_state(entry: fsm.Input) -> bool:

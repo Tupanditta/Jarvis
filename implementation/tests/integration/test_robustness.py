@@ -35,7 +35,7 @@ async def settle() -> None:
 
 
 async def full_session(tmp_path, *, database=None, player=None, config=None) -> tuple:
-    """Abre sesión, pide la hora, cierra y devuelve lo dicho y la sesión guardada."""
+    """Abre sesión, le pone nombre, cierra y devuelve lo dicho y la sesión guardada."""
     clock = FakeClock()
     if database is None:
         database = Database(":memory:")
@@ -64,7 +64,7 @@ async def full_session(tmp_path, *, database=None, player=None, config=None) -> 
         await settle()
         await write("Hey Jarvis")
         assert app.machine.state is S.LISTENING_COMMAND
-        await write("ayuda")
+        await write("llama a la sesión prueba")  # una actividad: la sesión se guarda
         assert app.machine.state is S.LISTENING_COMMAND
         await write("Buenas noches Jarvis")
         assert app.machine.state is S.DORMIDO

@@ -251,7 +251,9 @@ async def test_cu03_a5_hey_jarvis_tras_el_cierre_abre_una_sesion_nueva_al_instan
     await rig.advance(1.0)
     assert rig.state is S.LISTENING_COMMAND
     (second,) = rig.sessions.find_open()
-    assert second.id != first
+    # La primera estaba vacía: se ha eliminado y la nueva ocupa su número.
+    assert second.id == first
+    assert len(rig.sessions.visible_history(None)) == 1
     assert rig.spoken()[-2:] == [CIERRE, APERTURA]
     assert rig.player.is_open
 
@@ -499,6 +501,7 @@ async def test_cu05_a4_buenas_noches_sin_jarvis_se_ignora(rig):
 async def test_cu05_a5_salir_desde_la_bandeja_cierra_sin_frase_y_termina(rig, resting):
     await rig.open_session()
     session = rig.sessions.find_open()[0]
+    ActivityRepository(rig.database).add(session.id, "comandos", "ls", rig.clock.now())
     if resting:
         await rig.write("gracias jarvis")
         await rig.advance(1.0)

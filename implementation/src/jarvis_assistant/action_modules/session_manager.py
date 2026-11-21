@@ -70,21 +70,40 @@ class SessionManager:
         session, self._current = self._current, None
         if session is None:
             return
-        self._close(session.id, reason, at=self._clock.now())
-        logger.info("Sesión %d cerrada (%s)", session.id, reason)
+        if self._close(session.id, reason, at=self._clock.now()):
+            logger.info("Sesión %d vacía: eliminada al cerrar (%s)", session.id, reason)
+        else:
+            logger.info("Sesión %d cerrada (%s)", session.id, reason)
 
     def recover_interrupted(self) -> list[int]:
-        """Cierra como «interrumpida» cada sesión que quedó abierta (RN-47)."""
+        """Cierra como «interrumpida» cada sesión que quedó abierta (RN-47); la vacía se
+        elimina. Devuelve los ids que tenían al recuperarlas."""
         recovered = []
-        for session in self._sessions.find_open():
+        # Se relee cada vez: borrar una sesión (vacía o desplazada) renumera las demás.
+        while opened := self._sessions.find_open():
+            session = opened[0]
             moments = [
                 activity.finished_at or activity.executed_at
                 for activity in self._activities.of_session(session.id)
             ]
-            self._close(session.id, "interrumpida", at=max(moments, default=session.opened_at))
-            logger.info("Sesión %d recuperada como interrumpida", session.id)
+            at = max(moments, default=session.opened_at)
+            if self._close(session.id, "interrumpida", at=at):
+                logger.info("Sesión %d vacía: eliminada al recuperarla", session.id)
+            else:
+                logger.info("Sesión %d recuperada como interrumpida", session.id)
             recovered.append(session.id)
         return recovered
+
+    def discard_empty(self) -> list[int]:
+        """Elimina las sesiones cerradas que quedaron vacías: no se guardan en el historial.
+        Devuelve sus ids de antes del borrado."""
+        with self._db.transaction():
+            empty = self._sessions.closed_empty()
+            moves = self._sessions.delete(empty)
+        if empty:
+            logger.info("Sesiones vacías eliminadas: %s; renumeradas: %s", empty, moves)
+            self._bus.publish(SessionsDeleted(tuple(empty), moves))
+        return empty
 
     # --- Acciones ------------------------------------------------------------------------------
 
@@ -222,12 +241,21 @@ class SessionManager:
         self._current = session
         self._bus.publish(SessionChanged(session.id, session.name, session.is_important))
 
-    def _close(self, session_id: int, reason: str, *, at) -> None:
+    def _close(self, session_id: int, reason: str, *, at) -> bool:
+        """Cierra la sesión o, si está vacía, la elimina del todo: una sesión sin actividades
+        no se guarda en el historial. Devuelve si se ha eliminado."""
         with self._db.transaction():
-            self._activities.fail_pending(session_id, CLOSED_REASON, at)
-            self._sessions.close(session_id, at, reason)
-            # La última: borrar renumera las sesiones, también esta.
-            self._sessions.purge_pending(session_id)
+            if self._sessions.is_empty(session_id):
+                # Vacía: no es importante ni ha desplazado a nadie, no hay nada que purgar.
+                moves = self._sessions.delete([session_id])
+            else:
+                self._activities.fail_pending(session_id, CLOSED_REASON, at)
+                self._sessions.close(session_id, at, reason)
+                # La última: borrar renumera las sesiones, también esta.
+                self._sessions.purge_pending(session_id)
+                return False
+        self._bus.publish(SessionsDeleted((session_id,), moves))
+        return True
 
     def _default_name(self) -> str:
         base = self._clock.now().astimezone(self._tz).date().isoformat()

@@ -90,6 +90,8 @@ def test_las_fuentes_incluidas_se_registran(qapp):
     assert {"Inter", "JetBrains Mono", "Orbitron", "Rajdhani"} <= set(load_fonts())
 
 
+# El plazo de la prueba cubre la espera del recorrido (60 s), mayor que el general (30 s).
+@pytest.mark.timeout(90)
 @pytest.mark.parametrize("quality", ["high", "medium", "low"])
 @pytest.mark.parametrize("reduce_motion", [False, True])
 def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
