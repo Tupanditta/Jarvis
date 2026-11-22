@@ -14,8 +14,9 @@ El ciclo completo está en RN-43 y en [maquina-estados.md](../Infraestructura/ma
 | Operación | Cuándo | Qué hace |
 |---|---|---|
 | `open_session()` | `DORMIDO` → `LISTENING_COMMAND` | Crea la fila con el nombre por defecto (RN-02), `is_important = 0` y `opened_at` = ahora. Restablece el directorio de trabajo a la carpeta del usuario (RN-14). Publica `SessionChanged`. |
-| `close_session(reason)` | Cierre con la frase de cierre o salida del proceso | Marca `error` las actividades `pendiente` (RN-46). Elimina las sesiones marcadas por desbordamiento por esta sesión (RN-09). Fija `closed_at` y `close_reason` (`voz`, el cierre con la frase de cierre, o `salida`). |
-| `recover_interrupted()` | Arranque del proceso | Para cada sesión sin `closed_at`: aplica `close_session` con `close_reason = 'interrumpida'` y `closed_at` = momento de su última actividad, o `opened_at` si no tiene (RN-47). |
+| `close_session(reason)` | Cierre con la frase de cierre o salida del proceso | Si la sesión está vacía (RN-69), la elimina y publica `SessionsDeleted`. Si no, marca `error` las actividades `pendiente` (RN-46), fija `closed_at` y `close_reason` (`voz`, el cierre con la frase de cierre, o `salida`) y, por último, elimina las sesiones marcadas por desbordamiento por esta sesión (RN-09), lo que renumera las demás. |
+| `recover_interrupted()` | Arranque del proceso | Para cada sesión sin `closed_at`: aplica `close_session` con `close_reason = 'interrumpida'` y `closed_at` = momento de su última actividad, o `opened_at` si no tiene (RN-47). Una vacía se elimina. |
+| `discard_empty()` | Arranque del proceso | Elimina las sesiones cerradas que quedaron vacías (RN-69) y publica `SessionsDeleted`. |
 
 ## Acciones
 
@@ -47,7 +48,7 @@ Tras poner `is_important = 1` en la sesión actual, en la misma transacción:
 
 **Restauración:** si la sesión actual deja de ser importante antes de cerrarse, las sesiones con `displaced_by` igual a su id recuperan `is_important = 1` y pierden la marca.
 
-**Eliminación:** al cerrar la sesión actual, las sesiones con `displaced_by` igual a su id y `pending_purge_on_close = 1` pasan a `is_deleted = 1` (borrado lógico).
+**Eliminación:** al cerrar la sesión actual, las sesiones con `displaced_by` igual a su id y `pending_purge_on_close = 1` se borran del todo con sus actividades, y las demás se renumeran (RN-12, RN-53).
 
 ### Otras
 
@@ -66,12 +67,13 @@ Tabla `sessions` ([especificacion-base-datos.md](../../BaseDatos/especificacion-
 
 - Nombre por defecto y sufijo `(2)` cuando ya existe.
 - Cada combinación de RN-03 a RN-06.
-- Con 10 importantes, marcar la actual desplaza la más antigua; desmarcarla la restaura; cerrarla la elimina de forma lógica.
+- Con 10 importantes, marcar la actual desplaza la más antigua; desmarcarla la restaura; cerrarla la elimina y renumera las demás.
 - `recover_interrupted` cierra las sesiones huérfanas y aplica las eliminaciones pendientes.
 - `close_session` deja en `error` las actividades `pendiente`.
+- Una sesión vacía no queda en la base de datos al cerrarla ni al recuperarla; una con actividades, importante o que desplazó a otra, sí.
 
 ## Prohibiciones
 
 - Ningún protocolo sobrescribe un nombre fijado por el usuario ni degrada la importancia.
-- No se usa `DELETE` físico.
+- No se borra ninguna sesión salvo por RN-09, RN-12 o RN-69.
 - No se guardan sesiones fuera de la base de datos.

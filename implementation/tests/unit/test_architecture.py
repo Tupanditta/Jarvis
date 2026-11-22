@@ -152,12 +152,14 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 
 # El orquestador une el enrutador, la voz y los módulos: es el único del núcleo que conoce el
-# enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`.
+# enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`. El control de
+# acceso (`core/access.py`) es una parte suya: lo crea el orquestador con su enrutador y su voz.
 HUB_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "core/orchestrator.py": (
         "intent_router.batch", "intent_router.router", "speaker.formats", "speaker.phrases",
         "speaker.speaker",
     ),
+    "core/access.py": ("intent_router.router", "speaker.formats", "speaker.speaker"),
 }  # fmt: skip
 
 # Raíz de composición: conoce todos los paquetes para construir y conectar el grafo.

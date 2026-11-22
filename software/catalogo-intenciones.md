@@ -45,13 +45,13 @@ Módulo interno `nucleo`. No pertenecen a ningún módulo de acción.
 |---|---|---|---|
 | `historial.mostrar` | muestra el historial · historial de sesiones · enséñame el historial | — | «Muestra el historial» |
 | `historial.actividades` | actividades de la sesión {id} · muestra las actividades de la sesión {id} · qué hice en la sesión {id} · actividades de esta sesión · qué he hecho | `id: INTEGER` (opcional) | «Actividades de la sesión doce» |
-| `historial.eliminar` | elimina la sesión {id} · borra la sesión {id} | `id: INTEGER` | «Elimina la sesión doce» |
+| `historial.eliminar` | elimina sesiones · borra sesiones · elimina sesiones del historial · borra sesiones del historial · elimina la sesión {id} · borra la sesión {id} | `id: INTEGER` (opcional; sin él, pregunta cuáles con `SESSION_IDS`) | «Elimina la sesión doce» · «Elimina sesiones» |
 
 ### Comandos
 
 | Intención | Patrones | Entidades | Ejemplo |
 |---|---|---|---|
-| `comandos.cd` | ve a {ruta} · entra en {ruta} · cambia a la carpeta {ruta} · cd {ruta} | `ruta: DIR_PATH` | «Ve a proyectos barra jarvis» · «Ve atrás» |
+| `comandos.cd` | ve a {ruta} · ve {ruta} · entra en {ruta} · cambia a la carpeta {ruta} · cd {ruta} | `ruta: DIR_PATH` | «Ve a proyectos barra jarvis» · «Ve atrás» |
 | `comandos.ls` | lista · lista el directorio · qué hay aquí · ls | — | «Qué hay aquí» |
 | `comandos.pwd` | dónde estoy · directorio actual · en qué carpeta estoy | — | «Dónde estoy» |
 | `comandos.arbol` | árbol · muestra el árbol · árbol de {ruta} · muestra el árbol de {ruta} · mapa de {ruta} | `ruta: DIR_PATH` (opcional) | «Árbol de documentos» |
@@ -95,6 +95,7 @@ Si el nombre de `crear_carpeta` contiene «barra», se trata como `crear_arbol`.
 | `recordatorio.crear` | recuérdame {texto} · recuérdame que {texto} · crea un recordatorio {texto} · crea un recordatorio para {texto} | `texto: TEXT` | «Recuérdame que tengo que llamar a Ana mañana a las nueve» |
 | `recordatorio.mostrar` | recordatorios · muestra los recordatorios · qué recordatorios tengo | — | «Muestra los recordatorios» |
 | `recordatorio.leer` | lee el recordatorio {n} · recordatorio {n} · lee el {n} | `n: INTEGER` | «Lee el recordatorio uno» |
+| `recordatorio.dictar` | léeme los recordatorios · lee los recordatorios · díctame los recordatorios · dicta los recordatorios | — | «Léeme los recordatorios» |
 | `recordatorio.confirmar` | confirmar recordatorios {n} · confirmar recordatorio {n} · confirmar recordatorios | `n: INTEGER` (opcional) | «Confirmar recordatorios dos» |
 | `recordatorio.posponer` | posponer · pospón · más tarde · posponer {duracion} · pospón {duracion} · pospón el recordatorio {n} · pospón el recordatorio {n} durante {duracion} | `n: INTEGER`, `duracion: DURATION` (opcionales) | «Posponer media hora» |
 | `recordatorio.posponer_limite` | pospón la fecha límite del recordatorio {n} hasta {fecha} · cambia la fecha límite del recordatorio {n} hasta {fecha} | `n: INTEGER`, `fecha: DATETIME` | «Pospón la fecha límite del recordatorio uno hasta el viernes a las diez» |
@@ -107,6 +108,29 @@ Si el nombre de `crear_carpeta` contiene «barra», se trata como `crear_arbol`.
 | `protocolos.ejecutar` | protocolo {protocolo} · ejecuta el protocolo {protocolo} · inicia el protocolo {protocolo} · activa el protocolo {protocolo} | `protocolo: CATALOG` | «Protocolo modo trabajo» |
 | `protocolos.listar` | muestra los protocolos · qué protocolos hay | — | «Qué protocolos hay» |
 
+`recordatorio.dictar` también la pone en la cola el propio módulo tras un aviso de recordatorios, con los avisados: entonces pregunta antes si los dicta ([recordatorio.md](Modulos/Accion/recordatorio.md)).
+
+### Catálogo
+
+| Intención | Patrones | Entidades | Ejemplo |
+|---|---|---|---|
+| `catalogo.ver` | muestra el catálogo · ver el catálogo · ver catálogo · enseña el catálogo | — | «Muestra el catálogo» |
+| `catalogo.añadir` | añade al catálogo · añadir al catálogo · nueva entrada del catálogo | — (los datos se escriben en la ventana) | «Añade al catálogo» |
+| `catalogo.eliminar` | elimina {entrada} del catálogo · quita {entrada} del catálogo · borra {entrada} del catálogo | `entrada: CATALOG` (nombres y alias de aplicaciones, páginas y comandos del catálogo) | «Quita GitHub del catálogo» |
+
+### Módulos del Acedor
+
+Solo los usa el Acedor ([perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md)). En cualquier otra sesión no salen en la ayuda y, si se escriben, la tarea queda en `error` con `permisos.denegado`.
+
+| Intención | Patrones | Entidades | Ejemplo |
+|---|---|---|---|
+| `permisos.conceder` | da permiso de {modulo} a {perfil} · concede {modulo} a {perfil} · permite {modulo} a {perfil} · autoriza {modulo} a {perfil} | `modulo: CATALOG` (módulos y medidores restringibles), `perfil: CATALOG` (perfiles) | «Da permiso de comandos a Trabajo» |
+| `permisos.restringir` | quita permiso de {modulo} a {perfil} · restringe {modulo} a {perfil} · prohibe {modulo} a {perfil} · quita {modulo} a {perfil} | Igual que `permisos.conceder` | «Quita permiso de comandos a Casa» |
+| `permisos.ver` | muestra los permisos · ver permisos · permisos de los perfiles | — | «Muestra los permisos» |
+| `credenciales.ver` | muestra las contraseñas · ver contraseñas · muestra las credenciales · contraseñas de los perfiles | — | «Muestra las contraseñas» |
+| `perfiles.eliminar` | elimina el perfil {perfil} · borra el perfil {perfil} · quita el perfil {perfil} | `perfil: CATALOG` (perfiles eliminables) | «Elimina el perfil Casa» |
+| `perfiles.ver` | muestra los perfiles · ver perfiles · lista los perfiles | — | «Muestra los perfiles» |
+
 ## 4. Respuestas a un diálogo
 
 | Tipo esperado | Respuestas válidas |
@@ -115,6 +139,9 @@ Si el nombre de `crear_carpeta` contiene «barra», se trata como `crear_arbol`.
 | `NEW_FILENAME` | Cualquier nombre válido («informe dos punto txt»). |
 | `DATETIME` | Una expresión de fecha y hora («mañana a las nueve»). |
 | `REMINDER_ACTION` | otro aviso {fecha} · fecha límite {fecha} · no · nada más · listo. |
+| `SESSION_IDS` | Identificadores de sesión separados por comas o un intervalo: «1, 3, 5» · «1-5». |
+
+La contraseña de un perfil protegido no es una respuesta de diálogo: se escribe en su propia caja y no pasa por el enrutador ([perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md)).
 
 Las frases de control de la sección 1 valen en cualquier diálogo.
 
@@ -127,6 +154,7 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | Identificador | Texto |
 |---|---|
 | `ciclo.apertura` | Sesión iniciada. Le escucho. |
+| `ciclo.apertura_protegida` | Identidad confirmada. Ha accedido a un entorno de trabajo protegido con privilegios avanzados. Tiene acceso a protocolos y funciones confidenciales. ¿En qué vamos a trabajar, señor? (Sustituye a `ciclo.apertura` al entrar con contraseña.) |
 | `ciclo.escucha` | Le escucho. |
 | `ciclo.reposo` | A su disposición. |
 | `ciclo.cierre` | Buenas noches. Sesión cerrada. |
@@ -166,6 +194,11 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `historial.es_actual` | No se puede eliminar la sesión actual. |
 | `historial.confirmar_eliminar` | ¿Elimino la sesión {id}, {nombre}? |
 | `historial.eliminada` | Sesión {id} eliminada. |
+| `historial.cuales_eliminar` | ¿Qué sesiones elimino, señor? Puede decirme, por ejemplo, 1, 3, 5 o 1-5. |
+| `historial.nada_que_eliminar` | No hay sesiones que eliminar, señor. Solo está la actual. |
+| `historial.aviso_importantes` | Atención, señor: hay importancia marcada en {sesiones}. |
+| `historial.confirmar_eliminar_varias` | ¿Elimino las sesiones {sesiones}, señor? |
+| `historial.eliminadas` | Sesiones {sesiones} eliminadas, señor. |
 
 ### Comandos
 
@@ -200,6 +233,7 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `busqueda.limitada` | Búsqueda limitada a sus carpetas. |
 | `busqueda.instalar` | Instale Everything para buscar en todo el disco. |
 | `busqueda.no_existe` | Ese archivo ya no existe. |
+| `busqueda.ofrecer_abrir` | ¿Quiere que lo abra, señor? |
 
 ### Creación
 
@@ -226,6 +260,14 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `recordatorio.ninguno` | No tiene recordatorios. |
 | `recordatorio.lectura` | {texto} |
 | `recordatorio.lectura_vencido` | {texto} Venció {fecha}. |
+| `recordatorio.ofrecer_uno` | ¿Quiere que se lo lea, señor? |
+| `recordatorio.ofrecer_varios` | ¿Quiere que se los dicte, señor? |
+| `recordatorio.no_dictar` | Como quiera, señor. Lo tiene todo en el panel. |
+| `recordatorio.dictado_unico` | Dice así: {texto}. |
+| `recordatorio.dictado_primero` | El primero: {texto}. |
+| `recordatorio.dictado_siguiente` | El siguiente: {texto}. |
+| `recordatorio.dictado_ultimo` | Y por último: {texto}. |
+| `recordatorio.dictado_vencido` | Venció {fecha}. |
 | `recordatorio.activar` | Escriba confirmar recordatorios y el número. |
 | `recordatorio.confirmado` | Recordatorio {n} confirmado. |
 | `recordatorio.pospuesto` | Pospuesto. Le avisaré dentro de {duracion}. |
@@ -246,6 +288,49 @@ Identificador y texto de `speaker/phrases.py`. `{…}` son parámetros; los form
 | `protocolos.lista` | Hay {n}. ({n}: «1 protocolo», «2 protocolos».) |
 | `protocolos.ninguno` | No hay ningún protocolo definido. |
 
+### Catálogo
+
+| Identificador | Texto |
+|---|---|
+| `catalogo.mostrado` | Aquí tiene el catálogo, señor. |
+| `catalogo.usar_ventana` | Complete los datos en la ventana del catálogo, señor. |
+| `catalogo.anadido` | Hecho, señor. {nombre} ya está en el catálogo. |
+| `catalogo.no_valido` | No puedo añadirlo, señor. Tiene el motivo en la ventana del catálogo. |
+| `catalogo.confirmar` | ¿Elimino {nombre} del catálogo, señor? |
+| `catalogo.eliminado` | {nombre} eliminado del catálogo, señor. |
+| `catalogo.no_encontrado` | No encuentro eso en el catálogo, señor. |
+| `catalogo.no_guardado` | No he podido guardar el catálogo, señor. |
+
+### Perfiles protegidos y aviso de intrusión
+
+Se dicen en la pantalla dormida sin despertar al asistente, salvo los avisos de intrusión, que se dicen tras la frase de apertura.
+
+| Identificador | Texto |
+|---|---|
+| `seguridad.desafio` | Esta área está protegida por un nivel de seguridad superior. Introduzca la clave correcta para obtener acceso. |
+| `seguridad.denegado` | Clave incorrecta. Acceso denegado. (La misma en todos los fallos, también en el tercero.) |
+| `seguridad.intrusion` | Alerta de seguridad, señor. Alguien intentó acceder a este entorno sin autorización {cuando}. Introdujo una clave incorrecta {intentos} veces seguidas. |
+| `seguridad.intrusiones` | Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a este entorno desde su última visita. El último, {cuando}. Tiene los detalles en pantalla. |
+| `seguridad.intrusion_acedor` | Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a los perfiles desde su última visita. El último, {cuando}. Tiene los detalles en pantalla. |
+
+### Permisos, Credenciales y Perfiles
+
+| Identificador | Texto |
+|---|---|
+| `permisos.denegado` | No tiene autorización para usar {modulo} en este entorno, señor. (Cualquier módulo restringido al perfil.) |
+| `permisos.solo_acedor` | Esa función solo está al alcance del Acedor, señor. |
+| `permisos.no_encontrado` | No encuentro ese perfil o ese módulo, señor. |
+| `permisos.concedido` | Hecho, señor. {perfil} ya puede usar {modulo}. |
+| `permisos.restringido` | Hecho, señor. {perfil} ya no puede usar {modulo}. |
+| `permisos.mostrados` | Aquí tiene los permisos de cada perfil, señor. |
+| `credenciales.mostradas` | Aquí tiene las credenciales, señor. Están ocultas hasta que decida mostrarlas. |
+| `credenciales.ninguna` | Ningún perfil tiene contraseña, señor. |
+| `perfiles.mostrados` | Aquí tiene los perfiles, señor. |
+| `perfiles.confirmar` | ¿Elimino el perfil {perfil}, señor? Se perderán sus recordatorios. |
+| `perfiles.eliminado` | Perfil {perfil} eliminado, señor. |
+| `perfiles.ultimo` | No puedo eliminar el último perfil, señor. |
+| `perfiles.no_eliminado` | No he podido eliminar el perfil, señor. |
+
 ## 6. Juego de frases de prueba
 
 Se implementa como prueba parametrizada del enrutador (RNF-11): texto escrito → intención y entidades esperadas. Debe incluir, como mínimo:
@@ -258,3 +343,5 @@ Se implementa como prueba parametrizada del enrutador (RNF-11): texto escrito �
 - **Frases de control:** «gracias jarvis», «gracias, Jarvis.», «grasias jarvis», «buenas noches jarvis».
 - **Control negativo** (ninguna intención ni frase de control): «muchas gracias jarvis por todo», «buenas noches», «qué tiempo hace hoy», «jarvis abre el navegador», texto vacío, «abre» (hueco vacío).
 - **Diálogo:** en `AWAITING_CONFIRMATION`, «abre GitHub» no se clasifica como intención: es una respuesta no válida.
+- **Alcance por perfil:** las órdenes de un módulo no permitido se clasifican igual, sin buscar otra parecida de un módulo permitido; `run_task` las rechaza. Con `comandos` restringido, «ejecuta git status» → `comandos.ejecutar`, no `apertura.abrir` ni ninguna otra.
+- **Desambiguación del catálogo:** «quita GitHub del catálogo» → `catalogo.eliminar`, no `permisos.restringir`.

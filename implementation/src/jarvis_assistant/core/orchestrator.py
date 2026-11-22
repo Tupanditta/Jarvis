@@ -14,14 +14,10 @@ van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en
 `run_task` es la única función que ejecuta acciones (AD-13). Un protocolo ejecuta sus tareas
 con `ctx.invoke`, que también pasa por `run_task`, como subtareas de la suya.
 
-Perfiles protegidos: «Hey Jarvis» (o «Abrir sesión») en un perfil con contraseña no llega a
-la FSM. Abre la caja de la contraseña (`AccessChallenged`); la contraseña llega en
-`AccessAttempted`, sin pasar por el enrutador, y solo un acierto entra en la FSM como
-`AccessGranted`. Los fallos y los avisos de intrusión los lleva `core/security.py`.
-
-Permisos: al abrir sesión se calculan los módulos que el perfil puede usar. El enrutador no
-muestra los demás en la ayuda y `run_task` rechaza sus acciones sin ejecutarlas. El Acedor solo
-usa los módulos de administración (`admin = True`), que nadie más tiene.
+Control de acceso: los perfiles protegidos, la caja de la contraseña, los permisos del perfil
+y la sesión del Acedor viven en `access.py`. «Hey Jarvis» en un perfil con contraseña no llega
+a la FSM; solo un acierto entra como `AccessGranted`. `run_task` rechaza sin ejecutarlas las
+acciones de los módulos que el perfil no puede usar.
 
 Diálogo: un módulo pregunta con `ctx.ask`; la pregunta abierta y su tiempo de espera viven
 en `dialogue.py`. El registro de tareas (actividades, `TaskUpdated`, subtareas y segundo plano)
@@ -35,18 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from jarvis_assistant.config import (
-    ADMIN_PROFILE_ID,
-    Binary,
-    Catalog,
-    Config,
-    ConfigError,
-    Profile,
-    admin_profile,
-    validate_protocols,
-)
-from jarvis_assistant.core import events, permissions
+from jarvis_assistant.config import Binary, Catalog, Config, ConfigError, validate_protocols
+from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
+from jarvis_assistant.core.access import Access, RemoveProfile
 from jarvis_assistant.core.action_api import (
     CANCELLED_REASON,
     CLOSED_REASON,
@@ -54,6 +42,7 @@ from jarvis_assistant.core.action_api import (
     ActionContext,
     ActionModule,
     ActionResult,
+    AdminTools,
     DialogueAnswer,
     ExpectedType,
     Intent,
@@ -63,19 +52,12 @@ from jarvis_assistant.core.action_api import (
 )
 from jarvis_assistant.core.announcer import Announcement, Announcer
 from jarvis_assistant.core.clock import Clock, TimerHandle
-from jarvis_assistant.core.content import IntrusionItem
-from jarvis_assistant.core.custody import AdminKey
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.dialogue import DialogueElapsed, Dialogues, settle
 from jarvis_assistant.core.event_bus import EventBus
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.core.notices import Notice, NoticeQueue
-from jarvis_assistant.core.repositories import (
-    ActivityRepository,
-    PermissionRepository,
-    SessionRow,
-)
-from jarvis_assistant.core.security import AccessOrigin, AttemptOutcome, ProfileVault
+from jarvis_assistant.core.repositories import ActivityRepository, SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.tasks import TaskRecord, TaskRegistry
@@ -96,7 +78,6 @@ from jarvis_assistant.intent_router.router import (
     Order,
     ParamError,
 )
-from jarvis_assistant.speaker import formats
 from jarvis_assistant.speaker.phrases import enumeration, render
 from jarvis_assistant.speaker.speaker import Speaker
 
@@ -121,7 +102,6 @@ _AWAITING = (AssistantState.AWAITING_CONFIRMATION, AssistantState.AWAITING_PARAM
 
 Origin = Literal["voz", "protocolo"]
 Reload = Callable[[Config], tuple[Config, Sequence[ConfigError]]]
-RemoveProfile = Callable[[str], None]  # quita un perfil de `profiles.toml`
 # Escribe el catálogo y los binarios (`config.writer.save_launchers` sin la carpeta). Lanza una
 # excepción si no se puede.
 SaveLaunchersFile = Callable[[Catalog | None, Sequence[Binary] | None], None]
@@ -176,25 +156,6 @@ class _UserAction:
     console: str | None = None  # la ventana de Comandos que la pide
 
 
-class _AdminTools:
-    """`ActionContext.admin` en la sesión del Acedor: su clave, viva hasta cerrar la sesión."""
-
-    def __init__(self, orchestrator: "Orchestrator", key: AdminKey) -> None:
-        self._orchestrator = orchestrator
-        self._key = key
-        self.restrictable = orchestrator._restrictable()
-
-    def credentials(self) -> list[tuple[str, str, str | None]]:
-        orchestrator = self._orchestrator
-        protected = orchestrator._vault.protected_ids()
-        profiles = [p for p in orchestrator._config.all_profiles() if p.id in protected]
-        revealed = orchestrator._vault.custody.reveal(self._key, [p.id for p in profiles])
-        return [(p.id, p.name, revealed[p.id]) for p in profiles]
-
-    def remove_profile(self, profile_id: str) -> bool:
-        return self._orchestrator._remove_profile(profile_id)
-
-
 class Orchestrator:
     def __init__(
         self,
@@ -234,14 +195,6 @@ class Orchestrator:
         self._on_exit = on_exit
         self._scheduler = scheduler
         self._active_panel: str | None = None  # el último `PanelActivated`
-        self._profile_id: str | None = None  # el elegido en la pantalla dormida
-        self._vault = ProfileVault(database, clock.now)
-        self._gate: str | None = None  # perfil protegido cuya contraseña se está pidiendo
-        self._gate_speech: asyncio.Task | None = None  # lo que se dice con la caja abierta
-        self._permissions = PermissionRepository(database)
-        self._allowed: frozenset[str] | None = None  # módulos del perfil de la sesión
-        self._admin: _AdminTools | None = None  # solo en la sesión del Acedor
-        self._remove_profile_file = remove_profile
         self._save_launchers_file = save_launchers
         self._profiles_changed = False  # el Acedor ha eliminado perfiles en esta sesión
 
@@ -275,6 +228,14 @@ class Orchestrator:
             awaiting=lambda: self._machine.state in _AWAITING, announce=self._announce,
             render=render,
         )  # fmt: skip
+        self._access = Access(
+            bus=bus, clock=clock, database=database, speaker=speaker, router=router,
+            modules=self._modules, panels=self._panels, notices=self._notices,
+            config=lambda: self._config, state=lambda: self._machine.state,
+            in_session=lambda: self._session is not None,
+            poke=lambda: self._queue.put_nowait(_Poke()), forget=self._forget_profile,
+            remove_file=remove_profile,
+        )  # fmt: skip
 
         for module in modules:
             self._register(module)
@@ -285,7 +246,7 @@ class Orchestrator:
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
         )
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
-        bus.subscribe(events.ProfileSelected, lambda e: setattr(self, "_profile_id", e.profile_id))
+        bus.subscribe(events.ProfileSelected, lambda e: self._access.select(e.profile_id))
         bus.subscribe(events.ConfigSaved, lambda _e: self.submit(_ConfigSaved()))
         bus.subscribe(events.TextSubmitted, self.submit)
         bus.subscribe(events.AccessAttempted, self.submit)
@@ -314,6 +275,19 @@ class Orchestrator:
     @property
     def modules(self) -> Mapping[str, ActionModule]:
         return self._modules
+
+    @property
+    def _admin(self) -> AdminTools | None:
+        """Las herramientas del Acedor, solo en su sesión."""
+        return self._access.admin
+
+    @property
+    def _remove_profile_file(self) -> RemoveProfile | None:
+        return self._access.remove_file
+
+    @_remove_profile_file.setter
+    def _remove_profile_file(self, remove: RemoveProfile | None) -> None:
+        self._access.remove_file = remove
 
     def _panel_activated(self, event: events.PanelActivated) -> None:
         self._active_panel = event.panel
@@ -348,7 +322,7 @@ class Orchestrator:
         """Consume entradas y ejecuta efectos hasta que la FSM pide terminar el proceso."""
         self._loop = asyncio.get_running_loop()
         self._bus.publish(events.ConfigApplied(self._config))
-        self._publish_protection()
+        self._access.publish_protection()
         self._refresh()
         while not self._stopping:
             entry = await self._queue.get()
@@ -397,14 +371,12 @@ class Orchestrator:
         if isinstance(entry, events.TextSubmitted):
             await self._on_text(entry.text)
         elif isinstance(entry, events.AccessAttempted):
-            await self._on_access_attempt(entry.password)
+            if self._access.attempt(entry.password):
+                await self._handle(fsm.AccessGranted())
         elif isinstance(entry, events.AccessCancelled):
-            self._close_gate(granted=False)
+            self._access.close_gate(granted=False)
         elif isinstance(entry, events.IntrusionAcknowledged):
-            if self._admin is not None:
-                self._vault.acknowledge_admin(entry.alert_ids)
-            else:
-                self._vault.acknowledge(entry.alert_ids)
+            self._access.acknowledge(entry.alert_ids)
         elif isinstance(entry, events.UserTyping):
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
@@ -502,10 +474,12 @@ class Orchestrator:
 
     async def _handle(self, entry: fsm.Input) -> None:
         if self._machine.state is AssistantState.DORMIDO:
-            if isinstance(entry, fsm.WakeWord | fsm.OpenSessionRequested) and self._challenge():
+            if isinstance(entry, fsm.WakeWord | fsm.OpenSessionRequested) and (
+                self._access.challenge()
+            ):
                 return
             if isinstance(entry, fsm.ShutdownRequested):
-                self._close_gate(granted=False)
+                self._access.close_gate(granted=False)
         before = self._machine.state
         effects = self._machine.handle(entry)
         after = self._machine.state
@@ -590,124 +564,12 @@ class Orchestrator:
         if transition is Transition.SESSION_OPENED:
             session = self._session
             assert session is not None
-            return events.SessionOpened(session.id, session.name, self._profile().id)
+            return events.SessionOpened(session.id, session.name, self._access.profile().id)
         if transition is Transition.LISTENING_RESUMED:
             return events.ListeningResumed()
         if transition is Transition.REST_ENTERED:
             return events.RestEntered()
         return events.SessionClosed()
-
-    # --- Perfiles protegidos -----------------------------------------------------------------
-
-    def _publish_protection(self) -> None:
-        self._bus.publish(events.ProtectedProfilesChanged(
-            self._vault.protected_ids(), admin_active=self._vault.admin_active()
-        ))  # fmt: skip
-
-    def _challenge(self) -> bool:
-        """«Hey Jarvis» en dormido. Si el perfil elegido tiene contraseña, abre la caja (o la
-        vuelve a mostrar) y devuelve True: la sesión no se abre todavía."""
-        profile = self._profile()
-        if not self._vault.is_protected(profile.id):
-            return False
-        first = self._gate != profile.id
-        self._gate = profile.id
-        self._bus.publish(events.AccessChallenged(profile.id, profile.name))
-        if first:
-            self._speak_at_gate(Phrase("seguridad.desafio"))
-        return True
-
-    async def _on_access_attempt(self, password: str) -> None:
-        profile_id = self._gate
-        if profile_id is None or self._machine.state is not AssistantState.DORMIDO:
-            return
-        outcome = self._vault.attempt(profile_id, password, AccessOrigin.LOGIN)
-        if outcome is AttemptOutcome.GRANTED:
-            logger.info("Acceso concedido al perfil %s", profile_id)
-            if profile_id == ADMIN_PROFILE_ID:
-                key = self._vault.open_admin(password)
-                if key is None:  # contraseña válida pero claves dañadas o reiniciadas
-                    logger.error("No se ha podido abrir la clave del Acedor")
-                    self._bus.publish(events.AccessDenied())
-                    self._speak_at_gate(Phrase("seguridad.denegado"))
-                    return
-                self._admin = _AdminTools(self, key)
-            self._profile_id = profile_id
-            self._close_gate(granted=True)
-            await self._handle(fsm.AccessGranted())
-            return
-        # El tercer fallo responde igual que los demás: quien lo intenta no sabe que ha
-        # quedado registrado un aviso de intrusión.
-        logger.info("Acceso denegado al perfil %s", profile_id)
-        self._bus.publish(events.AccessDenied())
-        self._speak_at_gate(Phrase("seguridad.denegado"))
-        if outcome is AttemptOutcome.LOCKED_OUT:
-            self._gate = None
-            self._bus.publish(events.AccessClosed(granted=False))
-
-    def _close_gate(self, *, granted: bool) -> None:
-        if self._gate is None:
-            return
-        self._gate = None
-        self._speaker.stop()  # cancelar calla la frase; al acertar, la sesión trae la suya
-        self._bus.publish(events.AccessClosed(granted=granted))
-
-    def _speak_at_gate(self, phrase: Phrase) -> None:
-        """Dice `phrase` en dormido, sin despertar al asistente. La salida de audio se abre
-        para la frase y se cierra al terminar si no se ha abierto sesión entretanto."""
-        self._speaker.stop()
-        if self._gate_speech is None or self._gate_speech.done():
-            self._speaker.open_output()
-        self._gate_speech = speech = asyncio.ensure_future(self._say_at_gate(phrase))
-        speech.add_done_callback(lambda _done: self._queue.put_nowait(_Poke()))
-
-    async def _say_at_gate(self, phrase: Phrase) -> None:
-        try:
-            await self._speaker.say(phrase)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("No se ha podido decir %s", phrase.id)
-        finally:
-            if (
-                self._gate_speech is asyncio.current_task() and self._session is None
-                and self._machine.state is AssistantState.DORMIDO
-            ):  # fmt: skip
-                self._speaker.close_output()
-
-    def _gate_speaking(self) -> bool:
-        return (
-            self._machine.state is AssistantState.DORMIDO
-            and self._gate_speech is not None and not self._gate_speech.done()
-        )  # fmt: skip
-
-    def _queue_intrusion_alerts(self, profile_id: str) -> None:
-        """Los avisos de intrusión sin confirmar van los primeros, tras la frase de apertura:
-        se dicen y aparece la tarjeta crítica, que sigue hasta que el usuario la confirma."""
-        admin = profile_id == ADMIN_PROFILE_ID
-        alerts = self._vault.pending_admin_alerts() if admin else self._vault.pending_alerts(
-            profile_id
-        )
-        if not alerts:
-            return
-        names = {p.id: p.name for p in (*self._config.all_profiles(), admin_profile())}
-        last = alerts[-1]
-        when = formats.moment(last.at, self._clock.now())
-        if admin:
-            phrase = Phrase("seguridad.intrusion_acedor", {"n": len(alerts), "cuando": when})
-        elif len(alerts) == 1:
-            phrase = Phrase("seguridad.intrusion", {"cuando": when, "intentos": last.attempts})
-        else:
-            phrase = Phrase("seguridad.intrusiones", {"n": len(alerts), "cuando": when})
-        items = tuple(
-            IntrusionItem(
-                alert.id, alert.at, alert.attempts, alert.origin.value,
-                names.get(alert.profile_id, alert.profile_id) if admin else "",
-            )
-            for alert in alerts
-        )  # fmt: skip
-        shown = events.IntrusionAlertsShown(profile_id, items)
-        self._notices.add_first(Notice(phrase, on_start=lambda: self._bus.publish(shown)))
 
     # --- Sesión ------------------------------------------------------------------------------
 
@@ -716,9 +578,9 @@ class Orchestrator:
         self._session = self._sessions.open_session()
         self._consoles.reset()  # RN-14
         self._speaker.open_output()
-        self._apply_permissions()
+        self._access.apply_permissions()
         await self._session_hook("on_session_opened")
-        self._queue_intrusion_alerts(self._profile().id)
+        self._access.queue_intrusion_alerts(self._access.profile().id)
 
     def _reload(self, *, notify: bool = True) -> None:
         """Relee la configuración (RF-96). Un archivo inválido conserva su versión anterior;
@@ -733,7 +595,7 @@ class Orchestrator:
             return
         errors = [*errors, *self._apply_config(config)]
         self._bus.publish(events.ConfigApplied(self._config))
-        self._publish_protection()
+        self._access.publish_protection()
         reported: set[str] = set()
         for error in errors:
             if error.warning:
@@ -763,7 +625,7 @@ class Orchestrator:
         self._notices.clear()
         self._sessions.close_session(reason)
         self._session = None
-        self._admin = None  # la clave del Acedor no sobrevive a su sesión
+        self._access.end_session()  # la clave del Acedor no sobrevive a su sesión
         if self._profiles_changed:
             self._profiles_changed = False
             self._reload(notify=False)  # el selector deja de ofrecer los perfiles eliminados
@@ -937,35 +799,6 @@ class Orchestrator:
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
-    def _profile(self) -> Profile:
-        """El perfil elegido en la pantalla dormida o, si no existe, el primero. El Acedor solo
-        si está activado."""
-        if self._profile_id == ADMIN_PROFILE_ID and self._vault.admin_active():
-            return admin_profile()
-        return self._config.profile(self._profile_id)
-
-    # --- Permisos ----------------------------------------------------------------------------
-
-    def _restrictable(self) -> tuple[tuple[str, str], ...]:
-        """Módulos y medidores que el Acedor puede conceder o restringir."""
-        return permissions.restrictable(self._modules)
-
-    def _apply_permissions(self) -> None:
-        """Al abrir sesión: los módulos del perfil, en el enrutador y en la interfaz."""
-        profile_id = self._profile().id
-        restricted = (
-            () if profile_id == ADMIN_PROFILE_ID else self._permissions.restricted(profile_id)
-        )
-        scope = permissions.session_scope(
-            self._modules, self._panels, profile_id, restricted, core_module=CORE_MODULE
-        )
-        self._allowed = scope.allowed
-        self._router.set_scope(scope.allowed)
-        self._bus.publish(events.PermissionsApplied(scope.hidden_panels))
-
-    def _permitted(self, module: str) -> bool:
-        return self._allowed is None or module in self._allowed
-
     async def _save_launchers(
         self, catalog: Catalog | None = None, binaries: Sequence[Binary] | None = None
     ) -> str:
@@ -989,26 +822,18 @@ class Orchestrator:
         await self._session_hook("on_config_changed")
         return ""
 
-    def _remove_profile(self, profile_id: str) -> bool:
-        """El Acedor elimina un perfil: fuera de `profiles.toml` y sus datos retirados."""
-        if self._remove_profile_file is None or profile_id == ADMIN_PROFILE_ID:
-            return False
-        try:
-            self._remove_profile_file(profile_id)
-        except Exception:
-            logger.exception("No se ha podido eliminar el perfil %s", profile_id)
-            return False
-        self._vault.retire(profile_id)
+    def _forget_profile(self, profile_id: str) -> None:
+        """El Acedor ha eliminado `profile_id`: sale de la configuración de la sesión y, al
+        cerrarla, se vuelve a cargar."""
         self._config = dataclasses.replace(
             self._config, profiles=tuple(p for p in self._config.profiles if p.id != profile_id)
         )
         self._profiles_changed = True
-        return True
 
     def _presentation(self) -> Phrase:
         """«Preséntate»: una sola frase con quién es, cómo funciona, sus módulos (los del
         registro, para que la lista no se desfase) y cómo saber más."""
-        name = self._profile().user_name
+        name = self._access.profile().user_name
         modules = enumeration(
             [group.title.lower() for group in self._router.help() if group.module != CORE_MODULE]
         )
@@ -1111,7 +936,7 @@ class Orchestrator:
             task = self._tasks.new(
                 self._session.id, module, description or f"{module} {action}", parent
             )
-        permitted = self._permitted(module)
+        permitted = self._access.permitted(module)
         if not permitted:
             # Ni una orden escrita, ni una ventana, ni un protocolo: el módulo no se ejecuta.
             logger.info("Módulo %s no autorizado en este perfil", module)
@@ -1264,7 +1089,7 @@ class Orchestrator:
             active_panel=self._active_panel,
             subtask=self._subtask_of(task),
             invoke=invoke,
-            profile=self._profile().id,
+            profile=self._access.profile().id,
             admin=self._admin,
             console=console,
             open_console=open_console,
@@ -1288,7 +1113,7 @@ class Orchestrator:
         """`ctx.open_console`: la consola propia de `key` (un protocolo), nueva o la que ya
         tenía, en `start` (o la carpeta del usuario) y activa. None si el perfil no puede usar
         Comandos: la tarea sigue en la consola que tenía."""
-        if self._session is None or not self._permitted(MAIN_CONSOLE):
+        if self._session is None or not self._access.permitted(MAIN_CONSOLE):
             return None
         console, _created = self._consoles.open_for(key, title, start)
         self._show_console(console)
@@ -1296,7 +1121,7 @@ class Orchestrator:
 
     def _new_console(self, source: str) -> None:
         """Botón de una ventana de Comandos: consola nueva en la carpeta de `source`."""
-        if self._session is None or not self._permitted(MAIN_CONSOLE):
+        if self._session is None or not self._access.permitted(MAIN_CONSOLE):
             return
         self._show_console(self._consoles.open_copy(source))
 
@@ -1335,7 +1160,7 @@ class Orchestrator:
         """Publica la actividad si ha cambiado y mantiene el temporizador del nivel."""
         state = self._machine.state
         # Lo que se dice con la caja de la contraseña abierta no despierta al asistente.
-        if self._speaker.speaking and not self._gate_speaking():
+        if self._speaker.speaking and not self._access.gate_speaking():
             activity = Activity.HABLANDO
         elif state in _AWAITING:
             activity = Activity.ESPERANDO  # la tarea que pregunta sigue en ejecución

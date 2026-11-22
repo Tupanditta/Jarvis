@@ -13,3 +13,6 @@ htmlcov/
 # Modelos descargados localmente por fetch_models.py.
 implementation/models/*
 !implementation/models/.gitkeep
+
+# IDEAS
+implementation/IDEAS.txt

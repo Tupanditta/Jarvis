@@ -1,8 +1,8 @@
 # Matriz de trazabilidad
 
-Relación entre los requisitos funcionales, el módulo que los implementa, los casos de uso que los cubren y la fase del [plan](../plan-implementacion.md) en la que se construyen. Un requisito sin caso de uso propio se verifica con los criterios de aceptación de su módulo.
+Relación entre los requisitos funcionales, el módulo que los implementa, los casos de uso que los cubren y la fase del [plan](../plan-implementacion.md) en la que se construyen. Un requisito sin caso de uso propio se verifica con los criterios de aceptación de su módulo. Fase «—»: construido después del plan.
 
-Abreviaturas de módulos: **FSM** máquina de estados y orquestador · **ENT** entrada por texto · **ENR** enrutador · **TTS** sintetizador · **UI** interfaz · **BD** persistencia · **CFG** configuración · **PRO** proceso · **PLA** plataforma · **SES** Sesión · **HIS** Historial · **COM** Comandos · **APE** Apertura · **BUS** Búsqueda · **CRE** Creación · **REC** Recordatorio · **PRT** Protocolos.
+Abreviaturas de módulos: **FSM** máquina de estados y orquestador · **ENT** entrada por texto · **ENR** enrutador · **TTS** sintetizador · **UI** interfaz · **BD** persistencia · **CFG** configuración · **PRO** proceso · **PLA** plataforma · **SES** Sesión · **HIS** Historial · **COM** Comandos · **APE** Apertura · **BUS** Búsqueda · **CRE** Creación · **REC** Recordatorio · **PRT** Protocolos · **CAT** Catálogo · **SEG** perfiles protegidos y Acedor (`core/security`, `core/custody`) · **PRM** Permisos · **CRD** Credenciales · **PRF** Perfiles · **MED** medidores de recursos y ruido · **VCF** ventana de configuración.
 
 ## Requisitos funcionales
 
@@ -45,6 +45,17 @@ Abreviaturas de módulos: **FSM** máquina de estados y orquestador · **ENT** e
 | RF-92, RF-94 | FSM, ENR, TTS | — | 3 |
 | RF-93 | SES, PRO | CU-05 | 4 |
 | RF-96 | CFG | CU-03 | 3 |
+| RF-118 | SES, BD | CU-05, CU-10 | — |
+| RF-100, RF-101, RF-102, RF-103 | CAT, CFG, UI | — | — |
+| RF-104 | SEG, FSM, UI, TTS | — | — |
+| RF-105, RF-108 | SEG, VCF | — | — |
+| RF-106, RF-107 | SEG, FSM, UI, TTS | — | — |
+| RF-109 | SEG, PRO | — | — |
+| RF-110, RF-111 | PRM, UI | — | — |
+| RF-112 | PRM, FSM, ENR, UI | — | — |
+| RF-113 | CRD, SEG, UI | — | — |
+| RF-114 | PRF, SEG, CFG | — | — |
+| RF-115, RF-116, RF-117 | MED, UI | — | — |
 
 ## Requisitos no funcionales
 
@@ -56,7 +67,7 @@ Abreviaturas de módulos: **FSM** máquina de estados y orquestador · **ENT** e
 | RNF-30 | Retirado: entrada por texto | — |
 | RNF-31 | ENR | Lista manual de órdenes escritas (T-7.2). |
 | RNF-07 | ENT, TTS, FSM | Pruebas de integración y lista manual. |
-| RNF-08, RNF-12 | BD | Pruebas automáticas. |
+| RNF-08, RNF-12 | BD, HIS | Pruebas automáticas. |
 | RNF-09 | BUS, PLA | Prueba con marcador `hardware`. |
 | RNF-10, RNF-11, RNF-15 | ENR | Juego de frases de prueba. |
 | RNF-13, RNF-14, RNF-21, RNF-22, RNF-29 | UI, TTS | Listas manuales de las fases 2 y 7. |
@@ -65,3 +76,6 @@ Abreviaturas de módulos: **FSM** máquina de estados y orquestador · **ENT** e
 | RNF-23 | FSM | Prueba con un módulo que falla. |
 | RNF-27 | COM, APE, CRE | Pruebas automáticas e inspección del código. |
 | RNF-28 | Dependencias | Revisión de licencias de [arquitectura.md](../arquitectura.md), sección 9. |
+| RNF-32 | SEG, CRD, VCF | Pruebas automáticas: la contraseña no aparece en la base de datos, en `profiles.toml`, en el registro ni en el `repr` de los eventos. |
+| RNF-33 | MED | Pruebas con `pytest-qt` (temporizador parado y micrófono cerrado con el medidor oculto) y `scripts/measure.py` con los dos a la vista. |
+| RNF-34 | MED | Prueba automática con un flujo de entrada falso. |

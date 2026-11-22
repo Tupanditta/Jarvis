@@ -44,6 +44,7 @@ flowchart LR
 | `speaker` | Frases parametrizadas → voz. | [sintetizador.md](Modulos/Infraestructura/sintetizador.md) |
 | `core/event_bus` | Publicación/suscripción. | [bus-eventos.md](Modulos/Infraestructura/bus-eventos.md) |
 | `core/database` | SQLite y migraciones. | [persistencia.md](Modulos/Infraestructura/persistencia.md) |
+| `core/security`, `core/custody`, `core/permissions` | Perfiles protegidos, avisos de intrusión, custodia de contraseñas para el Acedor y alcance de cada sesión. | [perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md), [permisos.md](Modulos/Accion/permisos.md) |
 | `ui` | Pantalla de sesión, HUD flotante y caja de texto. | [hud.md](Modulos/Infraestructura/hud.md), [Interfaz/README.md](Interfaz/README.md) |
 | `config` | Archivos TOML. | [configuracion.md](Modulos/Infraestructura/configuracion.md) |
 | `os_adapters` | Todo lo dependiente del sistema operativo. | [plataforma.md](Modulos/Infraestructura/plataforma.md) |
@@ -55,7 +56,7 @@ flowchart LR
 |---|---|---|
 | **UI** (principal) | Bucle de Qt: ventanas QML, bandeja, `UiBridge`. | Nunca hace trabajo de más de unos milisegundos. No lee la base de datos ni llama a módulos. |
 | **Núcleo** | Bucle `asyncio`: orquestador, FSM, enrutador, módulos de acción, base de datos, `APScheduler`, control del `speaker`. | Dueño de todo el estado. Nada bloquea más de 50 ms: lo lento va a un ejecutor. |
-| Callback de PortAudio | Salida: copia el siguiente bloque de voz. No hay flujo de entrada. | Sin Python pesado, sin registro, sin bloqueos. |
+| Callback de PortAudio | Salida: copia el siguiente bloque de voz. Entrada: solo con el medidor de ruido a la vista, acumula la energía de cada bloque del micrófono ([hud.md](Modulos/Infraestructura/hud.md), sección 3.1). | Sin Python pesado, sin registro, sin bloqueos. La entrada no guarda muestras. |
 | Ejecutor **TTS** (1 hilo) | Síntesis de Piper. | — |
 | `asyncio.to_thread` | Trabajo de disco potencialmente lento de los módulos (árbol, búsqueda limitada, descubrimiento de aplicaciones). | — |
 
@@ -233,7 +234,10 @@ implementation/
 │   │   ├── workdir.py
 │   │   ├── clock.py                 # Clock, SystemClock
 │   │   ├── database.py
-│   │   └── migrations/0001_initial.sql
+│   │   ├── permissions.py           # alcance de una sesión: módulos permitidos y paneles ocultos
+│   │   ├── security.py              # perfiles protegidos: contraseñas, intentos, avisos de intrusión
+│   │   ├── custody.py               # custodia de contraseñas para el Acedor (X25519 + AES-GCM)
+│   │   └── migrations/              # 0001_initial, 0002_perfiles_protegidos, 0003_acedor
 │   ├── intent_router/
 │   │   ├── normalizer.py            # minúsculas, tildes, signos, alias
 │   │   ├── patterns.py              # compilación y coincidencia de patrones
@@ -257,7 +261,9 @@ implementation/
 │   │   ├── app_launcher.py
 │   │   ├── file_manager.py
 │   │   ├── reminder_manager.py
-│   │   └── protocol_runner.py
+│   │   ├── protocol_runner.py
+│   │   ├── catalog_manager.py       # Catálogo
+│   │   └── administration.py        # Permisos, Credenciales y Perfiles (solo el Acedor)
 │   ├── os_adapters/
 │   │   ├── base.py                  # PlatformAdapter (Protocol)
 │   │   ├── windows.py
@@ -281,6 +287,9 @@ implementation/
 │   │   │   └── Theme.qml            # tokens del sistema de diseño (singleton)
 │   │   ├── workspace.py             # ventanas flotantes, barras y plantilla aplicada
 │   │   ├── profiles.py              # selector de perfiles de la pantalla dormida
+│   │   ├── meter.py                 # estado común de los medidores
+│   │   ├── resources.py             # medidor de recursos (CPU y RAM del asistente)
+│   │   ├── noise.py                 # medidor de ruido (nivel del micrófono)
 │   │   └── assets/                  # fuentes e iconos
 │   ├── configurator/                # ventana de configuración (configurador.md)
 │   │   ├── window.py                # ConfigWindow: ventana, Guardar y Cancelar
@@ -311,11 +320,11 @@ Cada paquete importa solo lo que permite esta tabla, además de sus propios mód
 | `core` | `config`; `os_adapters.base` solo para anotar tipos. Además, `core/orchestrator.py`, que une todo, importa `intent_router` y `speaker`. |
 | `intent_router` | `config`, `core.action_api`, `core.state_machine`, `core.workdir`. |
 | `speaker` | `config`, `core.action_api`, `core.clock`, `core.event_bus`, `core.events`. |
-| `action_modules` | `config`; de `core`: `action_api`, `clock`, `content`, `database`, `event_bus`, `events`, `notices`, `repositories`, `workdir`; `os_adapters.base`, `os_adapters.processes`; las funciones puras de texto `intent_router.normalizer`, `intent_router.slots`, `speaker.formats`, `speaker.phrases`. Nunca otro módulo, el orquestador, la FSM ni `ui`. |
+| `action_modules` | `config`; de `core`: `action_api`, `clock`, `content`, `database`, `event_bus`, `events`, `notices`, `repositories`, `workdir` (`core.security` y `core.custody`, no: lo que el Acedor necesita de ellos llega en `ctx.admin`); `os_adapters.base`, `os_adapters.processes`; las funciones puras de texto `intent_router.normalizer`, `intent_router.slots`, `speaker.formats`, `speaker.phrases`. Nunca otro módulo, el orquestador, la FSM ni `ui`. |
 | `os_adapters` | `process.single_instance`. |
 | `process` | `core.events`. |
-| `ui` | `config`, `core.action_api`, `core.content`, `core.event_bus`, `core.events`, `core.repositories`. |
-| `configurator` | `config`, `core.events` (solo los tipos de eventos), `ui.app`, `ui.view_models`, `ui.workspace`. Nadie lo importa salvo `main.py`. |
+| `ui` | `config`, `core.action_api`, `core.content`, `core.event_bus`, `core.events`, `core.repositories`. Los medidores, además, `psutil` (recursos) y `sounddevice` y `numpy` (ruido). |
+| `configurator` | `config`, `core.events` (solo los tipos de eventos), `core.security` y `core.custody` (contraseñas de los perfiles y del Acedor, con su propia conexión a la base de datos), `ui.app`, `ui.view_models`, `ui.workspace`, `ui.meter`, `ui.resources`, `ui.noise`. Nadie lo importa salvo `main.py`. |
 | `main.py` | Todo: es la raíz de composición. |
 
 Los contratos entre paquetes se anotan con sus `Protocol` (`ActionModule`, `PlatformAdapter`, `Scheduler`), no con `Any`. Las importaciones que solo sirven para anotar van bajo `TYPE_CHECKING`.
@@ -328,12 +337,13 @@ Todas gratuitas (RES-44). Se instalan siempre en el entorno virtual `implementat
 |---|---|---|---|
 | `PySide6` | ≥ 6.7 | Interfaz Qt Quick | LGPL-3.0 |
 | `piper-tts` | ≥ 1.3.0 | Síntesis (trae `onnxruntime` como dependencia propia) | GPL-3.0 |
-| `sounddevice` | ≥ 0.4.6 | Altavoz | MIT |
-| `numpy` | ≥ 1.26 | Audio de la voz | BSD |
+| `sounddevice` | ≥ 0.4.6 | Altavoz; micrófono del medidor de ruido, solo su nivel | MIT |
+| `numpy` | ≥ 1.26 | Audio de la voz; energía del medidor de ruido | BSD |
 | `rapidfuzz` | ≥ 3.6 | Coincidencia difusa | MIT |
 | `APScheduler` | ≥ 3.10, < 4 | Planificador | MIT |
-| `psutil` | ≥ 5.9 | Núcleos físicos, árbol de procesos, medidas | BSD |
-| `tomlkit` | ≥ 0.12 | Escribir la configuración desde la ventana de configuración conservando comentarios y formato | MIT |
+| `psutil` | ≥ 5.9 | Núcleos físicos, árbol de procesos, medidas; medidor de recursos | BSD |
+| `tomlkit` | ≥ 0.12 | Escribir la configuración desde la ventana de configuración, el módulo Catálogo y el módulo Perfiles conservando comentarios y formato | MIT |
+| `cryptography` | ≥ 42 | Custodia de contraseñas para el Acedor: X25519, HKDF-SHA256 y AES-GCM (`core/custody.py`). El hash de las contraseñas usa `hashlib.scrypt`, de la biblioteca estándar. | Apache-2.0 o BSD |
 | Desarrollo: `pytest`, `pytest-asyncio`, `pytest-qt`, `pytest-timeout`, `pytest-cov`, `pytest-xdist`, `ruff` | — | Pruebas y estilo; `pytest-xdist` las ejecuta en paralelo (RNF-24) | MIT |
 
 Herramientas externas opcionales, gratuitas: *Everything* con `es.exe` (búsqueda indexada). Las APIs de Windows se llaman con `ctypes`; no se añade `pywin32`.
@@ -372,7 +382,7 @@ Reglas: cada tarea del plan se cierra con sus pruebas; un socket abierto durante
 | AD-16 | Retirada: entrada por texto. | — |
 | AD-17 | Retirada: entrada por texto. | — |
 | AD-18 | Retirada: entrada por texto. | — |
-| AD-19 | El usuario escribe sus órdenes en una caja de texto; el asistente no captura audio. La interfaz publica el texto sin interpretarlo y el orquestador lo enruta. | El reconocimiento de voz no interpretaba bien las órdenes y era el cuello de botella del proyecto. Se conservan los estados, las frases y la voz de salida. Si en el futuro se quiere voz, un reconocedor se conecta en el punto por el que entra el texto. |
+| AD-19 | El usuario escribe sus órdenes en una caja de texto; el asistente no captura audio para las órdenes. La única entrada de audio es el nivel del micrófono para el medidor de ruido, que no graba nada (RNF-34). La interfaz publica el texto sin interpretarlo y el orquestador lo enruta. | El reconocimiento de voz no interpretaba bien las órdenes y era el cuello de botella del proyecto. Se conservan los estados, las frases y la voz de salida. Si en el futuro se quiere voz, un reconocedor se conecta en el punto por el que entra el texto. |
 | AD-20 | Cuenta de inactividad en lugar de cuenta de silencio: enviar o teclear cuenta como actividad. | Conserva el paso automático a reposo sin depender del micrófono. |
 
 ## 12. Riesgos

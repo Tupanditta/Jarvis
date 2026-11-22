@@ -12,6 +12,7 @@ Cualidades y límites medibles del asistente. Todos están confirmados. Los valo
 |---|---|---|
 | RNF-01 | **Privacidad.** El sistema no envía fuera del dispositivo ningún dato de audio ni de texto. | 0 conexiones de red abiertas por el proceso del asistente durante una sesión que recorra todas las funciones. Las pruebas automáticas bloquean los sockets y fallan si el código intenta abrir uno. |
 | RNF-02 | **Funcionamiento sin conexión.** | El 100 % de los requisitos funcionales se cumplen con la red desactivada. |
+| RNF-34 | **Micrófono del medidor de ruido.** Solo se usa el nivel de entrada: el audio no se graba, no se guarda y no sale del proceso. | El micrófono solo está abierto con el medidor de ruido a la vista; de cada intervalo solo se conserva la energía media (prueba automática con un flujo de entrada falso). |
 
 ## 2. Rendimiento
 
@@ -24,6 +25,7 @@ Cualidades y límites medibles del asistente. Todos están confirmados. Los valo
 | RNF-07 | **Entrada no bloqueada.** La caja de texto admite texto en todo momento, también mientras se ejecutan acciones, binarios externos y diálogos. Lo enviado durante una frase del ciclo de vida se atiende al terminar; durante cualquier otra locución, «Hey Jarvis» la interrumpe (RN-48). | «Hey Jarvis» se atiende con un binario externo en ejecución, en el 100 % de 10 intentos. |
 | RNF-08 | **Acceso concurrente a los datos.** | 0 errores de bloqueo de la base de datos al consultar el historial mientras se registra una actividad. |
 | RNF-09 | **Búsqueda rápida.** | Con *Everything*: resultado en ≤ 2 s. Búsqueda limitada: se corta a los 5 s ⚙. |
+| RNF-33 | **Consumo de los medidores.** Un medidor oculto no gasta nada. | Con un medidor oculto, su temporizador está parado y, en el de ruido, el micrófono cerrado (prueba automática). Con los dos a la vista se cumplen RNF-04 y RNF-05. |
 | RNF-25 | **Arranque.** | Ventana visible y proceso listo en dormido en ≤ 10 s desde su inicio. Tras «Hey Jarvis» en dormido, listo para atender órdenes al terminar la frase de apertura. |
 
 ## 3. Fiabilidad
@@ -32,7 +34,7 @@ Cualidades y límites medibles del asistente. Todos están confirmados. Los valo
 |---|---|---|
 | RNF-10 | **Determinismo.** | El mismo texto, en el mismo estado, produce la misma intención, las mismas entidades y el mismo mensaje en el 100 % de las repeticiones (prueba automática). |
 | RNF-11 | **Precisión del reconocimiento de intenciones.** | Umbral de aceptación de una intención: similitud ≥ 80 ⚙ sobre 100 en el texto fijo del patrón. Umbral de una entidad buscada en una lista: ≥ 75 ⚙. Sobre el juego de frases de prueba de [catalogo-intenciones.md](../catalogo-intenciones.md) ≥ 95 % de aciertos y 0 intenciones equivocadas en las frases de control negativo. |
-| RNF-12 | **Integridad de los datos borrados.** | Tras eliminar una sesión o un recordatorio, su fila sigue existiendo (prueba automática). |
+| RNF-12 | **Integridad de los datos borrados.** | Tras eliminar un recordatorio, su fila sigue existiendo. Tras eliminar sesiones, ni ellas ni sus actividades quedan en la base de datos, las demás conservan sus actividades y sus marcas de desbordamiento con el id nuevo, y los ids son 1..N sin huecos (pruebas automáticas). |
 | RNF-23 | **Tolerancia a fallos.** Un error en un módulo de acción, en el enrutado o en la síntesis no termina el proceso ni deja la máquina de estados bloqueada. | Una excepción no controlada en un módulo deja su tarea en `error`, el asistente dice «Ha ocurrido un error» y sigue atendiendo órdenes (prueba automática con un módulo que falla). |
 
 | RNF-30 | **Fiabilidad de la activación.** Retirado: entrada por texto. La frase de activación escrita se reconoce de forma determinista (RNF-10, RNF-11). | — |
@@ -70,6 +72,7 @@ Cualidades y límites medibles del asistente. Todos están confirmados. Los valo
 | ID | Requisito | Medida |
 |---|---|---|
 | RNF-27 | **Ejecución segura.** El asistente no ejecuta órdenes arbitrarias. | Los binarios se lanzan sin intérprete de órdenes y solo desde la lista permitida; las páginas, solo del catálogo; nada se sobrescribe ni se borra del disco (pruebas automáticas). El asistente no requiere privilegios de administrador. |
+| RNF-32 | **Protección de las contraseñas.** Ninguna contraseña de perfil ni la clave privada del Acedor se guarda en claro, se dice en voz alta o se escribe en el registro. | Contraseñas: hash scrypt (N = 2¹⁴, r = 8, p = 1) con sal aleatoria de 16 bytes, comparado en tiempo constante. Custodia para el Acedor: sello X25519 + HKDF-SHA256 + AES-GCM; su clave privada, cifrada con scrypt + AES-GCM a partir de su contraseña y solo en memoria durante su sesión. Pruebas automáticas: la contraseña no aparece en la base de datos, en `profiles.toml`, en el registro ni en el `repr` de los eventos. |
 
 ## 8. Fluidez de la interfaz
 
@@ -80,4 +83,4 @@ Cualidades y límites medibles del asistente. Todos están confirmados. Los valo
 
 ## Cambios respecto a la versión anterior
 
-RNF-21 y RNF-22 sustituyen las medidas por frame (99 % en un intervalo de refresco, ±1 frame, 45 ms) por medidas perceptibles; motivo en [README.md](../README.md). RNF-03, RNF-04, RNF-05, RNF-09, RNF-11 y RNF-14 pasan a tener cifra. RNF-23 a RNF-31 son nuevos.
+RNF-21 y RNF-22 sustituyen las medidas por frame (99 % en un intervalo de refresco, ±1 frame, 45 ms) por medidas perceptibles; motivo en [README.md](../README.md). RNF-03, RNF-04, RNF-05, RNF-09, RNF-11 y RNF-14 pasan a tener cifra. RNF-23 a RNF-31 son nuevos. RNF-32 a RNF-34 acompañan a los perfiles protegidos y a los medidores.

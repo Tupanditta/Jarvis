@@ -17,7 +17,7 @@ El usuario escribe «Buenas noches Jarvis» y pulsa Enter.
 
 1. El enrutador reconoce el texto como frase de control (similitud ≥ 80).
 2. El sistema cancela el diálogo y la orden en curso, detiene el protocolo y los binarios en ejecución, y deja en `error` las tareas `pendiente` (RN-46).
-3. El sistema elimina de forma lógica las sesiones desplazadas por desbordamiento durante esta sesión (RN-09) y marca la sesión como cerrada.
+3. El sistema marca la sesión como cerrada y elimina las sesiones desplazadas por desbordamiento durante esta sesión (RN-09, RN-12). Si la sesión no tiene actividades, no es importante y no desplazó a ninguna, la elimina en lugar de cerrarla (RN-69).
 4. El sistema pasa a `DORMIDO`. A la vez empiezan la animación de dormirse (2 s) y la frase «Buenas noches. Sesión cerrada.».
 5. Al terminar la animación, la pantalla de sesión queda en su aspecto de dormido, visible, y el HUD se oculta.
 6. El sistema atiende solo «Hey Jarvis». El proceso sigue en marcha.

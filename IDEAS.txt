@@ -22,3 +22,5 @@ restaurar los valores de fábrica;
 activar y desactivar módulos
 
 quiero un módulo nuevo disponible que muestre cuanta ram y cpu usa el asistente en total. Quiero que sea en tiempo real. Se verán como círculos, representando un porcentaje. 
+
+módulo que me ayude en mis proyectos. Sepa en que proyectos estoy trabajando, cree una plantilla para un proyecto nuevo, recopile mis ideas para proyectos futuros, sepa que proyectos tengo pendientes, empezados y terminados, que pueda abrir cualquier proyecto, que pueda enviar a claude una tarea o varias y a proyectos diferentes. 

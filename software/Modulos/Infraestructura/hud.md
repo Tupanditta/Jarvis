@@ -48,7 +48,10 @@ Lógica pura en `ui/window_controller.py`, probada sin Qt. Entradas: los eventos
 - **Al abrir sesión**, `WorkspaceModel` toma la plantilla del perfil con el que se abrió (`SessionOpened.profile_id`). Solo cambia los datos de las filas (`dataChanged`), sin reiniciar el modelo: QML conserva las ventanas en lugar de recrearlas. Los paneles se cargan de forma asíncrona (`Loader.asynchronous`) para no frenar la animación de despertar. Durante la sesión las ventanas se mueven libremente; eso no cambia la plantilla. El botón «Restablecer disposición» del selector vuelve a la plantilla. La disposición no se recuerda entre sesiones: cada sesión empieza en la plantilla.
 - **Dormida**, la pantalla toma la plantilla del perfil elegido, así la caja de texto ya está donde estará en la sesión.
 - **Pantalla dormida:** en el centro, bajo el orbe, el selector de perfiles. Encima de la caja de texto (debajo si la caja está en la mitad de arriba), el botón «Configuración», que abre la ventana de configuración ([configurador.md](configurador.md)). Es el único sitio desde el que se configura. Con la ventana abierta, el botón dice «Configuración abierta» y la caja de texto está desactivada: no se puede iniciar sesión.
-- **Selector de perfiles** (`ProfilePicker.qml`, `ui/profiles.py`): solo en `DORMIDO` y solo con dos perfiles o más. Una fila de botones en el centro de la pantalla, bajo el orbe, con el elegido resaltado. Se cambia con el ratón o con ←/→ con la caja vacía. Cada cambio publica `ProfileSelected`; el núcleo abre la siguiente sesión con ese perfil. Viene elegido el perfil con el que se abrió la última sesión (`perfil.json` en la carpeta de datos); si ya no existe, el primero.
+- **Selector de perfiles** (`ProfilePicker.qml`, `ui/profiles.py`): solo en `DORMIDO` y solo con dos perfiles o más. Una fila de botones en el centro de la pantalla, bajo el orbe, con el elegido resaltado. Se cambia con el ratón o con ←/→ con la caja vacía. Cada cambio publica `ProfileSelected`; el núcleo abre la siguiente sesión con ese perfil. Viene elegido el perfil con el que se abrió la última sesión (`perfil.json` en la carpeta de datos); si ya no existe, el primero. Los perfiles protegidos llevan un candado (`ProtectedProfilesChanged`); el Acedor aparece el último, y solo si está activado ([perfiles-protegidos.md](../Accion/perfiles-protegidos.md)).
+- **Caja de la contraseña** (`AccessGate.qml`, modelo `access`): en el centro de la pantalla dormida, tras «Hey Jarvis» en un perfil protegido (`AccessChallenged`). No muestra lo que se escribe, ni puntos: cada tecla solo hace brillar el borde un instante. Enter envía la clave (`AccessAttempted`) y vacía la caja; Esc la cierra (`AccessCancelled`). Con la clave incorrecta (`AccessDenied`) se sacude y se pone roja; nunca dice cuántos intentos quedan. Se cierra con `AccessClosed`.
+- **Tarjeta de intrusión** (`IntrusionCard.qml`, modelo `access`): aviso crítico, por encima de todo, al entrar en un perfil con avisos de intrusión sin confirmar (`IntrusionAlertsShown`). Sale con la frase de alerta, tras la de apertura, con un halo rojo que late, y sigue hasta pulsar «Entendido» (`IntrusionAcknowledged`). Si la sesión se cierra sin confirmarla, vuelve a salir en la siguiente.
+- **Permisos** (`PermissionsApplied`): al abrir sesión, las ventanas de los módulos que el perfil no puede usar ni se muestran ni se ofrecen en el selector de ventanas, y los medidores restringidos tampoco (sección 3.1; [permisos.md](../Accion/permisos.md)).
 - **Subtítulos**: siguen a la caja de texto, encima o debajo según su altura.
 
 ## 3. Paneles
@@ -66,8 +69,38 @@ Cada panel es un componente QML en `ui/qml/panels/` alimentado por un modelo. El
 | Protocolo | Nombre del protocolo y sus tareas con estado, con una barra de progreso. | `ProtocolStarted`, `TaskUpdated` con `parent_id`, `ProtocolFinished` |
 | Historial | Tabla de sesiones (identificador, nombre, fecha, importancia) o actividades de una sesión. | `HistoryShown`, `SessionActivitiesShown` |
 | Ayuda | Órdenes disponibles agrupadas por módulo, con un ejemplo. | `HelpShown`, `ProtocolsListed` |
+| Catálogo | Aplicaciones, páginas y comandos del catálogo, filtrables por tipo, con el formulario para añadir y un botón de eliminar por fila. Con la sesión cerrada no se edita. ([catalogo.md](../Accion/catalogo.md)) | `CatalogShown` |
+| Permisos | Solo el Acedor. Una fila por perfil y una casilla por módulo o medidor restringible: encendida, permitido; apagada, restringido. Pulsar una casilla publica `PermissionChangeRequested`. ([permisos.md](../Accion/permisos.md)) | `PermissionsShown` |
+| Credenciales | Solo el Acedor. Cada perfil protegido con su contraseña, oculta hasta pulsar su ojo. Se vacía al cerrar la sesión. ([credenciales.md](../Accion/credenciales.md)) | `CredentialsShown` |
+| Perfiles | Solo el Acedor. Los perfiles que se pueden eliminar, con un botón «Eliminar» que publica `ProfileRemovalRequested`. ([perfiles.md](../Accion/perfiles.md)) | `ProfilesListed` |
 
 **Activar un panel** (p. ej. el de recordatorios, RF-44) es convertirlo en el panel activo y expandir el HUD. No implica foco del sistema.
+
+### 3.1 Medidores: Recursos y Ruido
+
+Dos medidores fijos de la pantalla de sesión (`config.METERS`). No son ventanas flotantes ni módulos de acción, pero el Acedor puede restringirlos como un módulo (RN-62) y la plantilla dice si se ven al abrir sesión (tabla `meters` de cada plantilla de `layouts.toml`). Comunes a los dos (`ui/meter.py`, RN-67):
+
+- Cada uno ocupa una esquina inferior de la pantalla de sesión. Un triple clic lo pasa a la otra esquina inferior; los dos nunca comparten esquina: si uno cambia, el otro pasa a la que queda libre.
+- Su botón del selector de ventanas lo muestra u oculta. La plantilla fija el estado al abrir sesión; el editor de plantillas guarda el estado actual.
+- Restringido al perfil, no se ve aunque la plantilla lo muestre, ni se ofrece en el selector.
+- **Solo mide mientras se ve** (RNF-33): cada vista que lo muestra se apunta (`watch`) y se borra al dejar de mostrarlo (`unwatch`). Sin ninguna, el temporizador se para y, en el de ruido, el micrófono se cierra.
+
+| Medidor | Id | De fábrica | Qué muestra | Cómo mide |
+|---|---|---|---|---|
+| **Recursos** (`ui/resources.py`, `ResourceMeter.qml`, modelo `usage`) | `recursos` | A la vista | Dos anillos: CPU y RAM **del proceso del asistente**, en tanto por ciento, con la RAM en MB (o GB con un decimal) sobre la total del equipo (RF-115). | Cada 1 s, con `psutil`. CPU: fracción del equipo entero (todos los núcleos son el 100 %), como el Administrador de tareas. RAM: memoria física del proceso (RSS) sobre la del equipo. No suma las aplicaciones que abre: se lanzan como procesos hijos y el total sería el suyo. Si una medida falla, se conserva la anterior. |
+| **Ruido** (`ui/noise.py`, `NoiseMeter.qml`, modelo `noise`) | `ruido` | Oculto | Un anillo con el ruido de fondo en decibelios aproximados (0–120) y un rótulo de concentración (RF-116, RN-68). | Abre el micrófono predeterminado en mono y, cada 300 ms, pasa a decibelios la energía media (RMS) de lo captado más una calibración fija de 94 dB. Lo mostrado es la mediana de las medidas de los últimos 30 s: un golpe o una voz de un par de segundos no lo mueven. Cada vez que se muestra empieza una ventana nueva. No graba ni guarda audio (RNF-34). |
+
+Rótulos del medidor de ruido, cada uno con su color:
+
+| Ruido de fondo | Rótulo |
+|---|---|
+| < 10 dB | SILENCIO |
+| 10–30 dB | CONCENTRACIÓN ALTA |
+| 30–65 dB | CONCENTRACIÓN MEDIA |
+| ≥ 65 dB | CONCENTRACIÓN BAJA |
+| No se puede abrir el micrófono | SIN MICRÓFONO |
+
+La cifra es aproximada: sin calibrar cada micrófono, sirve para comparar momentos, no como medida exacta.
 
 **Interacción con el ratón.** Solo tres controles: «traer al frente» en cada tarjeta de apertura, el botón de silencio mientras el asistente habla, el botón de expandir o contraer el HUD, el de abrir la pantalla de sesión (la trae al frente y oculta el HUD) y el de ocultar el HUD. Todo lo demás se maneja escribiendo en la caja de texto; no hay botones de órdenes.
 
@@ -86,7 +119,7 @@ QML (clic, texto enviado) ──► modelo de vista ──► bus.publish_thread
 ```
 
 - **`UiBridge`** (`ui/bridge.py`): se suscribe a los eventos del bus y emite una señal por tipo. Es el único punto de contacto con el backend. Para `AudioLevel`, solo conserva el último valor pendiente.
-- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel de la voz del asistente, subtítulos), `tasks`, `dialogue`, `workspace` (ventanas flotantes y barras), `profiles` (selector de perfiles), `ui` (opciones y sonido) y uno por panel.
+- **Modelos de vista** (`ui/view_models.py`): objetos `QObject` con propiedades y `QAbstractListModel` para las listas, registrados como propiedades de contexto de QML: `assistant` (estado, actividad, sesión, nivel de la voz del asistente, subtítulos), `tasks`, `dialogue`, `workspace` (ventanas flotantes y barras), `profiles` (selector de perfiles), `access` (caja de la contraseña y tarjeta de intrusión), `usage` y `noise` (medidores), `ui` (opciones y sonido) y uno por panel (`catalog`; `admin` para Permisos, Credenciales y Perfiles).
 - **Configuración aplicada:** el núcleo publica `ConfigApplied` al arrancar, al abrir sesión y al guardar desde la ventana de configuración con la sesión cerrada. De ahí toma la interfaz los perfiles, las plantillas y si suena el aviso de las ventanas (`sound.enabled`).
 - **QML:** declarativo, sin lógica de negocio. Las animaciones usan los tipos de animación de Qt Quick; no hay código Python por frame.
 - **Tema:** todos los colores, tamaños, tipografías y duraciones salen del singleton `Theme.qml` ([Interfaz/README.md](../../Interfaz/README.md)).
@@ -100,10 +133,15 @@ QML (clic, texto enviado) ──► modelo de vista ──► bus.publish_thread
 - Todo el QML se carga sin errores ni avisos en modo sin pantalla (prueba de integración).
 - Cada modelo de vista refleja sus eventos (pruebas con `pytest-qt`).
 - Manual: el HUD no toma el foco al aparecer, al actualizarse ni al hacer clic en sus botones; sí al hacer clic en su caja de texto (RNF-13); la lista visual de [Interfaz/README.md](../../Interfaz/README.md).
+- Medidores: con el medidor oculto no hay temporizador activo y el de ruido no tiene el micrófono abierto; al mostrarlo mide al momento; restringido, no se ve aunque la plantilla lo pida; los dos nunca en la misma esquina; sin micrófono, «SIN MICRÓFONO»; los umbrales de los rótulos (pruebas con `pytest-qt` y mediciones falsas).
+- Caja de la contraseña: no muestra ningún carácter; Esc la cierra; tras el tercer fallo se cierra igual que tras cancelar.
+- Tarjeta de intrusión: sigue visible hasta «Entendido» y publica los ids confirmados.
 
 ## Prohibiciones
 
 - Prohibido robar el foco a la aplicación que el usuario está usando o a las que abre el asistente. Excepciones: la pantalla de sesión al arrancar, al abrir la sesión y con «Mostrar pantalla»; y el HUD cuando el usuario hace clic en su caja de texto.
 - Prohibido mostrar el HUD flotante en modo dormido.
 - Prohibido usar estados de tarea distintos de `pendiente`, `error` y `completado`.
-- Prohibido que la interfaz llame a módulos de acción, lea la base de datos o contenga reglas de negocio.
+- Prohibido que la interfaz llame a módulos de acción, lea la base de datos o contenga reglas de negocio. Excepción: la ventana de configuración comprueba y guarda contraseñas con `ProfileVault`, con su propia conexión ([perfiles-protegidos.md](../Accion/perfiles-protegidos.md)).
+- Prohibido mostrar, decir o registrar una contraseña fuera de la ventana Credenciales del Acedor.
+- Prohibido que el medidor de ruido grabe, guarde o envíe audio, o que tenga el micrófono abierto con el medidor oculto.
