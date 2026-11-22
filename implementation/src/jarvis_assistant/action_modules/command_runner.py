@@ -2,6 +2,9 @@
 
 `cd`, `ls`, `clear` y el árbol son nativos: nunca se ejecutan como subprocesos. Los binarios
 salen de la lista permitida (RN-45) y se lanzan sin intérprete de órdenes.
+
+Cada acción trabaja en la consola de su tarea (`ctx.console`, `core/workdir.py`): su directorio
+de trabajo, su panel y su programa en marcha son independientes de los de las demás consolas.
 """
 import asyncio
 import logging
@@ -143,7 +146,7 @@ class CommandRunner:
     ) -> None:
         self._launch = launcher
         self._kill_tree = kill_tree
-        self._running = False  # hay un binario lanzado con una orden
+        self._running: set[str] = set()  # consolas con un binario lanzado con una orden
 
     def intents(self) -> Sequence[IntentSpec]:
         path = Slot("ruta", SlotType.DIR_PATH)
@@ -158,21 +161,22 @@ class CommandRunner:
             ),
             IntentSpec(
                 "ls", ("lista", "lista el directorio", "qué hay aquí", "ls"), (),
-                "Listar la carpeta actual", "Qué hay aquí", PANEL, reads=here,
+                "Listar la carpeta actual", "Qué hay aquí", PANEL, reads=here, record=False,
             ),
             IntentSpec(
                 "pwd", ("dónde estoy", "directorio actual", "en qué carpeta estoy"), (),
-                "Decir la carpeta actual", "Dónde estoy", PANEL, reads=here,
+                "Decir la carpeta actual", "Dónde estoy", PANEL, reads=here, record=False,
             ),
             IntentSpec(
                 "arbol", ("árbol", "muestra el árbol", "árbol de {ruta}",
                           "muestra el árbol de {ruta}", "mapa de {ruta}"),
                 (Slot("ruta", SlotType.DIR_PATH, optional=True),),
                 "Mostrar el árbol de una carpeta", "Árbol de documentos", PANEL, reads=here,
+                record=False,
             ),
             IntentSpec(
                 "clear", ("limpia", "limpia la consola", "clear"), (),
-                "Limpiar el panel de comandos", "Limpia la consola", PANEL,
+                "Limpiar el panel de comandos", "Limpia la consola", PANEL, record=False,
             ),
             IntentSpec(
                 "ejecutar", ("ejecuta {comando}", "lanza el comando {comando}",
@@ -188,7 +192,7 @@ class CommandRunner:
         )  # fmt: skip
 
     async def on_session_opened(self, ctx: ActionContext) -> None:
-        self._running = False
+        self._running.clear()
         ctx.publish(events.CommandPanelCleared())
         ctx.publish(events.WorkdirChanged(str(ctx.workdir.path)))
 
@@ -205,7 +209,7 @@ class CommandRunner:
             case "arbol":
                 return await self._tree(params.get("ruta"), ctx)  # type: ignore[arg-type]
             case "clear":
-                ctx.publish(events.CommandPanelCleared())
+                ctx.publish(events.CommandPanelCleared(ctx.console))
                 return ActionResult("completado")
             case "ejecutar":
                 return await self._run(params["comando"], ctx)  # type: ignore[arg-type]
@@ -221,7 +225,7 @@ class CommandRunner:
         if invalid is not None:
             return ActionResult("error", invalid)
         ctx.workdir.change(path)
-        ctx.publish(events.WorkdirChanged(str(path)))
+        ctx.publish(events.WorkdirChanged(str(path), ctx.console))
         return ActionResult(
             "completado", Phrase("comandos.cd", {"carpeta": folder_name(path)}),
             description=f"cd {path}",
@@ -239,6 +243,7 @@ class CommandRunner:
                 str(path),
                 tuple(Entry(name, is_dir) for name, is_dir in entries[:MAX_LISTED]),
                 len(entries),
+                ctx.console,
             )
         )
         return ActionResult(
@@ -253,7 +258,7 @@ class CommandRunner:
 
     def _pwd(self, ctx: ActionContext) -> ActionResult:
         path = str(ctx.workdir.path)
-        ctx.publish(events.WorkdirChanged(path))
+        ctx.publish(events.WorkdirChanged(path, ctx.console))
         return ActionResult("completado", Phrase("comandos.pwd", {"ruta": path}))
 
     async def _tree(self, target: Path | None, ctx: ActionContext) -> ActionResult:
@@ -263,7 +268,9 @@ class CommandRunner:
             return ActionResult("error", invalid)
         tree = await asyncio.to_thread(build_tree, root)
         ctx.publish(
-            events.DirectoryTreeBuilt(str(root), tree.nodes, tree.dirs, tree.files, tree.truncated)
+            events.DirectoryTreeBuilt(
+                str(root), tree.nodes, tree.dirs, tree.files, tree.truncated, ctx.console
+            )
         )
         phrase = "comandos.arbol_recortado" if tree.truncated else "comandos.arbol"
         return ActionResult(
@@ -280,7 +287,8 @@ class CommandRunner:
 
     async def _run(self, command: CommandLine, ctx: ActionContext) -> ActionResult:
         inline = ctx.origin == "protocolo"  # en un protocolo, el binario se espera en línea
-        if not inline and self._running:
+        console = ctx.console
+        if not inline and console in self._running:
             return ActionResult("error", Phrase("comandos.ocupado"))
         try:
             process = await self._launch(command.executable, command.args, ctx.workdir.path)
@@ -297,7 +305,7 @@ class CommandRunner:
             )  # fmt: skip
         if inline:
             return await self._supervise(process, command, ctx)
-        self._running = True
+        self._running.add(console)
         ctx.background(self._supervise(process, command, ctx, release=True))
         return ActionResult(
             "completado", Phrase("comandos.ejecutando", {"comando": command.text}),
@@ -317,7 +325,8 @@ class CommandRunner:
                 if lines:
                     ctx.publish(
                         events.CommandOutputAppended(
-                            ctx.task_id or 0, command.text, tuple(lines), stream  # type: ignore[arg-type]
+                            ctx.task_id or 0, command.text, tuple(lines), stream,  # type: ignore[arg-type]
+                            ctx.console,
                         )
                     )
                     lines.clear()
@@ -338,7 +347,9 @@ class CommandRunner:
             timed_out = True
             self._kill_tree(process.pid)
 
-        ctx.publish(events.CommandOutputAppended(ctx.task_id or 0, command.text, (), "out"))
+        ctx.publish(
+            events.CommandOutputAppended(ctx.task_id or 0, command.text, (), "out", ctx.console)
+        )
         timer = ctx.clock.call_later(limit, expire)
         batcher = asyncio.ensure_future(batch())
         try:
@@ -352,7 +363,7 @@ class CommandRunner:
             batcher.cancel()
             flush()
             if release:
-                self._running = False
+                self._running.discard(ctx.console)
         if timed_out:
             return ActionResult("error", Phrase("comandos.tiempo"), description=command.text)
         phrase = "comandos.ok" if code == 0 else "comandos.fallo"

@@ -17,6 +17,7 @@ class Notice:
     panel: str | None = None  # panel que se activa al entregarlo
     on_delivered: Callable[[], None] | None = None
     reminder: bool = False  # en reposo, pone al asistente en escucha
+    on_start: Callable[[], None] | None = None  # al empezar a decirlo
 
 
 class NoticeQueue:
@@ -28,6 +29,10 @@ class NoticeQueue:
 
     def add(self, notice: Notice) -> None:
         self._items.append(notice)
+
+    def add_first(self, notice: Notice) -> None:
+        """Antes que todos los demás: el aviso de intrusión es lo primero que se oye."""
+        self._items.appendleft(notice)
 
     def pop(self) -> Notice | None:
         return self._items.popleft() if self._items else None

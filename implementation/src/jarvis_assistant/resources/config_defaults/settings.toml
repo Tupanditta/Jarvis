@@ -1,5 +1,6 @@
 # Ajustes del asistente.
-# El asistente solo lee este archivo: edítelo a mano. Se vuelve a cargar al abrir cada sesión.
+# El asistente solo lee este archivo: edítelo a mano o desde la ventana de configuración (menú
+# de la bandeja). Se vuelve a cargar al abrir cada sesión.
 # Toda clave que falte toma su valor predeterminado. Los valores que se muestran son los
 # predeterminados.
 
@@ -14,6 +15,11 @@ voice = "es_ES-davefx-medium"
 volume = 1.0
 # Número de frases sintetizadas que se guardan en memoria.
 cache_size = 64
+
+[sound]
+# Sonido del asistente: su voz y el aviso de las ventanas al aparecer. Desactivado, los
+# subtítulos se siguen mostrando.
+enabled = true
 
 [router]
 # Similitud mínima (0-100) para reconocer una orden.
@@ -76,5 +82,5 @@ open_session_on_start = false
 level = "INFO"
 
 [user]
-# Nombre del usuario, para la presentación del asistente («preséntate»). Vacío: no lo dice.
+# Obsoleto: el nombre lo da cada perfil (profiles.toml). Solo se usa si no hay perfiles.
 name = ""

@@ -29,6 +29,13 @@ Item {
 
     Binding {
         target: loader.item
+        property: "windowId"
+        value: host.panel
+        when: loader.status === Loader.Ready
+    }
+
+    Binding {
+        target: loader.item
         property: "flat"
         value: host.flat
         when: loader.status === Loader.Ready

@@ -18,6 +18,12 @@ PHRASES: dict[str, list[str]] = {
         "Me alegra verle otra vez por aquí, señor. ¿Por dónde quiere que empecemos?",
         "Aquí estoy, señor, como siempre. Usted dirá qué hacemos hoy.",
     ],
+    # Al entrar en un perfil protegido con su contraseña (sustituye a «ciclo.apertura»).
+    "ciclo.apertura_protegida": [
+        "Identidad confirmada. Ha accedido a un entorno de trabajo protegido con privilegios"
+        " avanzados. Tiene acceso a protocolos y funciones confidenciales. ¿En qué vamos a"
+        " trabajar, señor?",
+    ],
     "ciclo.escucha": [
         "Dígame, señor. Soy todo oídos.",
         "Aquí me tiene, señor.",
@@ -224,6 +230,31 @@ PHRASES: dict[str, list[str]] = {
         "Sesión {id} eliminada, señor.",
         "He eliminado la sesión {id}, señor.",
         "La sesión {id} ya no aparece en el historial, señor.",
+    ],
+    "historial.cuales_eliminar": [
+        "¿Qué sesiones elimino, señor? Puede decirme, por ejemplo, 1, 3, 5 o 1-5.",
+        "Indíqueme las sesiones que quiere eliminar, señor. Por ejemplo, 1, 3, 5 o 1-5.",
+        "¿Cuáles elimino, señor? Separadas por comas o como intervalo, como 1-5.",
+    ],
+    "historial.nada_que_eliminar": [
+        "No hay sesiones que eliminar, señor. Solo está la actual.",
+        "El historial solo contiene la sesión actual, señor. No hay nada que eliminar.",
+        "No tengo sesiones que eliminar, señor, aparte de la actual.",
+    ],
+    "historial.aviso_importantes": [
+        "Atención, señor: hay importancia marcada en {sesiones}.",
+        "Le aviso, señor: está marcada la importancia en {sesiones}.",
+        "Cuidado, señor. Tenga en cuenta la importancia de {sesiones}.",
+    ],
+    "historial.confirmar_eliminar_varias": [
+        "¿Elimino las sesiones {sesiones}, señor?",
+        "¿Quiere que elimine las sesiones {sesiones}, señor?",
+        "¿Confirma que elimino las sesiones {sesiones}, señor?",
+    ],
+    "historial.eliminadas": [
+        "Sesiones {sesiones} eliminadas, señor.",
+        "He eliminado las sesiones {sesiones}, señor.",
+        "Las sesiones {sesiones} ya no aparecen en el historial, señor.",
     ],
     # Sesión
     "sesion.nombrada": [
@@ -550,6 +581,94 @@ PHRASES: dict[str, list[str]] = {
         "Hay {n}, señor.",
         "Tiene {n} disponibles, señor.",
     ],
+    # --- Perfiles protegidos ---
+    "seguridad.desafio": [
+        "Esta área está protegida por un nivel de seguridad superior. Introduzca la clave"
+        " correcta para obtener acceso.",
+    ],
+    "seguridad.denegado": [
+        "Clave incorrecta. Acceso denegado.",
+    ],
+    "seguridad.intrusion": [
+        "Alerta de seguridad, señor. Alguien intentó acceder a este entorno sin autorización"
+        " {cuando}. Introdujo una clave incorrecta {intentos} veces seguidas.",
+    ],
+    "seguridad.intrusion_acedor": [
+        "Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a los"
+        " perfiles desde su última visita. El último, {cuando}. Tiene los detalles en pantalla.",
+    ],
+    "seguridad.intrusiones": [
+        "Alerta de seguridad, señor. Ha habido {n} intentos de acceso no autorizado a este"
+        " entorno desde su última visita. El último, {cuando}. Tiene los detalles en pantalla.",
+    ],
+    # --- Permisos y Acedor ---
+    "permisos.denegado": [
+        "No tiene autorización para usar {modulo} en este entorno, señor.",
+    ],
+    "permisos.solo_acedor": [
+        "Esa función solo está al alcance del Acedor, señor.",
+    ],
+    "permisos.no_encontrado": [
+        "No encuentro ese perfil o ese módulo, señor.",
+    ],
+    "permisos.concedido": [
+        "Hecho, señor. {perfil} ya puede usar {modulo}.",
+        "Concedido, señor. {modulo} queda disponible para {perfil}.",
+    ],
+    "permisos.restringido": [
+        "Hecho, señor. {perfil} ya no puede usar {modulo}.",
+        "Restringido, señor. {modulo} deja de estar disponible para {perfil}.",
+    ],
+    "permisos.mostrados": [
+        "Aquí tiene los permisos de cada perfil, señor.",
+    ],
+    "credenciales.mostradas": [
+        "Aquí tiene las credenciales, señor. Están ocultas hasta que decida mostrarlas.",
+    ],
+    "credenciales.ninguna": [
+        "Ningún perfil tiene contraseña, señor.",
+    ],
+    "perfiles.mostrados": [
+        "Aquí tiene los perfiles, señor.",
+    ],
+    "perfiles.confirmar": [
+        "¿Elimino el perfil {perfil}, señor? Se perderán sus recordatorios.",
+    ],
+    "perfiles.eliminado": [
+        "Perfil {perfil} eliminado, señor.",
+    ],
+    "perfiles.ultimo": [
+        "No puedo eliminar el último perfil, señor.",
+    ],
+    "perfiles.no_eliminado": [
+        "No he podido eliminar el perfil, señor.",
+    ],
+    # --- Catálogo ---
+    "catalogo.mostrado": [
+        "Aquí tiene el catálogo, señor.",
+    ],
+    "catalogo.usar_ventana": [
+        "Complete los datos en la ventana del catálogo, señor.",
+    ],
+    "catalogo.anadido": [
+        "Hecho, señor. {nombre} ya está en el catálogo.",
+        "{nombre} añadido al catálogo, señor.",
+    ],
+    "catalogo.no_valido": [
+        "No puedo añadirlo, señor. Tiene el motivo en la ventana del catálogo.",
+    ],
+    "catalogo.confirmar": [
+        "¿Elimino {nombre} del catálogo, señor?",
+    ],
+    "catalogo.eliminado": [
+        "{nombre} eliminado del catálogo, señor.",
+    ],
+    "catalogo.no_encontrado": [
+        "No encuentro eso en el catálogo, señor.",
+    ],
+    "catalogo.no_guardado": [
+        "No he podido guardar el catálogo, señor.",
+    ],
     "protocolos.ninguno": [
         "No hay ningún protocolo definido, señor.",
         "Todavía no tiene protocolos, señor. Puede definirlos en la configuración.",
@@ -561,6 +680,9 @@ LIFECYCLE_IDS = ("ciclo.apertura", "ciclo.escucha", "ciclo.reposo", "ciclo.cierr
 # Frases sin parámetros que se sintetizan al arrancar, además de las del ciclo de vida.
 PRELOADED_IDS = (
     *LIFECYCLE_IDS,
+    "ciclo.apertura_protegida",
+    "seguridad.desafio",
+    "seguridad.denegado",
     "general.cancelado",
     "general.operacion_cancelada",
     "general.no_entendido",

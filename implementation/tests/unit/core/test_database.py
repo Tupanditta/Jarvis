@@ -20,6 +20,14 @@ INSERT_ACTIVITY = (
 )
 
 
+# Las migraciones de verdad: las de prueba van detrás.
+LATEST = len(list(database.MIGRATIONS_DIR.glob("*.sql")))
+
+
+def migration(offset: int, name: str) -> str:
+    return f"{LATEST + offset:04d}_{name}.sql"
+
+
 @pytest.fixture
 def db():
     database_ = Database(":memory:")
@@ -89,8 +97,12 @@ def test_el_orden_alfabetico_coincide_con_el_cronologico():
 
 
 def test_migrate_crea_el_esquema_y_fija_la_version(db):
-    assert tables(db.conn) == {"sessions", "session_activities", "reminders", "reminder_triggers"}
-    assert db.schema_version == 1
+    assert tables(db.conn) == {
+        "sessions", "session_activities", "reminders", "reminder_triggers",
+        "profile_credentials", "intrusion_alerts", "profile_permissions", "admin_keys",
+        "credential_escrow",
+    }  # fmt: skip
+    assert db.schema_version == LATEST
 
 
 def test_migrate_es_idempotente(db):
@@ -233,23 +245,23 @@ def test_las_migraciones_se_aplican_en_orden_segun_la_version(tmp_path):
     directory = migrations_with(
         tmp_path,
         {
-            "0003_tercera.sql": "ALTER TABLE extra ADD COLUMN b TEXT;",
-            "0002_segunda.sql": "CREATE TABLE extra (a TEXT);",
+            migration(2, "tercera"): "ALTER TABLE extra ADD COLUMN b TEXT;",
+            migration(1, "segunda"): "CREATE TABLE extra (a TEXT);",
         },
     )
     db = Database(":memory:", migrations_dir=directory)
     db.migrate()
-    assert db.schema_version == 3
+    assert db.schema_version == LATEST + 2
     assert [row[1] for row in db.conn.execute("PRAGMA table_info(extra)")] == ["a", "b"]
 
 
 def test_una_migracion_que_falla_se_deshace_entera_y_no_sube_la_version(tmp_path):
     broken = "CREATE TABLE extra (a TEXT);\nINSERT INTO no_existe VALUES (1);"
-    directory = migrations_with(tmp_path, {"0002_rota.sql": broken})
+    directory = migrations_with(tmp_path, {migration(1, "rota"): broken})
     db = Database(":memory:", migrations_dir=directory)
     with pytest.raises(sqlite3.Error):
         db.migrate()
-    assert db.schema_version == 1
+    assert db.schema_version == LATEST
     assert "extra" not in tables(db.conn)
     assert not db.conn.in_transaction
 
@@ -258,14 +270,16 @@ def test_una_migracion_ya_aplicada_no_se_repite(tmp_path):
     db = Database(tmp_path / "jarvis.db")
     db.migrate()
     db.close()
-    directory = migrations_with(tmp_path, {"0002_segunda.sql": "CREATE TABLE extra (a TEXT);"})
+    directory = migrations_with(tmp_path, {migration(1, "segunda"): "CREATE TABLE extra (a TEXT);"})
     db = Database(tmp_path / "jarvis.db", migrations_dir=directory)
     db.migrate()  # 0001 fallaría si se repitiera: las tablas ya existen
-    assert db.schema_version == 2
+    assert db.schema_version == LATEST + 1
     db.close()
 
 
-@pytest.mark.parametrize("name", ["0003_salto.sql", "segunda.sql", "0002-guion.sql"])
+@pytest.mark.parametrize(
+    "name", [migration(2, "salto"), "segunda.sql", migration(1, "guion").replace("_", "-", 1)]
+)
 def test_una_migracion_mal_numerada_es_un_error(tmp_path, name):
     directory = migrations_with(tmp_path, {name: "SELECT 1;"})
     db = Database(":memory:", migrations_dir=directory)
@@ -294,14 +308,14 @@ def test_antes_de_cambiar_el_esquema_se_copia_la_base(tmp_path):
     insert_session(db.conn, "anterior")
     db.close()
 
-    directory = migrations_with(tmp_path, {"0002_segunda.sql": "CREATE TABLE extra (a TEXT);"})
+    directory = migrations_with(tmp_path, {migration(1, "segunda"): "CREATE TABLE extra (a TEXT);"})
     db = Database(path, migrations_dir=directory)
     db.migrate()
     db.close()
 
     backup = sqlite3.connect(tmp_path / "jarvis.db.bak")
     try:
-        assert backup.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert backup.execute("PRAGMA user_version").fetchone()[0] == LATEST
         assert backup.execute("SELECT name FROM sessions").fetchone()[0] == "anterior"
         assert "extra" not in tables(backup)
     finally:
@@ -344,11 +358,58 @@ def test_una_base_sana_no_se_aparta(tmp_path):
 # --- Borrado lógico (RES-34) -----------------------------------------------------------------
 
 
-def test_el_codigo_no_contiene_ninguna_sentencia_delete():
-    pattern = re.compile(r"\bDELETE\s+FROM\b", re.IGNORECASE)
+def test_la_migracion_0004_borra_las_eliminadas_y_numera_las_sesiones_de_1_a_n(tmp_path):
+    previous = tmp_path / "previas"
+    previous.mkdir()
+    for path in sorted(database.MIGRATIONS_DIR.glob("*.sql"))[:3]:
+        shutil.copy(path, previous / path.name)
+    db = Database(tmp_path / "jarvis.db", migrations_dir=previous)
+    db.migrate()
+    conn = db.conn
+    for session_id, deleted in ((159, 0), (160, 1), (162, 0), (170, 0)):
+        conn.execute(
+            "INSERT INTO sessions (id, name, opened_at, is_deleted) VALUES (?, ?, 'x', ?)",
+            (session_id, f"s{session_id}", deleted),
+        )
+    conn.execute(
+        "UPDATE sessions SET displaced_by = 170, pending_purge_on_close = 1 WHERE id = 162"
+    )
+    for session_id in (159, 160, 170):
+        conn.execute(INSERT_ACTIVITY, (session_id, "completado"))
+    # Una subtarea de la eliminada: su madre (ON DELETE RESTRICT) se borra con ella.
+    conn.execute(
+        "INSERT INTO session_activities (session_id, parent_id, module_name, task_description,"
+        " status, executed_at) SELECT 160, id, 'm', 'hija', 'completado', 'x'"
+        " FROM session_activities WHERE session_id = 160"
+    )
+    conn.commit()
+    db.close()
+
+    db = Database(tmp_path / "jarvis.db")
+    db.migrate()
+    rows = db.conn.execute("SELECT id, name, displaced_by FROM sessions ORDER BY id").fetchall()
+    assert [tuple(row) for row in rows] == [(1, "s159", None), (2, "s162", 3), (3, "s170", None)]
+    activities = db.conn.execute("SELECT session_id FROM session_activities ORDER BY id")
+    assert [row[0] for row in activities] == [1, 3]
+    sequence = db.conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'sessions'")
+    assert sequence.fetchone()[0] == 3
+    assert db.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    db.close()
+
+
+# Única excepción: eliminar una sesión la borra del todo, con sus actividades, y renumera las
+# demás (ids 1..N).
+PHYSICAL_DELETE_TABLES = {"sessions", "session_activities"}
+
+
+def test_el_codigo_solo_borra_fisicamente_sesiones_y_actividades():
+    pattern = re.compile(r"\bDELETE\s+FROM\s+(\w+)", re.IGNORECASE)
     files = [*SRC.rglob("*.py"), *SRC.rglob("*.sql")]
     assert len(files) > 5
     offenders = [
-        str(path.relative_to(SRC)) for path in files if pattern.search(path.read_text("utf-8"))
+        f"{path.relative_to(SRC)}: {table}"
+        for path in files
+        for table in pattern.findall(path.read_text("utf-8"))
+        if table not in PHYSICAL_DELETE_TABLES
     ]
     assert offenders == []

@@ -308,3 +308,138 @@ def test_opciones_de_la_interfaz():
         "low", True, "bottom-left", False,
     )  # fmt: skip
     assert UiOptions(UiSettings(), debug=True).debug
+
+
+# --- Perfiles protegidos -------------------------------------------------------------------------
+
+
+def test_el_texto_de_ayuda_en_dormido_invita_a_decir_hey_jarvis():
+    assert PLACEHOLDER_ASLEEP == "Inicie sesión con «Hey Jarvis»"
+
+
+def test_la_caja_de_la_contrasena_se_abre_y_se_cierra_con_el_nucleo(qtbot):
+    from jarvis_assistant.ui.view_models import AccessModel
+
+    model = AccessModel()
+    with qtbot.waitSignal(model.gateChanged):
+        model.apply(events.AccessChallenged("secreto", "Confidencial"))
+    assert (model.gateOpen, model.profileName) == (True, "Confidencial")
+    with qtbot.waitSignal(model.denied):
+        model.apply(events.AccessDenied())
+    assert model.gateOpen
+    model.apply(events.AccessClosed(granted=False))
+    assert not model.gateOpen
+
+
+def test_la_contrasena_solo_se_envia_con_la_caja_abierta_y_no_vacia():
+    from jarvis_assistant.ui.view_models import AccessModel
+
+    published: list[events.Event] = []
+    model = AccessModel(published.append)
+    model.unlock("clave-1234")
+    model.cancel()
+    assert published == []
+    model.apply(events.AccessChallenged("secreto", "Confidencial"))
+    model.unlock("")
+    model.unlock("clave-1234")
+    model.cancel()
+    assert published == [events.AccessAttempted("clave-1234"), events.AccessCancelled()]
+    assert "clave-1234" not in repr(published[0])
+
+
+def test_la_tarjeta_de_intrusion_sigue_hasta_confirmarla(qtbot):
+    from jarvis_assistant.core.content import IntrusionItem
+    from jarvis_assistant.ui.view_models import AccessModel
+
+    published: list[events.Event] = []
+    model = AccessModel(published.append)
+    at = datetime(2026, 11, 14, 18, 30).astimezone()
+    items = (IntrusionItem(7, at, 3, "inicio"), IntrusionItem(8, at, 3, "configuracion"))
+    with qtbot.waitSignal(model.alertsChanged):
+        model.apply(events.IntrusionAlertsShown("secreto", items))
+    assert model.alertsOpen
+    assert [(a["date"], a["time"], a["attempts"]) for a in model.alerts] == [
+        ("14/11/2026", "18:30:00", 3), ("14/11/2026", "18:30:00", 3),
+    ]  # fmt: skip
+    assert [a["origin"] for a in model.alerts] == ["Inicio de sesión", "Configuración"]
+    model.acknowledge()
+    assert published == [events.IntrusionAcknowledged((7, 8))]
+    assert not model.alertsOpen
+
+
+def test_el_selector_marca_con_candado_los_perfiles_protegidos(qtbot):
+    from jarvis_assistant.config import Config, Profile
+    from jarvis_assistant.ui.profiles import ProfilesModel
+
+    model = ProfilesModel(lambda _event: None)
+    config = Config(profiles=(Profile("trabajo", "Trabajo"), Profile("secreto", "Secreto")))
+    model.apply(events.ConfigApplied(config))
+    model.apply(events.ProtectedProfilesChanged(frozenset({"secreto"})))
+    role = model.roleNames()
+    locked = next(key for key, name in role.items() if bytes(name) == b"locked")
+    assert [model.data(model.index(row), locked) for row in range(2)] == [False, True]
+    assert not model.currentLocked
+    model.select(1)
+    assert model.currentLocked
+
+
+# --- Acedor --------------------------------------------------------------------------------------
+
+
+def test_el_selector_ofrece_al_acedor_al_final_si_esta_activado():
+    from jarvis_assistant.config import Config, Profile
+    from jarvis_assistant.ui.profiles import ProfilesModel
+
+    model = ProfilesModel(lambda _event: None)
+    model.apply(events.ConfigApplied(Config(profiles=(Profile("casa", "Casa"),))))
+    assert model.count == 1
+    model.apply(events.ProtectedProfilesChanged(frozenset({"acedor"}), admin_active=True))
+    assert model.count == 2
+    name = next(k for k, v in model.roleNames().items() if bytes(v) == b"name")
+    assert model.data(model.index(1), name) == "Acedor"
+    model.apply(events.ProtectedProfilesChanged(frozenset(), admin_active=False))
+    assert model.count == 1
+
+
+def test_las_ventanas_sin_permiso_no_se_ven_ni_se_abren():
+    from jarvis_assistant.ui.workspace import WorkspaceModel
+
+    model = WorkspaceModel()
+    available = next(k for k, v in model.roleNames().items() if bytes(v) == b"available")
+    row = {spec.id: i for i, spec in enumerate(model.specs)}
+    assert not model.data(model.index(row["permisos"]), available)  # las del Acedor
+    model.show("permisos")
+    assert not model.placement("permisos").open
+    model.show("comandos")
+    model.apply(events.PermissionsApplied(frozenset({"comandos"})))
+    assert not model.placement("comandos").open
+    assert not model.data(model.index(row["comandos"]), available)
+    model.apply(events.PanelActivated("comandos"))
+    assert not model.placement("comandos").open
+    model.apply(events.PermissionsApplied(frozenset()))
+    model.show("permisos")
+    assert model.placement("permisos").open
+
+
+def test_el_modelo_del_acedor_publica_sus_acciones_y_olvida_las_contrasenas():
+    from jarvis_assistant.core.content import CredentialItem, NamedItem
+    from jarvis_assistant.ui.panel_models import AdminModel
+
+    published: list[events.Event] = []
+    model = AdminModel(publish=published.append)
+    model.apply(events.PermissionsShown(
+        (NamedItem("casa", "Casa"),),
+        (NamedItem("comandos", "Comandos"), NamedItem("busqueda", "Búsqueda")),
+        frozenset({("casa", "busqueda")}),
+    ))  # fmt: skip
+    assert model.matrix == [{"id": "casa", "name": "Casa", "allowed": [True, False]}]
+    model.setPermission("casa", "busqueda", True)
+    model.removeProfile("casa")
+    assert published == [
+        events.PermissionChangeRequested("casa", "busqueda", True),
+        events.ProfileRemovalRequested("casa"),
+    ]
+    model.apply(events.CredentialsShown((CredentialItem("t", "Trabajo", "abcd"),)))
+    assert model.credentials[0]["password"] == "abcd"
+    model.apply(events.SessionClosed())
+    assert model.credentials == []

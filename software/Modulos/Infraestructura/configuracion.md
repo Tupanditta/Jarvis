@@ -1,6 +1,6 @@
 # Configuración
 
-- **Código:** `config.py`, `resources/config_defaults/`.
+- **Código:** `config/` (un módulo por archivo; `loader.py` los reúne), `resources/config_defaults/`.
 - **Origen:** Refuerzo (módulo nuevo).
 - **Volver a:** [contexto](../../contexto.md) · [arquitectura](../../arquitectura.md).
 
@@ -10,11 +10,13 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 
 ## Comportamiento
 
-- **Formato:** TOML, leído con `tomllib`. El asistente nunca escribe estos archivos (RES-36).
+- **Formato:** TOML, leído con `tomllib`. El asistente nunca escribe estos archivos. El único que los escribe es la ventana de configuración ([configurador.md](configurador.md)), con `tomlkit` para conservar comentarios y formato, y solo al pulsar Guardar (RES-33).
 - **Ubicación:** `%APPDATA%\Jarvis\config\` en Windows. En el primer arranque se copian ahí los archivos predeterminados de `resources/config_defaults/`, con comentarios que explican cada clave.
 - **Valores predeterminados:** toda clave ausente toma el valor predeterminado del código. Un archivo vacío es válido.
 - **Validación:** al cargar, cada archivo se convierte en `dataclass` inmutables con comprobación de tipos y rangos. Un error indica archivo, clave y motivo. Una clave o sección desconocida solo produce un aviso: un `settings.toml` anterior, con las secciones `[audio]` y `[stt]` de la entrada por voz retirada, se sigue cargando.
-- **Carga:** al arrancar el proceso y al abrir cada sesión (RF-96). Si al recargar un archivo es inválido, se conserva la configuración anterior de ese archivo, se publica `ConfigReloadFailed` y el asistente dice, tras la frase de apertura, «Hay un error en la configuración de {archivo}. Uso la anterior.». Si es inválido en el arranque, se usan los valores predeterminados de ese archivo y se registra.
+- **Carga:** al arrancar el proceso, al abrir cada sesión (RF-96) y, con la sesión cerrada, al guardar desde la ventana de configuración (`ConfigSaved`; esta recarga solo registra los errores, que se avisan al abrir la sesión). Tras cada carga el núcleo publica `ConfigApplied` para la interfaz. Si al recargar un archivo es inválido, se conserva la configuración anterior de ese archivo, se publica `ConfigReloadFailed` y el asistente dice, tras la frase de apertura, «Hay un error en la configuración de {archivo}. Uso la anterior.». Si es inválido en el arranque, se usan los valores predeterminados de ese archivo y se registra.
+- **Una sola regla:** `config.check(archivo, contenido)` valida un documento sin cargarlo, con las mismas funciones `parse` que la carga. La ventana de configuración la usa antes de escribir.
+- **Referencias entre archivos:** un perfil cuya plantilla no existe produce un aviso y usa la de fábrica.
 - **Protocolos:** al cargar, cada tarea se valida contra el registro de intenciones: el módulo y la acción deben existir y admitir protocolos, y los parámetros obligatorios deben estar presentes.
 
 ## Archivos
@@ -27,6 +29,7 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 | `tts.voice` | `"es_ES-davefx-medium"` | Voz de Piper. |
 | `tts.volume` | `1.0` | Volumen (0–1). |
 | `tts.cache_size` | `64` | Frases en caché. |
+| `sound.enabled` | `true` | Sonido del asistente: su voz y el aviso de las ventanas. Desactivado, las frases se publican (subtítulos) pero no suenan, y la secuencia de estados no cambia. |
 | `router.intent_threshold` | `80` | Umbral de intención. |
 | `router.wake_threshold` | `80` | Umbral de la frase de activación «Hey Jarvis». |
 | `router.control_threshold` | `80` | Umbral de las frases de control. |
@@ -49,7 +52,7 @@ Reunir en archivos editables todo lo que el usuario puede querer ajustar sin toc
 | `ui.reduce_motion` | `false` | Sustituye las animaciones por fundidos. |
 | `startup.open_session_on_start` | `false` | Solo desarrollo: abrir sesión al arrancar. |
 | `logging.level` | `"INFO"` | Nivel del registro. |
-| `user.name` | `""` | Nombre del usuario que dice «preséntate». Vacío: no lo dice. |
+| `user.name` | `""` | Obsoleto: el nombre lo da cada perfil (`profiles.toml`). Solo se usa si no hay perfiles. |
 
 ### `catalog.toml`
 
@@ -112,6 +115,42 @@ Sustituciones aplicadas al normalizar el texto escrito ([enrutador-intenciones.m
 
 Ver [protocolos.md](../Accion/protocolos.md).
 
+### `profiles.toml`
+
+Perfiles de usuario. Se elige uno en la pantalla dormida ([hud.md](hud.md), sección 2.1). Sin ningún perfil, el asistente usa uno «Predeterminado» con `user.name`. Un perfil no válido se descarta con un error; los demás se cargan.
+
+```toml
+[[profiles]]
+id = "trabajo"          # minúsculas, números, - y _; no cambia al renombrar
+name = "Trabajo"        # nombre en el selector; único
+user_name = "Jane Doe"  # nombre que dice «preséntate»; vacío: no lo dice
+layout = "programar"    # id de una plantilla; vacío: la de fábrica
+```
+
+### `layouts.toml`
+
+Plantillas de la pantalla de sesión. Posiciones y tamaños en fracciones de la pantalla (0–1); las barras, por su centro. La plantilla `fabrica` siempre existe y no se escribe aquí. Una ventana que la plantilla no nombra toma su disposición de fábrica. Una plantilla no válida se descarta con un error.
+
+```toml
+[[layouts]]
+id = "programar"
+name = "Programar"
+[layouts.dock]           # selector de ventanas
+x = 0.5
+y = 0.032
+[layouts.input]          # caja de texto
+x = 0.5
+y = 0.935
+width = 0.235            # 0,1–1
+[layouts.windows.comandos]
+open = true
+x = 0.6
+y = 0.05
+width = 0.38             # 0,08–1
+height = 0.6
+order = 1                # apilado: la mayor queda encima
+```
+
 ### `structures.toml`
 
 Estructuras de carpetas predefinidas (RF-97).
@@ -134,8 +173,15 @@ class Config:
     aliases: Mapping[str, str]
     protocols: tuple[ProtocolDef, ...]
     structures: tuple[StructureDef, ...]
+    profiles: tuple[Profile, ...]
+    layouts: tuple[ScreenLayout, ...]
+
+    def all_profiles(self) -> tuple[Profile, ...]: ...   # o el predeterminado si no hay
+    def profile(self, profile_id: str | None) -> Profile: ...
+    def layout(self, layout_id: str) -> ScreenLayout: ...  # o la de fábrica
 
 def load(config_dir: Path, *, previous: Config | None = None) -> tuple[Config, list[ConfigError]]: ...
+def check(name: str, data: Mapping[str, Any]) -> list[ConfigError]: ...
 ```
 
 ## Criterios de aceptación
@@ -146,5 +192,5 @@ def load(config_dir: Path, *, previous: Config | None = None) -> tuple[Config, l
 
 ## Prohibiciones
 
-- El asistente no escribe en los archivos de configuración.
+- El asistente no escribe en los archivos de configuración. Solo la ventana de configuración, al pulsar Guardar.
 - No se guardan en la configuración sesiones, actividades ni recordatorios (RES-33).

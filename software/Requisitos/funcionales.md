@@ -16,6 +16,7 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-06 | Avisar por voz y en la interfaz del desbordamiento de sesiones importantes, indicando la sesión que sale (RN-08). | M | 4 | Idea |
 | RF-07 | Eliminar, al cerrar la sesión actual, las sesiones marcadas por desbordamiento (RN-09). | M | 4 | Idea |
 | RF-93 | Recuperar al arrancar las sesiones que quedaron abiertas por una terminación inesperada (RN-47). | M | 4 | Refuerzo |
+| RF-118 | No guardar en el historial las sesiones vacías (RN-69). | B | — | Idea |
 
 ## 2. Historial
 
@@ -24,10 +25,10 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-08 | Mostrar las sesiones visibles del historial (RN-10) con su identificador, nombre, fecha e importancia, y decir cuántas hay. | A | 3 | Idea |
 | RF-09 | Mostrar las actividades de una sesión indicada por su identificador, o de la actual si no se indica: módulo, descripción, estado y momento. | A | 3 | Idea |
 | RF-10 | Registrar en la sesión actual cada tarea de cualquier módulo de acción, con módulo, descripción, estado (RN-01) y momento. El registro lo hace el núcleo, no cada módulo. | A | 3 | Idea |
-| RF-11 | Permitir que el usuario pida eliminar una sesión diciendo su identificador numérico (RN-53). | M | 4 | Idea |
-| RF-12 | Informar por voz cuando el identificador no existe o corresponde a la sesión actual (RN-11). | M | 4 | Idea |
-| RF-13 | Mostrar la sesión que se va a eliminar y pedir confirmación (RN-11). | M | 4 | Idea |
-| RF-14 | Eliminar la sesión cuando el usuario lo confirma (RN-12). | M | 4 | Idea |
+| RF-11 | Permitir que el usuario pida eliminar una sesión diciendo su identificador numérico (RN-53), o varias eligiéndolas del historial con una lista («1, 3, 5») o un intervalo («1-5») (RN-11). | M | 4 | Idea, modificada |
+| RF-12 | Informar por voz cuando un identificador no existe o corresponde a la sesión actual, cuando no hay sesiones que eliminar, y avisar si alguna de las elegidas es importante (RN-11). | M | 4 | Idea, modificada |
+| RF-13 | Mostrar las sesiones que se van a eliminar y pedir confirmación (RN-11). | M | 4 | Idea |
+| RF-14 | Eliminar las sesiones cuando el usuario lo confirma, con sus actividades, y renumerar las demás (RN-12, RN-53). | M | 4 | Idea, modificada |
 
 ## 3. Comandos
 
@@ -156,6 +157,46 @@ Columnas: **P** prioridad (A alta, M media, B baja); **F** fase del [plan](../pl
 | RF-86 | Mostrar un icono en la bandeja del sistema con el estado del asistente y un menú: abrir sesión, mostrar la pantalla de sesión, abrir la carpeta de configuración, abrir el registro de diagnóstico y salir. | M | 1 | Refuerzo |
 | RF-95 | Retirado: entrada por texto (reintento del micrófono). | M | 1 | Refuerzo |
 | RF-96 | Releer la configuración al abrir cada sesión; si un archivo es inválido, conservar la configuración anterior y avisar por voz. | B | 3 | Refuerzo |
+
+## 12. Catálogo
+
+Los requisitos construidos después del [plan](../plan-implementacion.md) (las secciones 12 a 15 y RF-118) tienen «—» en la columna **F**.
+
+| ID | El sistema debe… | P | F | Origen |
+|---|---|---|---|---|
+| RF-100 | Mostrar en la ventana del catálogo las aplicaciones, las páginas y los comandos del catálogo, con su destino y sus alias, filtrables por tipo. | M | — | Idea |
+| RF-101 | Añadir una aplicación, una página o un comando con el formulario de la ventana del catálogo, validarlo (RN-66), guardarlo en su archivo y aplicarlo en la sesión en curso (RN-65). La orden escrita «añade al catálogo» solo abre la ventana. | M | — | Idea |
+| RF-102 | Eliminar una entrada del catálogo por su nombre o desde su fila, tras confirmación (RN-65). | M | — | Idea |
+| RF-103 | Mostrar en la ventana del catálogo el motivo cuando una entrada no se puede añadir, eliminar o guardar. | B | — | Idea |
+
+## 13. Perfiles protegidos
+
+| ID | El sistema debe… | P | F | Origen |
+|---|---|---|---|---|
+| RF-104 | Pedir la contraseña de un perfil protegido tras «Hey Jarvis» en dormido, en una caja que no muestra lo que se escribe, y abrir la sesión solo con la contraseña correcta (RN-57). Esc cierra la caja sin abrir sesión. | A | — | Idea |
+| RF-105 | Poner, cambiar y quitar la contraseña de un perfil en la ventana de configuración; un perfil protegido solo se edita tras desbloquearlo con su contraseña (RN-57). | A | — | Idea |
+| RF-106 | Registrar un aviso de intrusión al tercer fallo seguido de la contraseña de un perfil, sin que lo note quien falla (RN-58). | A | — | Idea |
+| RF-107 | Avisar al dueño del perfil, y al Acedor, de los intentos de intrusión al abrir sesión, por voz y con una tarjeta crítica que sigue hasta confirmarla (RN-59). | A | — | Idea |
+| RF-108 | Activar al Acedor desde la configuración con una contraseña, y cambiarla dando la actual (RN-60). | M | — | Idea |
+| RF-109 | Desactivar al Acedor que ha olvidado su contraseña con `--reiniciar-acedor`, con el asistente cerrado (RN-60). | B | — | Idea |
+
+## 14. Permisos, Credenciales y Perfiles (Acedor)
+
+| ID | El sistema debe… | P | F | Origen |
+|---|---|---|---|---|
+| RF-110 | Permitir al Acedor conceder o restringir a un perfil un módulo o un medidor, con una orden o con una casilla de la ventana de permisos (RN-62). | A | — | Idea |
+| RF-111 | Mostrar al Acedor la tabla de permisos: una fila por perfil y una columna por módulo o medidor restringible. | M | — | Idea |
+| RF-112 | Aplicar al abrir cada sesión los permisos de su perfil: ayuda, ejecución de acciones, ventanas y medidores (RN-61, RN-62). | A | — | Idea |
+| RF-113 | Mostrar al Acedor, en su ventana, las contraseñas de los perfiles protegidos (RN-63). | M | — | Idea |
+| RF-114 | Permitir al Acedor ver los perfiles y eliminar uno, con una orden o desde la ventana de perfiles, tras confirmación (RN-64). | M | — | Idea |
+
+## 15. Medidores
+
+| ID | El sistema debe… | P | F | Origen |
+|---|---|---|---|---|
+| RF-115 | Mostrar en la pantalla de sesión el consumo de CPU y de RAM del proceso del asistente, actualizado cada segundo mientras el medidor está a la vista. | B | — | Idea |
+| RF-116 | Mostrar en la pantalla de sesión el ruido de fondo, en decibelios aproximados, y el nivel de concentración que permite (RN-68), actualizado mientras el medidor está a la vista. | B | — | Idea |
+| RF-117 | Mostrar u ocultar cada medidor con su botón del selector, cambiarlo de esquina con un triple clic y abrir la sesión con los que diga la plantilla del perfil (RN-67). | B | — | Idea |
 
 ## Requisitos retirados
 

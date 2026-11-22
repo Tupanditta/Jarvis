@@ -49,11 +49,17 @@ class Speaker:
         self._speaking = False
         self._interruptible = False
         self._last_phrase: Phrase | None = None
+        self._sound = True
         bus.subscribe(SilenceRequested, lambda _event: self.stop())
 
     @property
     def speaking(self) -> bool:
         return self._speaking
+
+    def set_sound(self, enabled: bool) -> None:
+        """Con el sonido desactivado (`sound.enabled`), cada frase cuenta como dicha al
+        instante: se publica igual, para los subtítulos, pero no suena."""
+        self._sound = enabled
 
     @property
     def last_phrase(self) -> Phrase | None:
@@ -90,6 +96,8 @@ class Speaker:
         async with self._lock:
             if generation != self._generation:
                 return SpeechOutcome(interrupted=True)
+            if not self._sound:
+                return self._silent(phrase, text, lifecycle, on_start)
             pcm = await self._audio(text)
             if generation != self._generation:
                 return SpeechOutcome(interrupted=True)
@@ -121,6 +129,19 @@ class Speaker:
                     # También si se cancela: la interfaz no debe quedarse en «hablando».
                     self._bus.publish(SpeechFinished(interrupted=not completed))
             return SpeechOutcome(interrupted=not completed)
+
+    def _silent(
+        self, phrase: Phrase, text: str, lifecycle: bool, on_start: Callable[[], None] | None
+    ) -> SpeechOutcome:
+        """La frase sin sonido: empieza y acaba a la vez. La secuencia de estados no cambia."""
+        advance(phrase.id)
+        self._bus.publish(SpeechStarted(text, interruptible=not lifecycle))
+        if on_start is not None:
+            on_start()
+        if not lifecycle:
+            self._last_phrase = phrase
+        self._bus.publish(SpeechFinished(interrupted=False))
+        return SpeechOutcome(interrupted=False)
 
     def stop(self) -> None:
         """Interrumpe la locución en curso, si se puede, y vacía la cola."""

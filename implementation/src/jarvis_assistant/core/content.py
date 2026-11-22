@@ -2,7 +2,7 @@
 
 Son valores inmutables: cada evento de contenido lleva la lista completa de su panel.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -46,6 +46,22 @@ class LaunchTarget:
     kind: OpenedKind
 
 
+CatalogKind = Literal["aplicacion", "pagina", "comando"]
+
+
+@dataclass(frozen=True)
+class CatalogItem:
+    """Entrada de la ventana Catálogo: una aplicación o una página de `catalog.toml`, o un
+    comando de terminal (binario permitido) de `commands.toml`. `id`: «{tipo}:{nombre}»."""
+
+    id: str
+    kind: CatalogKind
+    name: str
+    target: str  # ruta o nombre del programa, dirección de la página o ejecutable
+    aliases: tuple[str, ...] = ()
+    args: tuple[str, ...] = ()  # solo las aplicaciones
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """Resultado numerado de una búsqueda. `index`: lo que el usuario escribe (RN-50)."""
@@ -83,3 +99,32 @@ class ProtocolRow:
     aliases: tuple[str, ...]
     important: bool
     steps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IntrusionItem:
+    """Un aviso de intrusión, para la tarjeta crítica."""
+
+    alert_id: int
+    at: datetime  # UTC
+    attempts: int
+    origin: str  # 'inicio' o 'configuracion'
+    profile_name: str = ""  # para el Acedor, que recibe los de todos los perfiles
+
+
+@dataclass(frozen=True)
+class NamedItem:
+    """Algo con id y nombre: un perfil, un módulo."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class CredentialItem:
+    """La contraseña de un perfil protegido, para la ventana Credenciales del Acedor. `None`:
+    todavía no se puede ver (se custodia la próxima vez que su dueño entre)."""
+
+    profile_id: str
+    profile_name: str
+    password: str | None = field(default=None, repr=False)

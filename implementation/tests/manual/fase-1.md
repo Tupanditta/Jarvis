@@ -66,7 +66,7 @@ Las órdenes se escriben en la caja de texto de la ventana y se envían con Ente
 
 - [ ] El icono cambia de color en dormido, reposo, escuchando y hablando.
 - [ ] «Abrir sesión» solo aparece en dormido; «Mostrar pantalla», siempre.
-- [ ] «Abrir configuración» y «Abrir registro» abren sus carpetas.
+- [ ] «Abrir carpeta de configuración» y «Abrir registro» abren sus carpetas.
 
 ## Privacidad y consumo
 

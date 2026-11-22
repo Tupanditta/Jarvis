@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 # los recursos que leen y que cambian; el planificador usa esa declaración para decidir qué
 # tareas pueden ejecutarse a la vez (`core/task_queue.py`).
 WORKDIR = "workdir"
+# Consolas de Comandos (`core/workdir.py`): la principal; las extra son «comandos:<clave>». El
+# nombre de una consola es también el de su ventana y su panel.
+MAIN_CONSOLE = "comandos"
+
+
+def is_console(name: str) -> bool:
+    """`name` es la ventana o el panel de una consola: la principal o una extra."""
+    return name == MAIN_CONSOLE or name.startswith(MAIN_CONSOLE + ":")
 
 # Motivo de una tarea que termina sin hacer nada porque el usuario la ha cancelado (RN-52).
 CANCELLED_REASON = "cancelada"
@@ -65,6 +73,9 @@ class IntentSpec:
     example: str = ""  # para la ayuda
     panel: str | None = None  # panel que se activa al ejecutarla
     in_protocols: bool = True  # invocable como tarea de protocolo
+    # Se registra como actividad de la sesión. Las consultas (mostrar, listar, leer) no: se
+    # ejecutan y responden igual, pero no llenan el registro. Dentro de un protocolo, sí.
+    record: bool = True
     # Ocupa el turno: mientras se ejecuta, ninguna otra orden empieza (un protocolo, RN-55).
     exclusive: bool = False
     # Parámetros que fija el propio patrón («busca el archivo…» fija el tipo).
@@ -123,6 +134,7 @@ class ExpectedType(Enum):
     NEW_FILENAME = "new_filename"  # un nombre de archivo o carpeta → AWAITING_PARAMETER
     DATETIME = "datetime"  # una fecha y hora → AWAITING_PARAMETER
     REMINDER_ACTION = "reminder_action"  # «otro aviso …» / «fecha límite …» / «no»
+    SESSION_IDS = "session_ids"  # «1, 3, 5» o «1-5» → AWAITING_PARAMETER
 
 
 @dataclass(frozen=True)
@@ -139,8 +151,9 @@ class DialogueAnswer:
     """Respuesta a `ctx.ask`. `cancelled`: «cancelar», tiempo agotado o respuesta no válida
     dos veces. Si no, `value` ya está validado: `bool` para `BOOLEAN`, `str` para
     `NEW_FILENAME`, `datetime` para `DATETIME` (sin comprobar que sea futura),
-    `ReminderAction` o `False` para `REMINDER_ACTION`. Una negación es `value=False`, no una
-    cancelación. `by_user`: la cancelación es un «cancelar» del usuario, no el tiempo agotado
+    `ReminderAction` o `False` para `REMINDER_ACTION`, `tuple[int, ...]` ordenada y sin
+    repetidos para `SESSION_IDS` (sin comprobar que existan). Una negación es `value=False`,
+    no una cancelación. `by_user`: la cancelación es un «cancelar» del usuario, no el tiempo agotado
     ni una respuesta no válida."""
 
     cancelled: bool
@@ -184,6 +197,17 @@ async def _no_dialogue(*_args: object, **_kwargs: object) -> DialogueAnswer:
     return DialogueAnswer(cancelled=True)
 
 
+# Guarda en sus archivos las aplicaciones y páginas (`catalog.toml`) o los binarios permitidos
+# (`commands.toml`) y los aplica en la sesión en curso. `save_launchers(catalog=None,
+# binaries=None)`: lo que es None no se toca. Devuelve el motivo si no se ha podido guardar;
+# vacío si se ha guardado.
+SaveLaunchers = Callable[..., Awaitable[str]]
+
+
+async def _cannot_save(*_args: object, **_kwargs: object) -> str:
+    return "no se puede escribir la configuración"
+
+
 @dataclass(frozen=True)
 class CommandLine:
     """Entidad `COMMAND_LINE` resuelta: un binario permitido y sus argumentos (RN-45)."""
@@ -215,6 +239,8 @@ class Intent:
     # La respuesta solo se dice si es un error: el resultado ya se ve en la ventana que
     # pidió la acción.
     quiet: bool = field(default=False, compare=False)
+    # La consola de Comandos donde se ejecuta (`core/workdir.py`); None: la activa al empezar.
+    console: str | None = field(default=None, compare=False)
 
     @property
     def key(self) -> str:
@@ -232,6 +258,22 @@ class HelpGroup:
     module: str
     title: str
     entries: tuple[HelpEntry, ...]
+
+
+class AdminTools(Protocol):
+    """Lo que solo tiene la sesión del Acedor (`ActionContext.admin`). Lo da el orquestador."""
+
+    # Módulos que se pueden restringir: (nombre, título).
+    restrictable: tuple[tuple[str, str], ...]
+
+    def credentials(self) -> list[tuple[str, str, str | None]]:
+        """(id, nombre, contraseña) de cada perfil protegido; la contraseña es None si todavía
+        no está custodiada."""
+        ...
+
+    def remove_profile(self, profile_id: str) -> bool:
+        """Quita el perfil de `profiles.toml` y retira sus datos. False si no se ha podido."""
+        ...
 
 
 @dataclass
@@ -263,6 +305,19 @@ class ActionContext:
     # `pendiente`; `invoke` ejecuta una acción como subtarea (ver `Invoke`).
     subtask: Callable[[str, str], Subtask] = _no_subtasks
     invoke: Invoke = _no_invoke
+    # El perfil (entorno de trabajo) de la sesión: los datos propios de cada perfil, como los
+    # recordatorios, se leen y se escriben con él.
+    profile: str = ""
+    admin: AdminTools | None = None  # solo en la sesión del Acedor
+    # La consola de Comandos de la tarea: `workdir` es su directorio de trabajo y los eventos
+    # del panel de comandos la llevan para llegar a su ventana (`core/workdir.py`).
+    console: str = MAIN_CONSOLE
+    # Solo lo usa el módulo Protocolos: `open_console(key, title, inherit)` abre (o
+    # reutiliza) la consola propia de `key`; desde ahí, la tarea y sus subtareas trabajan en
+    # ella. Empieza en la carpeta del usuario o, con `inherit`, en la de la consola que deja.
+    open_console: Callable[[str, str, bool], None] = lambda _key, _title, _inherit=False: None
+    # Solo lo usa el módulo Catálogo (ver `SaveLaunchers`).
+    save_launchers: SaveLaunchers = _cannot_save
 
 
 class ActionModule(Protocol):
@@ -278,6 +333,9 @@ class ActionModule(Protocol):
 
 # Miembros opcionales de un módulo:
 #   async def on_session_opened(self, ctx) / on_session_closed(self, ctx)
+#   async def on_config_changed(self, ctx)
+#       Durante la sesión ha cambiado el catálogo o la lista de binarios (`save_launchers`):
+#       `ctx.config` ya trae lo nuevo.
 #   def catalogs(self) -> Mapping[str, Sequence[Callable[[], Sequence[str]]]]
 #       Catálogos para las entidades `CATALOG`. Cada uno es una lista de fuentes, por orden
 #       de prioridad: gana la primera con una coincidencia que supere el umbral.

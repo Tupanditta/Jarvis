@@ -3,6 +3,16 @@ implementation/.venv/
 implementation/.pytest_cache/
 implementation/.ruff_cache/
 
+# Artefactos que Python y las herramientas generan solos.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+htmlcov/
+
 # Modelos descargados localmente por fetch_models.py.
 implementation/models/*
 !implementation/models/.gitkeep
+
+# IDEAS
+implementation/IDEAS.txt

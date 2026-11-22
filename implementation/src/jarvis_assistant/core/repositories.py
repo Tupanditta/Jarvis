@@ -73,6 +73,16 @@ def _activity(row: sqlite3.Row) -> ActivityRow:
     )
 
 
+# Sesión vacía (alias `s`): no se ha registrado ninguna actividad y no hay nada más que
+# conservar. Una sesión importante o que ha desplazado a otra por desbordamiento no cuenta como
+# vacía aunque no tenga actividades. El nombre, aunque lo haya puesto el usuario, no la salva.
+_EMPTY = (
+    "s.is_important = 0"
+    " AND NOT EXISTS (SELECT 1 FROM session_activities a WHERE a.session_id = s.id)"
+    " AND NOT EXISTS (SELECT 1 FROM sessions d WHERE d.displaced_by = s.id)"
+)
+
+
 class SessionRepository:
     """Tabla `sessions`. Lo usan Sesión e Historial."""
 
@@ -150,7 +160,8 @@ class SessionRepository:
             )
 
     def purge_pending(self, displaced_by: int) -> list[int]:
-        """Elimina (borrado lógico) las sesiones desplazadas por `displaced_by` (RN-09)."""
+        """Elimina las sesiones desplazadas por `displaced_by` (RN-09), como `delete`.
+        Devuelve sus ids de antes del borrado."""
         with self._db.transaction() as conn:
             rows = conn.execute(
                 "SELECT id FROM sessions WHERE displaced_by = ? AND pending_purge_on_close = 1"
@@ -158,7 +169,7 @@ class SessionRepository:
                 (displaced_by,),
             ).fetchall()
             ids = [row["id"] for row in rows]
-            conn.executemany("UPDATE sessions SET is_deleted = 1 WHERE id = ?", [(i,) for i in ids])
+            self.delete(ids)
             return ids
 
     def restore_displaced(self, displaced_by: int) -> list[int]:
@@ -178,16 +189,80 @@ class SessionRepository:
             )
             return ids
 
-    def soft_delete(self, session_id: int) -> None:
-        with self._db.transaction() as conn:
-            conn.execute("UPDATE sessions SET is_deleted = 1 WHERE id = ?", (session_id,))
+    def delete(self, session_ids: Sequence[int]) -> dict[int, int]:
+        """Borra del todo las sesiones y sus actividades, y renumera las demás para que los
+        ids sigan siendo 1..N por orden de creación. La siguiente sesión será la N+1.
 
-    def visible_history(self, limit: int = 10) -> list[SessionRow]:
-        """Sesiones visibles: primero las importantes y, después, las más recientes (RN-10)."""
+        Devuelve, de las sesiones que quedan, las que cambian de id: {id anterior: id nuevo}.
+        """
+        doomed = sorted(set(session_ids))
+        if not doomed:
+            return {}
+        with self._db.transaction() as conn:
+            marks = ",".join("?" * len(doomed))
+            # `parent_id` es ON DELETE RESTRICT, que se comprueba fila a fila aunque las claves
+            # estén aplazadas: una tarea madre no se puede borrar antes que sus hijas. Se
+            # sueltan primero las hijas y después se borra todo.
+            conn.execute(
+                "UPDATE session_activities SET parent_id = NULL WHERE parent_id IN"
+                f" (SELECT id FROM session_activities WHERE session_id IN ({marks}))",
+                doomed,
+            )
+            # Con la primera escritura ya hay transacción: el aplazamiento vale hasta confirmarla.
+            conn.execute(
+                f"DELETE FROM session_activities WHERE session_id IN ({marks})", doomed
+            )
+            conn.execute("PRAGMA defer_foreign_keys = ON")
+            conn.execute(
+                "UPDATE sessions SET displaced_by = NULL, pending_purge_on_close = 0"
+                f" WHERE displaced_by IN ({marks})",
+                doomed,
+            )
+            conn.execute(f"DELETE FROM sessions WHERE id IN ({marks})", doomed)
+            kept = [row["id"] for row in conn.execute("SELECT id FROM sessions ORDER BY id")]
+            moves = {old: new for new, old in enumerate(kept, start=1) if old != new}
+            if moves:
+                pairs = list(moves.items())
+                conn.executemany(
+                    "UPDATE session_activities SET session_id = ? WHERE session_id = ?",
+                    [(new, old) for old, new in pairs],
+                )
+                conn.executemany(
+                    "UPDATE sessions SET displaced_by = ? WHERE displaced_by = ?",
+                    [(new, old) for old, new in pairs],
+                )
+                # En orden ascendente, el id nuevo siempre está libre: es menor que el
+                # anterior y los de las sesiones previas ya se han movido por debajo.
+                conn.executemany(
+                    "UPDATE sessions SET id = ? WHERE id = ?", [(new, old) for old, new in pairs]
+                )
+            conn.execute(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'sessions'", (len(kept),)
+            )
+            return moves
+
+    def is_empty(self, session_id: int) -> bool:
+        """Si la sesión existe y está vacía: no se guarda en el historial (ver `_EMPTY`)."""
+        row = self._db.conn.execute(
+            f"SELECT 1 FROM sessions s WHERE s.id = ? AND {_EMPTY}", (session_id,)
+        ).fetchone()
+        return row is not None
+
+    def closed_empty(self) -> list[int]:
+        """Ids de las sesiones cerradas que están vacías (ver `_EMPTY`), por orden."""
+        rows = self._db.conn.execute(
+            f"SELECT s.id FROM sessions s WHERE s.closed_at IS NOT NULL AND {_EMPTY}"
+            " ORDER BY s.id"
+        )
+        return [row["id"] for row in rows]
+
+    def visible_history(self, limit: int | None = 10) -> list[SessionRow]:
+        """Sesiones visibles: primero las importantes y, después, las más recientes (RN-10).
+        Sin `limit`, todas."""
         rows = self._db.conn.execute(
             "SELECT * FROM sessions WHERE is_deleted = 0"
             " ORDER BY is_important DESC, opened_at DESC, id DESC LIMIT ?",
-            (limit,),
+            (-1 if limit is None else limit,),
         )
         return [_session(row) for row in rows]
 
@@ -300,10 +375,14 @@ def _trigger(row: sqlite3.Row) -> TriggerRow:
 
 class ReminderRepository:
     """Tablas `reminders` y `reminder_triggers`. Lo usa Recordatorio. Eliminar es cambiar el
-    estado a `eliminado`: los avisos no se tocan (RN-13)."""
+    estado a `eliminado`: los avisos no se tocan (RN-13).
 
-    def __init__(self, db: Database) -> None:
+    Cada recordatorio es de un perfil (`profile_id`): el repositorio solo ve y crea los del
+    perfil con el que se construye. Los de otro perfil no existen para él, tampoco por id."""
+
+    def __init__(self, db: Database, profile_id: str = "") -> None:
         self._db = db
+        self._profile = profile_id
 
     def create(
         self, content: str, triggers: Sequence[datetime], deadline: datetime | None, at: datetime
@@ -311,8 +390,9 @@ class ReminderRepository:
         """El recordatorio y sus avisos, en una transacción."""
         with self._db.transaction() as conn:
             cursor = conn.execute(
-                "INSERT INTO reminders (content, created_at, deadline_at) VALUES (?, ?, ?)",
-                (content, to_db(at), None if deadline is None else to_db(deadline)),
+                "INSERT INTO reminders (content, created_at, deadline_at, profile_id)"
+                " VALUES (?, ?, ?, ?)",
+                (content, to_db(at), None if deadline is None else to_db(deadline), self._profile),
             )
             reminder_id = cursor.lastrowid
             conn.executemany(
@@ -323,14 +403,16 @@ class ReminderRepository:
 
     def get(self, reminder_id: int) -> ReminderRow | None:
         row = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+            "SELECT * FROM reminders WHERE id = ? AND profile_id = ?", (reminder_id, self._profile)
         ).fetchone()
         return None if row is None else self._reminder(row)
 
     def listable(self) -> list[ReminderRow]:
         """Activos y vencidos, por identificador: el orden del panel (RN-50)."""
         rows = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE status IN ('activo', 'vencido') ORDER BY id"
+            "SELECT * FROM reminders WHERE profile_id = ? AND status IN ('activo', 'vencido')"
+            " ORDER BY id",
+            (self._profile,),
         ).fetchall()
         return [self._reminder(row) for row in rows]
 
@@ -345,9 +427,9 @@ class ReminderRepository:
     def overdue(self, now: datetime) -> list[ReminderRow]:
         """Activos cuya fecha límite ya ha llegado sin avisar de ella (RN-31)."""
         rows = self._db.conn.execute(
-            "SELECT * FROM reminders WHERE status = 'activo' AND deadline_at IS NOT NULL"
-            " AND deadline_at <= ? ORDER BY id",
-            (to_db(now),),
+            "SELECT * FROM reminders WHERE profile_id = ? AND status = 'activo'"
+            " AND deadline_at IS NOT NULL AND deadline_at <= ? ORDER BY id",
+            (self._profile, to_db(now)),
         ).fetchall()
         return [self._reminder(row) for row in rows]
 
@@ -366,20 +448,24 @@ class ReminderRepository:
     def set_deadline(self, reminder_id: int, deadline: datetime) -> None:
         with self._db.transaction() as conn:
             conn.execute(
-                "UPDATE reminders SET deadline_at = ? WHERE id = ?", (to_db(deadline), reminder_id)
+                "UPDATE reminders SET deadline_at = ? WHERE id = ? AND profile_id = ?",
+                (to_db(deadline), reminder_id, self._profile),
             )
 
     def set_status(self, reminder_id: int, status: str) -> None:
         with self._db.transaction() as conn:
-            conn.execute("UPDATE reminders SET status = ? WHERE id = ?", (status, reminder_id))
+            conn.execute(
+                "UPDATE reminders SET status = ? WHERE id = ? AND profile_id = ?",
+                (status, reminder_id, self._profile),
+            )
 
     def _triggers(self, condition: str, now: datetime) -> list[TriggerRow]:
         # Las fechas se guardan en UTC con el mismo formato: se comparan como texto.
         rows = self._db.conn.execute(
             "SELECT t.* FROM reminder_triggers t JOIN reminders r ON r.id = t.reminder_id"
-            f" WHERE r.status = 'activo' AND t.is_fired = 0 AND {condition}"
-            " ORDER BY t.trigger_at, t.id",
-            (to_db(now),),
+            " WHERE r.profile_id = ? AND r.status = 'activo' AND t.is_fired = 0"
+            f" AND {condition} ORDER BY t.trigger_at, t.id",
+            (self._profile, to_db(now)),
         ).fetchall()
         return [_trigger(row) for row in rows]
 
@@ -396,3 +482,36 @@ class ReminderRepository:
             status=row["status"],
             triggers=tuple(_trigger(trigger) for trigger in triggers),
         )
+
+
+class PermissionRepository:
+    """Tabla `profile_permissions`: qué módulos tiene restringidos cada perfil. Sin fila, el
+    módulo está permitido (los permisos por defecto). Solo el Acedor los cambia."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def restricted(self, profile_id: str) -> frozenset[str]:
+        rows = self._db.conn.execute(
+            "SELECT module FROM profile_permissions WHERE profile_id = ? AND allowed = 0",
+            (profile_id,),
+        ).fetchall()
+        return frozenset(row["module"] for row in rows)
+
+    def all_restricted(self) -> dict[str, frozenset[str]]:
+        """Perfil → módulos restringidos (solo los perfiles con alguno)."""
+        found: dict[str, set[str]] = {}
+        for row in self._db.conn.execute(
+            "SELECT profile_id, module FROM profile_permissions WHERE allowed = 0"
+        ).fetchall():
+            found.setdefault(row["profile_id"], set()).add(row["module"])
+        return {profile: frozenset(modules) for profile, modules in found.items()}
+
+    def set_allowed(self, profile_id: str, module: str, allowed: bool, at: datetime) -> None:
+        with self._db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO profile_permissions (profile_id, module, allowed, updated_at)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT (profile_id, module) DO UPDATE SET"
+                " allowed = excluded.allowed, updated_at = excluded.updated_at",
+                (profile_id, module, int(allowed), to_db(at)),
+            )

@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QTimer
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import HelpEntry, HelpGroup
 from jarvis_assistant.core.content import (
+    CatalogItem,
     Entry,
     LaunchTarget,
     OpenedItem,
@@ -75,7 +76,8 @@ _PROTOCOL_STEPS = (
 
 def panel_tour() -> list[Step]:
     """Contenido de ejemplo de los paneles de los módulos: comandos (listado, árbol y salida
-    de un binario), aperturas, búsqueda, recordatorios, protocolo, historial y ayuda."""
+    de un binario), aperturas, catálogo, búsqueda, recordatorios, protocolo, historial y
+    ayuda."""
     home = "C:/Users/usuario"
     current = _session(12, "prácticas de redes", important=True)
     now = datetime.now().astimezone()
@@ -110,6 +112,13 @@ def panel_tour() -> list[Step]:
             OpenedItem(1, "Visual Studio Code", "aplicacion", "completado", True),
             OpenedItem(2, "GitHub", "pagina", "completado", False),
             OpenedItem(3, "Descargas", "carpeta", "error", False),
+        ))),
+        Step(1.2, events.PanelActivated("catalogo")),
+        Step(0.0, events.CatalogShown((
+            CatalogItem("aplicacion:Visual Studio Code", "aplicacion", "Visual Studio Code",
+                        "C:/Programas/VS Code/Code.exe", ("code", "el editor")),
+            CatalogItem("pagina:GitHub", "pagina", "GitHub", "https://github.com"),
+            CatalogItem("comando:git", "comando", "git", "git", ("guit",)),
         ))),
         Step(1.2, events.PanelActivated("busqueda")),
         Step(0.0, events.SearchResultsReady("informe", "ambos", (

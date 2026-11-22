@@ -620,3 +620,137 @@ async def test_rnf19_cada_accion_admitida_se_invoca_desde_un_protocolo(tmp_path,
         assert (rig.home / "Proyectos" / "notas.txt").is_file()  # tras el `cd`, relativo
     finally:
         await rig.stop()
+
+
+# --- Una consola de Comandos por protocolo ---------------------------------------------------
+
+ALGEBRA = protocol(task("comandos", "cd", ruta="proyectos"), task("falso", "mirar", ruta="jarvis"),
+                   name="algebra")  # fmt: skip
+FISICA = protocol(task("comandos", "cd", ruta="docs"), name="fisica")
+LIBRE = protocol(task("falso", "apuntar", texto="hola"), name="libre")
+
+
+@pytest.fixture
+async def subjects(tmp_path, monkeypatch):
+    rig, fake = await make_rig(tmp_path, monkeypatch, ALGEBRA, FISICA, LIBRE)
+    for event_type in (events.ConsoleOpened, events.DirectoryListed):
+        rig.app.bus.subscribe(event_type, rig.events.append)
+    yield rig, fake
+    await rig.stop()
+
+
+def consoles(rig):
+    return rig.app.orchestrator._consoles
+
+
+async def run_subject(rig, name: str) -> None:
+    """Lanza el protocolo y rechaza la propuesta de nombre, si la hace."""
+    await rig.order(f"protocolo {name}")
+    if rig.state is S.AWAITING_CONFIRMATION:
+        await rig.order("No")
+
+
+async def test_dos_protocolos_trabajan_cada_uno_en_su_consola(subjects):
+    rig, fake = subjects
+    await run_subject(rig, "algebra")
+    await run_subject(rig, "fisica")
+    assert rig.of(events.ConsoleOpened) == [
+        events.ConsoleOpened("comandos:protocolo-algebra", "Comandos · proyectos"),
+        events.ConsoleOpened("comandos:protocolo-fisica", "Comandos · docs"),
+    ]
+    assert consoles(rig).get("comandos:protocolo-algebra").path == rig.home / "Proyectos"
+    assert consoles(rig).get("comandos:protocolo-fisica").path == rig.home / "Docs"
+    assert rig.app.workdir.path == rig.home  # la principal no se toca
+    # La ruta relativa de la tarea siguiente se resuelve en la consola del protocolo.
+    assert fake.calls[0][1]["ruta"] == rig.home / "Proyectos" / "Jarvis"
+    changed = [(e.console, e.path) for e in rig.of(events.WorkdirChanged)]
+    assert ("comandos:protocolo-algebra", str(rig.home / "Proyectos")) in changed
+    assert ("comandos:protocolo-fisica", str(rig.home / "Docs")) in changed
+    assert events.PanelActivated("comandos:protocolo-fisica") in rig.of(events.PanelActivated)
+
+
+async def test_una_orden_suelta_va_a_la_consola_de_delante(subjects):
+    rig, _fake = subjects
+    await run_subject(rig, "algebra")
+    await run_subject(rig, "fisica")
+    await rig.order("lista")
+    assert rig.of(events.DirectoryListed)[-1].console == "comandos:protocolo-fisica"
+    rig.app.bus.publish(events.ConsoleFocused("comandos:protocolo-algebra"))
+    await settle()
+    await rig.order("ve a jarvis")  # relativa a la carpeta de esa consola
+    assert consoles(rig).get("comandos:protocolo-algebra").path == rig.home / "Proyectos" / "Jarvis"
+    assert consoles(rig).get("comandos:protocolo-fisica").path == rig.home / "Docs"
+
+
+async def test_repetir_un_protocolo_reutiliza_su_consola(subjects):
+    rig, _fake = subjects
+    await run_subject(rig, "algebra")
+    await run_subject(rig, "algebra")  # «cd proyectos» de nuevo desde la carpeta personal
+    assert [e.console for e in rig.of(events.ConsoleOpened)] == ["comandos:protocolo-algebra"] * 2
+    assert consoles(rig).get("comandos:protocolo-algebra").path == rig.home / "Proyectos"
+    _session, finished = rig.of(events.ProtocolFinished)
+    assert finished.failed == 0
+
+
+async def test_un_protocolo_sin_tareas_de_comandos_no_abre_consola(subjects):
+    rig, _fake = subjects
+    await run_subject(rig, "libre")
+    assert rig.of(events.ConsoleOpened) == []
+
+
+async def test_cerrar_la_ventana_de_una_consola_detiene_su_programa(subjects):
+    rig, _fake = subjects
+    await run_subject(rig, "algebra")
+    await rig.order("ejecuta git status")  # en la consola de delante: la del protocolo
+    output = rig.of(events.CommandOutputAppended)[-1]
+    assert output.console == "comandos:protocolo-algebra"
+    await rig.order("ejecuta git log")  # la principal sigue libre para su propio programa
+    assert len(rig.processes) == 1  # la de delante es la ocupada
+    rig.app.bus.publish(events.ConsoleFocused("comandos"))
+    await settle()
+    await rig.order("ejecuta git log")
+    assert len(rig.processes) == 2
+    rig.app.bus.publish(events.ConsoleClosed("comandos:protocolo-algebra"))
+    await settle()
+    assert len(rig.killed) == 1 and not consoles(rig).exists("comandos:protocolo-algebra")
+
+
+async def test_el_boton_abre_otra_consola_en_la_carpeta_de_la_original(subjects):
+    rig, _fake = subjects
+    await rig.order("ve a docs")
+    rig.app.bus.publish(events.ConsoleRequested("comandos"))
+    await settle()
+    assert rig.of(events.ConsoleOpened) == [events.ConsoleOpened("comandos:2", "Comandos 2")]
+    assert consoles(rig).get("comandos:2").path == rig.home / "Docs"
+    assert consoles(rig).active == "comandos:2"
+
+
+TWO_SUBJECTS = protocol(
+    task("comandos", "cd", ruta="proyectos"), task("comandos", "cd", ruta="jarvis"),
+    task("falso", "apuntar", texto="uno"),
+    task("comandos", "cd", ruta="documentos"), task("falso", "mirar", ruta="aquí"),
+    name="dos",
+)  # fmt: skip
+
+
+async def test_un_protocolo_que_cambia_de_carpeta_tras_trabajar_abre_otra_ventana(
+    tmp_path, monkeypatch
+):
+    rig, fake = await make_rig(tmp_path, monkeypatch, TWO_SUBJECTS)
+    rig.app.bus.subscribe(events.ConsoleOpened, rig.events.append)
+    try:
+        await run_subject(rig, "dos")
+        # Dos «cd» seguidos navegan en la misma ventana; el de después de trabajar, en otra.
+        assert rig.of(events.ConsoleOpened) == [
+            events.ConsoleOpened("comandos:protocolo-dos", "Comandos · proyectos"),
+            events.ConsoleOpened("comandos:protocolo-dos-2", "Comandos · documentos"),
+        ]
+        assert consoles(rig).get("comandos:protocolo-dos").path == rig.home / "Proyectos" / "Jarvis"
+        documents = rig.platform.default_places()["documentos"]
+        assert consoles(rig).get("comandos:protocolo-dos-2").path == documents
+        assert fake.calls[-1][1]["ruta"] == documents
+        assert consoles(rig).active == "comandos:protocolo-dos-2"
+        (finished,) = rig.of(events.ProtocolFinished)
+        assert finished.failed == 0
+    finally:
+        await rig.stop()

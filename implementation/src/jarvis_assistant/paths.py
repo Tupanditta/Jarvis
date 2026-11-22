@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 DB_FILE_NAME = "jarvis.db"
-LAYOUT_FILE_NAME = "ventanas.json"  # disposición de las ventanas flotantes
+PROFILE_FILE_NAME = "perfil.json"  # último perfil usado en la pantalla dormida
 
 
 class _UserDirs(Protocol):

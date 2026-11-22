@@ -21,7 +21,9 @@ from jarvis_assistant.config import (
     ConfigError,
     InputSettings,
     PageEntry,
+    Profile,
     Settings,
+    SoundSettings,
     UserSettings,
 )
 from jarvis_assistant.core import events
@@ -286,7 +288,7 @@ async def test_un_modulo_que_lanza_una_excepcion_no_rompe_nada(rig):
     assert not rig.task.done()
     rig.events.clear()
     await rig.order("dónde estoy")  # el asistente sigue atendiendo órdenes
-    assert rig.tasks()[-1][2] == "completado"
+    assert rig.spoken() == [said("comandos.pwd", ruta=str(rig.home))]
 
 
 async def test_una_entidad_que_no_se_resuelve_crea_la_tarea_en_error(rig):
@@ -391,14 +393,15 @@ async def test_el_boton_de_silencio_calla_la_respuesta(rig):
     assert rig.of(events.SpeechFinished) == [events.SpeechFinished(interrupted=True)]
     rig.events.clear()
     await rig.order("lista")  # sigue atendiendo
-    assert rig.tasks()[-1][2] == "completado"
+    assert rig.of(events.DirectoryListed)
 
 
 async def test_cancelar_durante_la_respuesta_la_corta(rig):
     await rig.write("dónde estoy")
     await rig.write("cancelar")
     assert rig.of(events.SpeechFinished)[0] == events.SpeechFinished(interrupted=True)
-    assert rig.tasks()[-1][2] == "completado"  # la acción ya había terminado
+    # La acción ya había terminado: se cortó su respuesta.
+    assert rig.spoken()[0] == said("comandos.pwd", ruta=str(rig.home))
     assert rig.spoken()[-1] == PHRASES["general.cancelado"][0]
 
 
@@ -410,7 +413,7 @@ async def test_ayuda_muestra_las_ordenes_del_registro(rig):
     (shown,) = rig.of(events.HelpShown)
     assert [group.module for group in shown.groups] == [
         "sesion", "comandos", "apertura", "busqueda", "creacion", "historial", "recordatorio",
-        "protocolos", "prueba", "nucleo",
+        "protocolos", "catalogo", "prueba", "nucleo",
     ]  # fmt: skip
     assert shown.groups == rig.app.router.help()
     assert rig.of(events.PanelActivated) == [events.PanelActivated("ayuda")]
@@ -454,6 +457,86 @@ async def test_presentate_con_el_nombre_de_la_configuracion(tmp_path, monkeypatc
     await rig.order("presentate")
     await rig.advance(5.0)
     assert rig.spoken() == [said("presentacion", nombre="Jane Doe", modulos=modules(rig))]
+    await rig.stop()
+
+
+PROFILES = (Profile("trabajo", "Trabajo", "Jane Doe"), Profile("casa", "Casa", "John Doe"))
+
+
+async def test_presentate_con_el_nombre_del_perfil_elegido(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, profiles=PROFILES))
+    opened: list[events.SessionOpened] = []
+    rig.app.bus.subscribe(events.SessionOpened, opened.append)
+    await rig.start()
+    rig.app.bus.publish(events.ProfileSelected("casa"))
+    await rig.open_session()
+    await rig.order("presentate")
+    await rig.advance(5.0)
+    assert rig.spoken() == [said("presentacion", nombre="John Doe", modulos=modules(rig))]
+    assert [event.profile_id for event in opened] == ["casa"]
+    await rig.stop()
+
+
+async def test_un_perfil_elegido_que_ya_no_existe_abre_con_el_primero(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, profiles=PROFILES))
+    opened: list[events.SessionOpened] = []
+    rig.app.bus.subscribe(events.SessionOpened, opened.append)
+    await rig.start()
+    rig.app.bus.publish(events.ProfileSelected("borrado"))
+    await rig.open_session()
+    assert [event.profile_id for event in opened] == ["trabajo"]
+    await rig.stop()
+
+
+async def test_sin_sonido_las_frases_se_publican_pero_no_suenan(tmp_path, monkeypatch):
+    settings = Settings(sound=SoundSettings(enabled=False))
+    rig = Rig(tmp_path, monkeypatch, dataclasses.replace(CONFIG, settings=settings))
+    await rig.start()
+    await rig.open_session()
+    await rig.order("dónde estoy")
+    assert rig.spoken() == [said("comandos.pwd", ruta=str(rig.home))]
+    assert len(rig.of(events.SpeechFinished)) == 1
+    assert rig.player.played == []
+    assert rig.state is AssistantState.LISTENING_COMMAND
+    await rig.stop()
+
+
+async def test_al_arrancar_se_publica_la_configuracion_aplicada(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch)
+    applied: list[events.ConfigApplied] = []
+    rig.app.bus.subscribe(events.ConfigApplied, applied.append)
+    await rig.start()
+    assert [event.config.catalog for event in applied] == [CONFIG.catalog]
+    await rig.stop()
+
+
+async def test_guardar_con_la_sesion_cerrada_recarga_sin_avisos(tmp_path, monkeypatch):
+    saved = dataclasses.replace(CONFIG, profiles=PROFILES)
+    rig = Rig(tmp_path, monkeypatch, reload=lambda _previous: (saved, []))
+    applied: list[events.ConfigApplied] = []
+    rig.app.bus.subscribe(events.ConfigApplied, applied.append)
+    await rig.start()
+    rig.app.bus.publish(events.ConfigSaved())
+    await settle()
+    assert applied[-1].config.profiles == PROFILES
+    assert rig.of(events.ConfigReloadFailed) == []
+    await rig.stop()
+
+
+async def test_guardar_con_la_sesion_abierta_espera_a_la_siguiente(tmp_path, monkeypatch):
+    calls: list[Config] = []
+
+    def reload(previous):
+        calls.append(previous)
+        return previous, []
+
+    rig = Rig(tmp_path, monkeypatch, reload=reload)
+    await rig.start()
+    await rig.open_session()
+    opened = len(calls)
+    rig.app.bus.publish(events.ConfigSaved())
+    await settle()
+    assert len(calls) == opened
     await rig.stop()
 
 
@@ -553,7 +636,7 @@ async def test_cu02_arbol_del_directorio_de_trabajo(rig):
     assert rig.spoken() == [said(
         "comandos.arbol", carpeta=rig.home.name, carpetas="3 carpetas", archivos="1 archivo"
     )]
-    assert rig.tasks()[-1] == ("comandos", f"árbol de {rig.home}", "completado")
+    assert rig.tasks() == []  # una consulta: no queda como actividad
     assert rig.of(events.PanelActivated) == [events.PanelActivated("comandos")]
 
 
@@ -561,7 +644,7 @@ async def test_cu02_a2_ruta_invalida(rig):
     await rig.order("árbol de fotos")
     assert rig.of(events.DirectoryTreeBuilt) == []
     assert rig.spoken() == [said("ruta.no_existe", nombre="fotos")]
-    assert rig.tasks()[-1][2] == "error"
+    assert rig.tasks() == []
 
 
 async def test_cd_cambia_el_directorio_para_las_ordenes_siguientes(rig):
@@ -593,7 +676,7 @@ async def test_cu06_flujo_principal(rig):
     await rig.advance(1.0)
     # Paso 3: sigue atendiendo órdenes mientras el programa se ejecuta (RNF-07).
     await rig.order("dónde estoy")
-    assert rig.tasks()[-1] == ("comandos", "dónde estoy", "completado")
+    assert rig.spoken()[-1] == said("comandos.pwd", ruta=str(rig.home))
     process = rig.processes[0]
     process.stdout.feed(b"On branch main\n")
     await rig.advance(0.25)
@@ -780,6 +863,7 @@ async def test_cu08_a3_busqueda_limitada(rig):
 
 
 async def test_el_historial_muestra_la_sesion_actual_y_sus_actividades(rig):
+    await rig.order("ve a proyectos")
     await rig.order("dónde estoy")
     await rig.order("muestra el historial")
     (session,) = rig.sessions.find_open()
@@ -788,8 +872,9 @@ async def test_el_historial_muestra_la_sesion_actual_y_sus_actividades(rig):
     assert rig.spoken()[-1] == said("historial.mostrado", sesiones="1 sesión")
     await rig.order("qué he hecho")
     (shown,) = rig.of(events.SessionActivitiesShown)
-    assert [(a.module, a.status) for a in shown.activities] == [
-        ("comandos", "completado"), ("historial", "completado"), ("historial", "pendiente"),
+    # Las consultas («dónde estoy», el historial) no quedan como actividad.
+    assert [(a.module, a.description, a.status) for a in shown.activities] == [
+        ("comandos", f"cd {rig.home / 'Proyectos'}", "completado"),
     ]  # fmt: skip
 
 
@@ -808,11 +893,11 @@ async def test_la_configuracion_se_relee_al_abrir_cada_sesion(tmp_path, monkeypa
     await rig.start()
     await rig.open_session()
     await rig.order("enseña")
-    assert rig.tasks() == []
+    assert rig.of(events.DirectoryListed) == []
     await rig.order("buenas noches jarvis")
     await rig.open_session()
     await rig.order("enseña")  # el alias nuevo ya vale
-    assert rig.tasks()[-1] == ("comandos", f"ls {rig.home}", "completado")
+    assert rig.of(events.DirectoryListed)[-1].path == str(rig.home)
     assert len(loads) == 2
     await rig.stop()
 

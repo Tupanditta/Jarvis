@@ -16,6 +16,8 @@ dependencies = [
     "rapidfuzz>=3.6",
     "APScheduler>=3.10,<4",
     "psutil>=5.9",
+    "tomlkit>=0.12",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -42,7 +44,8 @@ jarvis_assistant = [
     "ui/qml/*/*.js",
     "ui/assets/fonts/*",
     "ui/assets/icons/*",
-    "ui/assets/sounds/*",
+    "configurator/qml/*.qml",
+    "configurator/qml/*/*.qml",
 ]
 
 [tool.pytest.ini_options]

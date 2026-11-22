@@ -44,9 +44,9 @@ Solo puede haber un proceso del asistente por usuario. Una segunda instancia sal
 |---|---|
 | Icono | Cambia con la actividad: dormido, reposo, escuchando, procesando, hablando o esperando. |
 | Texto emergente | «Jarvis: {estado}» y el nombre de la sesión, si hay. |
-| Menú: Abrir sesión | Visible en dormido. Publica `OpenSessionRequested`. Equivale a escribir «Hey Jarvis» y muestra la ventana. |
+| Menú: Abrir sesión | Visible en dormido, salvo con la ventana de configuración abierta ([configurador.md](configurador.md)). Publica `OpenSessionRequested`. Equivale a escribir «Hey Jarvis» y muestra la ventana. |
 | Menú: Mostrar pantalla | Siempre visible. Publica `ShowScreenRequested`: la ventana pasa al frente con el foco en la caja. |
-| Menú: Abrir configuración | Abre la carpeta de configuración en el gestor de archivos. |
+| Menú: Abrir carpeta de configuración | Abre la carpeta de configuración en el gestor de archivos. |
 | Menú: Abrir registro | Abre la carpeta del registro. |
 | Menú: Salir | Publica `QuitRequested`. |
 

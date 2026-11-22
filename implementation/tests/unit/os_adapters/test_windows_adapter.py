@@ -157,6 +157,20 @@ async def test_abre_windows_terminal_o_cmd_en_el_directorio(make, recorder, tmp_
     assert recorder.popen_calls[1] == (["C:/apps/wt.exe", "-d", str(tmp_path)], {})
 
 
+async def test_abre_ubuntu_en_el_directorio_si_hay_wsl(make, recorder, tmp_path):
+    recorder.tools["wsl.exe"] = "C:/Windows/wsl.exe"
+    await make().open_terminal(tmp_path)
+    assert recorder.popen_calls[0] == (
+        ["C:/Windows/wsl.exe", "--cd", str(tmp_path)],
+        {"cwd": str(tmp_path), "creationflags": windows.CREATE_NEW_CONSOLE},
+    )
+    recorder.tools["wt.exe"] = "C:/apps/wt.exe"
+    await make().open_terminal(tmp_path)
+    assert recorder.popen_calls[1] == (
+        ["C:/apps/wt.exe", "-d", str(tmp_path), "C:/Windows/wsl.exe", "--cd", str(tmp_path)], {}
+    )
+
+
 async def test_abre_un_archivo_con_su_aplicacion_predeterminada(make, recorder, tmp_path):
     await make().open_with_default(tmp_path / "informe.pdf")
     assert recorder.started == [str(tmp_path / "informe.pdf")]

@@ -12,6 +12,8 @@ from jarvis_assistant.core import events
 from jarvis_assistant.core.event_bus import EventBus
 
 UI_EVENTS: tuple[type[events.Event], ...] = (
+    events.ConfigApplied,
+    events.ProfileSelected,
     events.SessionOpened,
     events.SessionChanged,
     events.ListeningResumed,
@@ -29,14 +31,28 @@ UI_EVENTS: tuple[type[events.Event], ...] = (
     events.DialogueClosed,
     events.PanelActivated,
     events.WindowAsideRequested,
+    # Perfiles protegidos
+    events.ProtectedProfilesChanged,
+    events.AccessChallenged,
+    events.AccessDenied,
+    events.AccessClosed,
+    events.IntrusionAlertsShown,
+    # Permisos y Acedor
+    events.PermissionsApplied,
+    events.PermissionsShown,
+    events.CredentialsShown,
+    events.ProfilesListed,
     # Contenido de los paneles
     events.WorkdirChanged,
     events.DirectoryListed,
     events.DirectoryTreeBuilt,
     events.CommandOutputAppended,
     events.CommandPanelCleared,
+    events.ConsoleOpened,
+    events.ConsoleClosed,
     events.OpenedItemsChanged,
     events.LaunchTargetsChanged,
+    events.CatalogShown,
     events.SearchResultsReady,
     events.RemindersChanged,
     events.ProtocolStarted,

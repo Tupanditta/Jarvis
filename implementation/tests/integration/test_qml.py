@@ -11,8 +11,9 @@ from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
-from jarvis_assistant.config import UiSettings
+from jarvis_assistant.config import Config, Profile, UiSettings
 from jarvis_assistant.core import events
+from jarvis_assistant.core.content import CatalogItem
 from jarvis_assistant.core.events import Activity
 from jarvis_assistant.ui.app import FONTS_DIR, QML_DIR, UiApp, load_fonts
 from jarvis_assistant.ui.preview import PreviewDriver, panel_tour, script
@@ -84,11 +85,13 @@ def test_cada_archivo_qml_compila_sin_errores(qapp, path: Path):
 def test_las_fuentes_incluidas_se_registran(qapp):
     assert sorted(path.name for path in FONTS_DIR.glob("*.ttf")) == [
         "Inter-Medium.ttf", "Inter-Regular.ttf", "JetBrainsMono-Regular.ttf",
-        "Rajdhani-SemiBold.ttf",
+        "Orbitron-Variable.ttf", "Rajdhani-SemiBold.ttf",
     ]  # fmt: skip
-    assert {"Inter", "JetBrains Mono", "Rajdhani"} <= set(load_fonts())
+    assert {"Inter", "JetBrains Mono", "Orbitron", "Rajdhani"} <= set(load_fonts())
 
 
+# El plazo de la prueba cubre la espera del recorrido (60 s), mayor que el general (30 s).
+@pytest.mark.timeout(90)
 @pytest.mark.parametrize("quality", ["high", "medium", "low"])
 @pytest.mark.parametrize("reduce_motion", [False, True])
 def test_la_vista_previa_completa_recorre_todo_sin_avisos_de_qml(
@@ -366,6 +369,8 @@ def test_una_ventana_se_cierra_con_su_boton_y_vuelve_desde_el_selector(desk, qtb
 
 
 TAB = (184, 40)  # una ventana apartada: solo su cabecera
+# Pestaña de arriba a la izquierda: en 800 px no cabe junto al selector y baja una fila.
+CORNER = (8, 56)
 
 
 def test_triple_clic_en_la_cabecera_aparta_la_ventana_y_un_clic_la_recupera(desk, qtbot):
@@ -378,7 +383,7 @@ def test_triple_clic_en_la_cabecera_aparta_la_ventana_y_un_clic_la_recupera(desk
     assert ui.workspace.placement("actividad").aside
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
     # Arriba a la izquierda: se aparta a esa esquina.
-    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     drag(ui, scene(window, TAB[0] - 3, TAB[1] - 3), 200, 200)  # apartada no cambia de tamaño
     assert (window.width(), window.height()) == TAB
     click(ui, window, 60, 20)
@@ -426,6 +431,7 @@ def test_aparta_por_orden_escrita(desk, qtbot):
     ui.on_event(events.WindowAsideRequested("Actividad"))
     window = floating(ui, "actividad")
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     click(ui, window, TAB[0] - 18, 20)  # su botón la cierra del todo
     qtbot.waitUntil(lambda: not window.isVisible(), timeout=2000)
     assert not ui.workspace.placement("actividad").open
@@ -443,7 +449,7 @@ def test_con_animaciones_la_ventana_viaja_hasta_su_pestana_y_vuelve(make_ui, qtb
     qtbot.wait(100)
     assert TAB[0] < window.width() < size[0]  # a medio camino
     qtbot.waitUntil(lambda: (window.width(), window.height()) == TAB, timeout=2000)
-    qtbot.waitUntil(lambda: (window.x(), window.y()) == (8, 8), timeout=2000)
+    qtbot.waitUntil(lambda: (window.x(), window.y()) == CORNER, timeout=2000)
     assert window.rotation() == 0
     ui.workspace.restore("actividad")
     qtbot.waitUntil(lambda: (window.width(), window.height()) == size, timeout=2000)
@@ -517,22 +523,61 @@ def test_todas_las_ventanas_abiertas_con_contenido_no_dan_avisos_de_qml(desk, qt
     for step in panel_tour():
         ui.on_event(step.event)
     qtbot.wait(300)
-    assert all(floating(ui, spec.id).isVisible() for spec in WINDOWS)
+    assert all(floating(ui, spec.id).isVisible() for spec in WINDOWS if not spec.admin)
+    # Las del Acedor no se abren fuera de su sesión.
+    assert not any(floating(ui, spec.id).isVisible() for spec in WINDOWS if spec.admin)
     ui.workspace.reset()
     qtbot.wait(300)
     assert floating(ui, "actividad").isVisible() and not floating(ui, "ayuda").isVisible()
     assert ui.warnings == []
 
 
-def test_la_disposicion_de_las_ventanas_se_guarda_al_salir(make_ui, qtbot, tmp_path):
-    path = tmp_path / "ventanas.json"
-    ui, _ = make_ui(layout_path=path)
+def test_el_perfil_elegido_se_ve_en_dormido_y_se_cambia_con_las_flechas(make_ui, qtbot):
+    ui, published = make_ui()
     ui.start()
-    ui.workspace.show("comandos")
-    ui.shutdown()
-    assert path.is_file()
-    other, _ = make_ui(layout_path=path)
-    assert other.workspace.placement("comandos").open
+    config = Config(profiles=(Profile("a", "Trabajo"), Profile("b", "Casa")))
+    ui.on_event(events.ConfigApplied(config))
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    qtbot.waitUntil(lambda: picker.property("opacity") == 1, timeout=2000)
+    box = input_of(ui.screen)
+    qtbot.waitUntil(lambda: box.hasActiveFocus(), timeout=2000)
+    assert visual(ui, "profile-0").property("selected")
+    QTest.keyClick(ui.screen, Qt.Key.Key_Right)
+    selected = [e.profile_id for e in published if isinstance(e, events.ProfileSelected)]
+    assert selected == ["a", "b"]
+    assert visual(ui, "profile-1").property("selected")
+    assert not visual(ui, "profile-0").property("selected")
+    assert ui.warnings == []
+
+
+def test_al_cerrar_sesion_los_perfiles_esperan_al_final_de_la_animacion(make_ui, qtbot):
+    ui, _ = make_ui(open_settings=lambda: None)
+    ui.start()
+    config = Config(profiles=(Profile("a", "Trabajo"), Profile("b", "Casa")))
+    ui.on_event(events.ConfigApplied(config))
+    ui.on_event(events.SessionOpened(1, "Trabajo", "a"))
+    ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.ESCUCHANDO))
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    ui.on_event(events.SessionClosed())
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    orb = ui.screen.findChild(QObject, "orb")
+    assert orb.property("inTransition")
+    assert not picker.property("shown")
+    assert not visual(ui, "settingsButton").isVisible()
+    qtbot.waitUntil(lambda: picker.property("opacity") == 1, timeout=5000)
+    assert not orb.property("inTransition")
+    assert visual(ui, "settingsButton").isVisible()
+    assert ui.warnings == []
+
+
+def test_con_un_solo_perfil_no_hay_selector(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.ConfigApplied(Config()))
+    picker = ui.screen.findChild(QObject, "profilePicker")
+    qtbot.wait(300)
+    assert picker.property("opacity") == 0
 
 
 # --- Caja de texto (entrada-texto.md, criterios de aceptación) --------------------------------
@@ -590,18 +635,40 @@ def test_el_texto_de_ayuda_sigue_al_estado(make_ui, qtbot):
         assert placeholder in texts
 
 
-def test_dormido_el_codigo_de_activacion_se_oculta_como_una_contrasena(make_ui, qtbot):
+def test_dormido_se_ve_lo_que_se_escribe(make_ui, qtbot):
     ui, _ = make_ui()
     ui.start()
     box = input_of(ui.screen)
     ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
     box.setProperty("text", "hy jarvs")
-    assert box.property("text") == "hy jarvs"
-    assert box.property("displayText") == "********"
+    assert box.property("displayText") == "hy jarvs"
+
+
+def test_la_configuracion_se_abre_desde_la_pantalla_dormida_y_bloquea_el_inicio(make_ui, qtbot):
+    opened = []
+    ui, _ = make_ui(open_settings=lambda: opened.append(True))
+    ui.start()
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    button = visual(ui, "settingsButton")
+    qtbot.waitUntil(button.isVisible, timeout=2000)
+    center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2)).toPoint()
+    QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
+    assert opened == [True]
+    ui.set_configuring(True)
+    assert not input_of(ui.screen).isEnabled()
+    ui.set_configuring(False)
+    assert input_of(ui.screen).isEnabled()
     ui.on_event(events.AssistantActivityChanged("LISTENING_COMMAND", Activity.ESCUCHANDO))
-    assert box.property("displayText") == "hy jarvs"
-    ui.on_event(events.AssistantActivityChanged("IDLE", Activity.REPOSO))
-    assert box.property("displayText") == "hy jarvs"
+    qtbot.waitUntil(lambda: not button.isVisible(), timeout=2000)
+    assert ui.warnings == []
+
+
+def test_sin_ventana_de_configuracion_no_hay_boton(make_ui, qtbot):
+    ui, _ = make_ui()
+    ui.start()
+    ui.on_event(events.AssistantActivityChanged("DORMIDO", Activity.DORMIDO))
+    qtbot.wait(100)
+    assert not visual(ui, "settingsButton").isVisible()
 
 
 def test_la_vista_previa_tiene_todos_los_estados():
@@ -655,4 +722,290 @@ def test_la_tarjeta_de_dialogo_muestra_la_pregunta_y_se_retira_al_cerrarla(make_
     assert 0 < cards[0].property("remaining") < 1  # la barra se vacía con el tiempo
     ui.on_event(events.DialogueClosed("answered"))
     qtbot.waitUntil(lambda: not any(card.property("visible") for card in cards), timeout=3000)
+    assert ui.warnings == []
+
+
+# --- Perfiles protegidos -----------------------------------------------------------------------
+
+
+def find_item(ui, name: str) -> QQuickItem:
+    item = ui.screen.findChild(QObject, name)
+    assert item is not None, name
+    return item
+
+
+def test_la_caja_de_la_contrasena_no_muestra_lo_que_se_escribe_y_lo_envia(make_ui, qtbot):
+    ui, published = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    ui.on_event(events.AccessChallenged("secreto", "Confidencial"))
+    gate = find_item(ui, "accessGate")
+    field = find_item(ui, "accessInput")
+    qtbot.waitUntil(lambda: gate.isVisible() and field.hasActiveFocus(), timeout=3000)
+    assert not input_of(ui.screen).isEnabled()
+    type_text(ui.screen, "abcd")
+    assert field.property("displayText") == ""
+    QTest.keyClick(ui.screen, Qt.Key.Key_Return)
+    assert published[-1] == events.AccessAttempted("abcd")
+    assert field.property("text") == ""
+    ui.on_event(events.AccessDenied())
+    qtbot.waitUntil(
+        lambda: find_item(ui, "accessMessage").property("text") != "", timeout=2000
+    )
+    QTest.keyClick(ui.screen, Qt.Key.Key_Escape)
+    assert published[-1] == events.AccessCancelled()
+    ui.on_event(events.AccessClosed())
+    qtbot.waitUntil(lambda: not gate.isVisible(), timeout=3000)
+    assert input_of(ui.screen).isEnabled()
+    assert ui.warnings == []
+
+
+def test_la_tarjeta_de_intrusion_se_confirma_con_entendido(make_ui, qtbot):
+    from datetime import UTC, datetime
+
+    from jarvis_assistant.core.content import IntrusionItem
+
+    ui, published = make_ui(settings=UiSettings(reduce_motion=True))
+    ui.start()
+    ui.on_event(events.SessionOpened(1, "2026-11-17", "secreto"))
+    alert = IntrusionItem(3, datetime(2026, 11, 17, 10, 0, tzinfo=UTC), 3, "inicio")
+    ui.on_event(events.IntrusionAlertsShown("secreto", (alert,)))
+    card = find_item(ui, "intrusionCard")
+    qtbot.waitUntil(card.isVisible, timeout=3000)
+    button = find_item(ui, "intrusionAcknowledge")
+    centre = button.mapToScene(QPointF(button.width() / 2, button.height() / 2)).toPoint()
+    QTest.mouseClick(ui.screen, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+    qtbot.waitUntil(lambda: not card.isVisible(), timeout=3000)
+    assert published[-1] == events.IntrusionAcknowledged((3,))
+    assert ui.warnings == []
+
+
+def test_el_medidor_de_recursos_esta_en_una_esquina_inferior_y_mide_mientras_se_ve(desk, qtbot):
+    ui, _ = desk
+    meter = visual(ui, "resourceMeter")
+    qtbot.waitUntil(lambda: ui.resources.watching, timeout=2000)
+    corner = meter.mapToScene(QPointF(0, 0))
+    assert corner.x() + meter.width() > ui.screen.width() / 2  # abajo a la derecha
+    assert corner.y() + meter.height() > ui.screen.height() * 0.8
+    assert visual(ui, "usage-ram").property("value") > 0
+    assert "WindowSpec" not in str(ui.workspace.component("recursos"))  # no es una ventana
+    assert ui.workspace.component("recursos") == ""
+    button = visual(ui, "dock-recursos")
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: not meter.isVisible(), timeout=2000)
+    assert not ui.resources.watching
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: meter.isVisible() and ui.resources.watching, timeout=2000)
+    assert ui.warnings == []
+
+
+def test_un_triple_clic_pasa_el_medidor_a_la_otra_esquina_y_las_pestanas_lo_rodean(desk, qtbot):
+    ui, _ = desk
+    meter = visual(ui, "resourceMeter")
+    size = (meter.width(), meter.height())
+    for _ in range(3):
+        click(ui, meter, meter.width() / 2, meter.height() / 2)
+    assert ui.resources.corner == "left" and ui.noise.corner == "right"  # el de ruido, enfrente
+    qtbot.waitUntil(lambda: meter.mapToScene(QPointF(0, 0)).x() < ui.screen.width() / 2,
+                    timeout=2000)
+    assert (meter.width(), meter.height()) == size  # no cambia de tamaño
+    # Abajo a la izquierda: su pestaña queda a la derecha del medidor, sin taparlo.
+    ui.workspace.show("busqueda")
+    ui.workspace.set_aside("busqueda")
+    tab = floating(ui, "busqueda")
+    qtbot.waitUntil(lambda: (tab.width(), tab.height()) == TAB, timeout=2000)
+    right = meter.mapToScene(QPointF(meter.width(), 0)).x()
+    qtbot.waitUntil(lambda: tab.mapToScene(QPointF(0, 0)).x() > right, timeout=2000)
+    assert ui.warnings == []
+
+
+@pytest.fixture
+def microphone(monkeypatch):
+    """Micrófono falso para el medidor de ruido: guarda los flujos abiertos."""
+    import numpy as np
+
+    from jarvis_assistant.ui import noise
+
+    class Stream:
+        def __init__(self, on_block) -> None:
+            self.on_block = on_block
+            self.closed = False
+
+        def stop(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+        def feed(self, amplitude: float) -> None:
+            self.on_block(np.full(480, amplitude, dtype=np.float32))
+
+    streams: list[Stream] = []
+
+    def open_input(on_block) -> Stream:
+        streams.append(Stream(on_block))
+        return streams[-1]
+
+    monkeypatch.setattr(noise, "open_input", open_input)
+    return streams
+
+
+def left_of(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, 0)).x()
+
+
+def test_el_medidor_de_ruido_va_en_la_esquina_opuesta_al_de_recursos_y_mide_mientras_se_ve(
+    desk, qtbot, microphone
+):
+    ui, _ = desk
+    resources = visual(ui, "resourceMeter")
+    meter = visual(ui, "noiseMeter")
+    assert not meter.isVisible() and microphone == []  # empieza oculto, sin micrófono
+    button = visual(ui, "dock-ruido")
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: meter.isVisible() and ui.noise.watching, timeout=2000)
+    assert len(microphone) == 1
+    # Los tres círculos no caben en una esquina: abajo a la izquierda, a la misma altura.
+    assert ui.noise.corner == "left" and ui.resources.corner == "right"
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
+    assert left_of(meter) + meter.width() < left_of(resources)
+    bottom = meter.mapToScene(QPointF(0, meter.height())).y()
+    assert bottom == pytest.approx(resources.mapToScene(QPointF(0, resources.height())).y())
+    microphone[0].feed(0.01)
+    qtbot.waitUntil(lambda: visual(ui, "noise-db").property("value") > 0, timeout=2000)
+    click(ui, button, 20, 18)
+    qtbot.waitUntil(lambda: not meter.isVisible(), timeout=2000)
+    assert not ui.noise.watching and microphone[0].closed
+    assert ui.warnings == []
+
+
+def test_el_triple_clic_del_de_ruido_cambia_de_esquina_los_dos_aunque_uno_este_oculto(
+    desk, qtbot, microphone
+):
+    ui, _ = desk
+    resources = visual(ui, "resourceMeter")
+    meter = visual(ui, "noiseMeter")
+    ui.resources.toggle()  # oculta el de recursos
+    ui.noise.toggle()
+    qtbot.waitUntil(lambda: meter.isVisible() and not resources.isVisible(), timeout=2000)
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)  # en su esquina, la izquierda
+    for _ in range(3):
+        click(ui, meter, meter.width() / 2, meter.height() / 2)
+    assert ui.noise.corner == "right" and ui.resources.corner == "left"
+    qtbot.waitUntil(lambda: ui.screen.width() - left_of(meter) - meter.width() < 60,
+                    timeout=2000)  # en la esquina derecha
+    # El de recursos aparece ya en la otra esquina, la izquierda.
+    ui.resources.toggle()
+    qtbot.waitUntil(resources.isVisible, timeout=2000)
+    qtbot.waitUntil(lambda: left_of(resources) < 60, timeout=2000)
+    assert left_of(meter) > ui.screen.width() / 2
+    # Y vuelta: el triple clic del de recursos los cambia otra vez a los dos.
+    for _ in range(3):
+        click(ui, resources, resources.width() / 2, resources.height() / 2)
+    assert ui.resources.corner == "right" and ui.noise.corner == "left"
+    qtbot.waitUntil(lambda: left_of(meter) < 60, timeout=2000)
+    # Abajo a la izquierda: su pestaña queda a la derecha del medidor de ruido.
+    ui.workspace.show("busqueda")
+    ui.workspace.set_aside("busqueda")
+    tab = floating(ui, "busqueda")
+    qtbot.waitUntil(lambda: (tab.width(), tab.height()) == TAB, timeout=2000)
+    edge = meter.mapToScene(QPointF(meter.width(), 0)).x()
+    qtbot.waitUntil(lambda: left_of(tab) > edge, timeout=2000)
+    assert ui.warnings == []
+
+
+def test_las_ventanas_del_acedor_muestran_su_contenido_sin_avisos(desk, qtbot):
+    from jarvis_assistant.core.content import CredentialItem, NamedItem
+
+    ui, published = desk
+    normal = frozenset(spec.id for spec in WINDOWS if not spec.admin) - {"actividad", "ayuda"}
+    ui.on_event(events.PermissionsApplied(normal))
+    casa = NamedItem("casa", "Casa")
+    ui.on_event(events.PermissionsShown(
+        (casa,), (NamedItem("comandos", "Comandos"),), frozenset({("casa", "comandos")})
+    ))  # fmt: skip
+    ui.on_event(events.CredentialsShown((CredentialItem("trabajo", "Trabajo", "abcd"),)))
+    ui.on_event(events.ProfilesListed((casa, NamedItem("trabajo", "Trabajo"))))
+    for window_id in ("permisos", "credenciales", "perfiles"):
+        assert shown(ui, qtbot, window_id).isVisible()
+    assert not floating(ui, "comandos").isVisible()
+    secret = visual(ui, "credential-trabajo")
+    assert secret.property("text") != "abcd"
+    eye = visual(ui, "reveal-trabajo")
+    click(ui, eye, eye.width() / 2, eye.height() / 2)
+    qtbot.waitUntil(lambda: secret.property("text") == "abcd", timeout=2000)
+    switch = visual(ui, "permission-casa-comandos")
+    click(ui, switch, switch.width() / 2, switch.height() / 2)
+    assert published[-1] == events.PermissionChangeRequested("casa", "comandos", True)
+    assert ui.warnings == []
+
+
+def panel_of(window: QQuickItem) -> QQuickItem:
+    """El panel cargado en la ventana flotante."""
+    pending = [window]
+    while pending:
+        item = pending.pop()
+        if item.property("embedded") is True:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError("La ventana no tiene panel")
+
+
+def test_cada_ventana_de_comandos_muestra_su_consola_y_la_copia_se_cierra_del_todo(desk, qtbot):
+    ui, published = desk
+    home, algebra = str(Path.home()), str(Path.home() / "Algebra")
+    ui.on_event(events.WorkdirChanged(home))
+    ui.on_event(events.PanelActivated("comandos"))
+    ui.on_event(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    ui.on_event(events.WorkdirChanged(algebra, "comandos:protocolo-a"))
+    main, copy = floating(ui, "comandos"), floating(ui, "comandos:protocolo-a")
+    qtbot.waitUntil(lambda: main.isVisible() and copy.isVisible(), timeout=2000)
+    qtbot.waitUntil(lambda: panel_of(copy).property("windowId") == "comandos:protocolo-a",
+                    timeout=2000)  # fmt: skip
+    qtbot.waitUntil(lambda: panel_of(main).property("windowId") == "comandos", timeout=2000)
+    assert copy.property("title") == "Comandos · a" and copy.property("focused")
+    assert panel_of(copy).property("commands").property("path") == algebra
+    assert panel_of(main).property("commands").property("path") == home
+    click(ui, copy, copy.width() - 18, 20)  # ✕
+    qtbot.waitUntil(lambda: "comandos:protocolo-a" not in
+                    [spec.id for spec in ui.workspace.specs], timeout=2000)  # fmt: skip
+    assert events.ConsoleClosed("comandos:protocolo-a") in published
+    assert ui.warnings == []
+
+
+def test_la_ventana_del_catalogo_anade_con_su_formulario_y_elimina_con_su_boton(desk, qtbot):
+    ui, published = desk
+    ui.on_event(events.CatalogShown((
+        CatalogItem("pagina:GitHub", "pagina", "GitHub", "https://github.com"),
+    )))  # fmt: skip
+    shown(ui, qtbot, "catalogo")
+    published.clear()
+
+    def press(name: str) -> None:
+        item = visual(ui, name)
+        click(ui, item, item.width() / 2, item.height() / 2)
+        qtbot.wait(50)
+
+    press("catalogRemove-pagina:GitHub")
+    press("catalogAdd")
+    assert visual(ui, "catalogForm").isVisible()
+    press("formKind-pagina")
+    press("catalogName")
+    type_text(ui.screen, "Docs")
+    press("catalogTarget")
+    type_text(ui.screen, "https://example.com")
+    press("catalogSubmit")
+    requests = [e for e in published if isinstance(e, events.ActionRequested)]
+    assert [(e.module, e.action, dict(e.params)) for e in requests] == [
+        ("catalogo", "eliminar", {"entrada": "pagina:GitHub"}),
+        ("catalogo", "añadir", {"tipo": "pagina", "nombre": "Docs",
+                                "destino": "https://example.com", "alias": ""}),
+    ]  # fmt: skip
+    assert input_of(ui.screen).property("text") == ""  # no ha ido a la caja de órdenes
+    # El módulo responde con la lista nueva: el formulario se cierra.
+    ui.on_event(events.CatalogShown((
+        CatalogItem("pagina:GitHub", "pagina", "GitHub", "https://github.com"),
+        CatalogItem("pagina:Docs", "pagina", "Docs", "https://example.com"),
+    )))  # fmt: skip
+    qtbot.wait(50)
+    assert not visual(ui, "catalogForm").isVisible()
     assert ui.warnings == []

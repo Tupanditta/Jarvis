@@ -14,9 +14,20 @@ Rectangle {
     property alias text: input.text
     readonly property bool inputFocus: input.activeFocus
     signal pressed()
+    // ←/→ con la caja vacía en dormido: cambia de perfil (`ProfilePicker`).
+    signal browse(int delta)
 
     function focusInput() {
         input.forceActiveFocus()
+    }
+
+    function arrow(event, delta) {
+        if (box.asleep && input.text.length === 0) {
+            box.browse(delta)
+            event.accepted = true
+        } else {
+            event.accepted = false
+        }
     }
 
     readonly property bool asleep: assistant.activity === "dormido"
@@ -25,6 +36,7 @@ Rectangle {
 
     implicitHeight: Theme.inputHeight
     radius: height / 2
+    opacity: enabled ? 1 : 0.45
     color: Theme.bgPanel
     border.width: 1
     border.color: input.activeFocus ? Theme.lineStrong : Theme.lineSoft
@@ -92,14 +104,13 @@ Rectangle {
         font.pixelSize: Theme.sizeText
         clip: true
         selectByMouse: true
-        // Dormido, lo escrito es el código de activación: se oculta como una contraseña.
-        echoMode: box.asleep ? TextInput.Password : TextInput.Normal
-        passwordCharacter: "*"
 
         onAccepted: {
             assistant.submit(text)
             clear()
         }
+        Keys.onLeftPressed: (event) => box.arrow(event, -1)
+        Keys.onRightPressed: (event) => box.arrow(event, 1)
         // Solo las ediciones del usuario: cambiar el texto por código no cuenta como teclear.
         onTextEdited: assistant.typing()
     }

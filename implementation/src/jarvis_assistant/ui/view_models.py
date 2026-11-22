@@ -6,7 +6,7 @@ publican las acciones del usuario; no interpretan el texto ni contienen reglas d
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from PySide6.QtCore import (
     Property,
@@ -36,7 +36,7 @@ ACTIVITY_LABELS = {
     Activity.ESPERANDO: "Esperando",
 }
 
-PLACEHOLDER_ASLEEP = "Escriba el código de activación para iniciar la sesión"
+PLACEHOLDER_ASLEEP = "Inicie sesión con «Hey Jarvis»"
 PLACEHOLDER_RESTING = "En reposo. Escriba una orden"
 PLACEHOLDER_ATTENDING = "Escriba una orden"
 _PLACEHOLDERS = {"DORMIDO": PLACEHOLDER_ASLEEP, "IDLE": PLACEHOLDER_RESTING}
@@ -345,6 +345,97 @@ class TaskListModel(QAbstractListModel):
         return self._queue
 
 
+class AccessModel(QObject):
+    """Perfiles protegidos: la caja de la contraseña y la tarjeta crítica de intrusión.
+
+    La contraseña solo pasa por aquí de camino al núcleo (`AccessAttempted`): no se guarda ni
+    se registra. La tarjeta muestra los avisos hasta que el usuario pulsa «Entendido»."""
+
+    gateChanged = Signal()
+    denied = Signal()  # clave incorrecta: la caja se sacude
+    alertsChanged = Signal()
+
+    ORIGINS: ClassVar[dict[str, str]] = {
+        "inicio": "Inicio de sesión", "configuracion": "Configuración",
+    }  # fmt: skip
+
+    def __init__(self, publish: Publish = lambda _event: None, parent: QObject | None = None):
+        super().__init__(parent)
+        self._publish = publish
+        self._gate_open = False
+        self._profile_name = ""
+        self._alerts: list[dict[str, Any]] = []
+        self._alert_ids: tuple[int, ...] = ()
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.AccessChallenged):
+            self._profile_name = event.profile_name
+            self._set_gate(True)
+        elif isinstance(event, events.AccessDenied):
+            self.denied.emit()
+        elif isinstance(event, events.AccessClosed):
+            self._set_gate(False)
+        elif isinstance(event, events.IntrusionAlertsShown):
+            self._alert_ids = tuple(item.alert_id for item in event.alerts)
+            self._alerts = [
+                {
+                    "date": item.at.astimezone().strftime("%d/%m/%Y"),
+                    "time": item.at.astimezone().strftime("%H:%M:%S"),
+                    "attempts": item.attempts,
+                    "origin": self.ORIGINS.get(item.origin, item.origin),
+                    "profile": item.profile_name,
+                }
+                for item in event.alerts
+            ]
+            self.alertsChanged.emit()
+        elif isinstance(event, events.SessionClosed) and self._alerts:
+            # Sin confirmar: vuelven a aparecer al entrar otra vez.
+            self._alerts, self._alert_ids = [], ()
+            self.alertsChanged.emit()
+
+    def _set_gate(self, gate_open: bool) -> None:
+        if gate_open != self._gate_open:
+            self._gate_open = gate_open
+            self.gateChanged.emit()
+
+    @Slot(str)
+    def unlock(self, password: str) -> None:
+        """Enter en la caja: envía la contraseña. Vacía no cuenta como intento."""
+        if self._gate_open and password:
+            self._publish(events.AccessAttempted(password))
+
+    @Slot()
+    def cancel(self) -> None:
+        """Esc en la caja."""
+        if self._gate_open:
+            self._publish(events.AccessCancelled())
+
+    @Slot()
+    def acknowledge(self) -> None:
+        """«Entendido» en la tarjeta crítica."""
+        if not self._alerts:
+            return
+        self._publish(events.IntrusionAcknowledged(self._alert_ids))
+        self._alerts, self._alert_ids = [], ()
+        self.alertsChanged.emit()
+
+    @Property(bool, notify=gateChanged)
+    def gateOpen(self) -> bool:
+        return self._gate_open
+
+    @Property(str, notify=gateChanged)
+    def profileName(self) -> str:
+        return self._profile_name
+
+    @Property("QVariantList", notify=alertsChanged)
+    def alerts(self) -> list[dict[str, Any]]:
+        return self._alerts
+
+    @Property(bool, notify=alertsChanged)
+    def alertsOpen(self) -> bool:
+        return bool(self._alerts)
+
+
 class DialogueModel(QObject):
     """La pregunta en curso, si la hay."""
 
@@ -469,7 +560,10 @@ class HudModel(QObject):
 
 
 class UiOptions(QObject):
-    """Ajustes de `[ui]` y del modo de diagnóstico; no cambian durante la ejecución."""
+    """Ajustes de `[ui]` y del modo de diagnóstico, que no cambian durante la ejecución, y el
+    sonido (`sound.enabled`), que llega con cada `ConfigApplied`."""
+
+    soundChanged = Signal()
 
     def __init__(
         self, settings: UiSettings, debug: bool = False, parent: QObject | None = None
@@ -477,6 +571,18 @@ class UiOptions(QObject):
         super().__init__(parent)
         self._settings = settings
         self._debug = debug
+        self._sound = True
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.ConfigApplied):
+            sound = event.config.settings.sound.enabled
+            if sound != self._sound:
+                self._sound = sound
+                self.soundChanged.emit()
+
+    @Property(bool, notify=soundChanged)
+    def sound(self) -> bool:
+        return self._sound
 
     @Property(str, constant=True)
     def quality(self) -> str:

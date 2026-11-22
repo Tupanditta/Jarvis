@@ -51,6 +51,14 @@ def under(*folders: str) -> list[Path]:
 # --- Importaciones prohibidas ----------------------------------------------------------------
 
 
+@pytest.mark.parametrize("path", [p for p in FILES if relative(p).split("/")[0] != "configurator"],
+                         ids=relative)
+def test_nadie_importa_la_ventana_de_configuracion_salvo_main(path):
+    if relative(path) in COMPOSITION_ROOT:
+        return
+    assert imports_any(path, "jarvis_assistant.configurator") == []
+
+
 @pytest.mark.parametrize(
     "path", under("core", "action_modules", "intent_router", "speaker"), ids=relative
 )
@@ -128,6 +136,14 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
         "speaker.formats", "speaker.phrases",
     ),
     "os_adapters": ("process.single_instance",),
+    # La ventana de configuración: edita y escribe la configuración y reutiliza los
+    # componentes y modelos de la interfaz para el editor de plantillas. Del núcleo, solo los
+    # tipos de eventos y, para los perfiles protegidos, la base de datos y su contraseña
+    # (`core.security`), con su propia conexión. Nadie depende de ella salvo `main.py`.
+    "configurator": (
+        "config", "core.custody", "core.database", "core.events", "core.security",
+        "ui.app", "ui.meter", "ui.noise", "ui.resources", "ui.view_models", "ui.workspace",
+    ),
     "process": ("core.events",),
     "ui": (
         "config", "core.action_api", "core.content", "core.event_bus", "core.events",
@@ -136,11 +152,14 @@ ALLOWED_DEPENDENCIES: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 
 # El orquestador une el enrutador, la voz y los módulos: es el único del núcleo que conoce el
-# enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`.
+# enrutador y la voz. Los módulos de acción los recibe ya creados de `main.py`. El control de
+# acceso (`core/access.py`) es una parte suya: lo crea el orquestador con su enrutador y su voz.
 HUB_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "core/orchestrator.py": (
-        "intent_router.batch", "intent_router.router", "speaker.phrases", "speaker.speaker",
+        "intent_router.batch", "intent_router.router", "speaker.formats", "speaker.phrases",
+        "speaker.speaker",
     ),
+    "core/access.py": ("intent_router.router", "speaker.formats", "speaker.speaker"),
 }  # fmt: skip
 
 # Raíz de composición: conoce todos los paquetes para construir y conectar el grafo.

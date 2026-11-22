@@ -13,7 +13,7 @@ Guardar las sesiones, sus actividades y los recordatorios entre ejecuciones (RF-
 - **Conexión:** una sola, creada y usada únicamente en el hilo del núcleo. En cada apertura: `PRAGMA journal_mode = WAL`, `PRAGMA foreign_keys = ON`, `PRAGMA synchronous = NORMAL`, `PRAGMA busy_timeout = 2000`.
 - **Transacciones:** cada operación de un repositorio es una transacción (`with conn:`). Las operaciones que cambian varias filas relacionadas (desbordamiento, creación de un recordatorio con sus avisos) van en una sola.
 - **Migraciones:** archivos `NNNN_nombre.sql` en `core/migrations/`, aplicados en orden al arrancar según `PRAGMA user_version`. Cada migración se aplica en una transacción y sube la versión. Nunca se edita una migración ya publicada: se añade otra.
-- **Borrado lógico (RES-34):** el código no contiene ninguna sentencia `DELETE` sobre `sessions`, `session_activities`, `reminders` ni `reminder_triggers`.
+- **Borrado (RES-34):** el único `DELETE` físico es el de `sessions` y `session_activities`, en `SessionRepository.delete` y en la migración `0004` (RN-12). Todo lo demás se borra de forma lógica ([especificacion-base-datos.md](../../BaseDatos/especificacion-base-datos.md), sección 5).
 - **Fechas (RES-35):** se guardan como texto ISO-8601 en UTC con desplazamiento explícito (`2026-11-14T17:32:05+00:00`). `database.py` ofrece `to_db(dt)` y `from_db(text)`; `to_db` rechaza fechas sin zona horaria. La conversión a hora local se hace solo al mostrar o decir.
 - **Copia de seguridad:** al arrancar, si la versión del esquema va a cambiar, se copia antes `jarvis.db` a `jarvis.db.bak`.
 - **Base dañada:** si la base no se puede abrir, se renombra a `jarvis.db.corrupt-<fecha>`, se crea una nueva y se registra el error. El asistente arranca.
@@ -68,12 +68,12 @@ class ReminderRepository:     # usado por Recordatorio
 ## Criterios de aceptación
 
 - Las pruebas usan `:memory:` y aplican las migraciones reales.
-- Una prueba busca la palabra `DELETE` en el código de `src/` y falla si aparece en una sentencia SQL.
+- Una prueba busca la palabra `DELETE` en el código de `src/` y falla si aparece en una sentencia SQL sobre una tabla distinta de `sessions` y `session_activities`.
 - `to_db` con una fecha sin zona horaria lanza `ValueError`.
 - Consultar el historial mientras se registra una actividad no produce errores de bloqueo (RNF-08).
 
 ## Prohibiciones
 
 - No se guardan sesiones, actividades ni recordatorios en archivos de texto plano o JSON.
-- No se usa `DELETE` físico.
-- Ningún hilo distinto del núcleo usa la conexión.
+- No se usa `DELETE` físico fuera de la eliminación de sesiones.
+- Ningún hilo distinto del núcleo usa la conexión del núcleo. La ventana de configuración abre la suya para las contraseñas ([perfiles-protegidos.md](../Accion/perfiles-protegidos.md)).

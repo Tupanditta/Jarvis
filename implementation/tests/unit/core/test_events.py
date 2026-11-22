@@ -50,7 +50,7 @@ def test_campos_de_los_eventos():
     def names(cls):
         return [f.name for f in dataclasses.fields(cls)]
 
-    assert names(SessionOpened) == ["session_id", "name"]
+    assert names(SessionOpened) == ["session_id", "name", "profile_id"]
     assert names(ListeningResumed) == ["silent"]
     assert names(RestEntered) == []
     assert names(SessionClosed) == []

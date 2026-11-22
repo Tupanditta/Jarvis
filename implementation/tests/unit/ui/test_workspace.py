@@ -1,12 +1,20 @@
-"""Ventanas flotantes: registro, disposición y guardado (`ui/workspace.py`)."""
-import json
+"""Ventanas flotantes: registro, disposición y plantillas (`ui/workspace.py`)."""
 
 import pytest
 
+from jarvis_assistant.config import (
+    FACTORY_LAYOUT,
+    BarPosition,
+    Config,
+    Profile,
+    ScreenLayout,
+    WindowPlacement,
+)
+from jarvis_assistant.config.layouts import MIN_INPUT_WIDTH
 from jarvis_assistant.core import events
+from jarvis_assistant.ui.meter import MeterModel
 from jarvis_assistant.ui.workspace import (
     WINDOWS,
-    LayoutStore,
     WindowSpec,
     WorkspaceModel,
 )
@@ -40,8 +48,9 @@ def model():
 def test_hay_una_ventana_por_modulo_con_su_panel_y_caben_en_el_area():
     assert [spec.id for spec in WINDOWS] == [
         "actividad", "comandos", "aperturas", "busqueda", "historial", "ayuda", "recordatorios",
-        "protocolo",
+        "protocolo", "catalogo", "permisos", "credenciales", "perfiles",
     ]  # fmt: skip
+    assert [spec.id for spec in WINDOWS if spec.admin] == ["permisos", "credenciales", "perfiles"]
     for spec in WINDOWS:
         assert spec.title and spec.icon and spec.component.endswith("Panel.qml")
         assert spec.x >= 0 and spec.x + spec.width <= 1
@@ -122,7 +131,7 @@ def test_una_ventana_no_sale_del_area_ni_se_queda_sin_tamano(model):
 def test_restablecer_vuelve_a_la_disposicion_inicial(model, qtbot):
     model.move("actividad", 0.5, 0.5)
     model.show("busqueda")
-    with qtbot.waitSignal(model.modelReset):
+    with qtbot.waitSignal(model.dataChanged):
         model.reset()
     assert geometry(model, "actividad") == (0.0, 0.0, 0.2, 0.5)
     assert rows(model, "open") == [True, False, False]
@@ -244,81 +253,124 @@ def test_restablecer_recupera_las_apartadas(model):
     assert rows(model, "aside") == [False, False, False]
 
 
-# --- Guardado --------------------------------------------------------------------------------
+# --- Plantillas -----------------------------------------------------------------------------
 
 
-def test_la_disposicion_se_guarda_y_se_recupera(tmp_path):
-    path = tmp_path / "datos" / "ventanas.json"
-    model = WorkspaceModel(SPECS, LayoutStore(path))
-    model.show("comandos")
-    model.move("comandos", 0.3, 0.2)
-    model.close("actividad")
-    model.save()
-    restored = WorkspaceModel(SPECS, LayoutStore(path))
-    assert rows(restored, "open") == [False, True, False]
-    assert geometry(restored, "comandos") == (0.3, 0.2, 0.3, 0.5)
-    assert rows(restored, "focused") == [False, True, False]
-
-
-def test_los_cambios_se_guardan_solos_al_cabo_de_un_momento(tmp_path, qtbot):
-    path = tmp_path / "ventanas.json"
-    model = WorkspaceModel(SPECS, LayoutStore(path))
-    model._save_timer.setInterval(10)
-    model.move("actividad", 0.5, 0.5)
-    qtbot.waitUntil(path.is_file, timeout=2000)
-    assert json.loads(path.read_text(encoding="utf-8"))["windows"]["actividad"]["x"] == 0.5
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "esto no es JSON",
-        "[]",
-        '{"windows": []}',
-        '{"windows": {"actividad": {"open": true}}}',
-        '{"windows": {"actividad": {"open": true, "x": "a", "y": 0, "width": 1, "height": 1, '
-        '"order": 0}}}',
-    ],
+LAYOUT = ScreenLayout(
+    "programar", "Programar",
+    dock=BarPosition(0.2, 0.9), input=BarPosition(0.5, 0.1), input_width=0.5,
+    windows={
+        "comandos": WindowPlacement(True, 0.3, 0.2, 0.3, 0.5, 3),
+        "actividad": WindowPlacement(False, 0.0, 0.0, 0.2, 0.5, 0),
+        "antigua": WindowPlacement(True, 0.1, 0.1, 0.2, 0.2, 1),
+    },
+)  # fmt: skip
+CONFIG = Config(
+    profiles=(Profile("a", "A"), Profile("b", "B", layout="programar")), layouts=(LAYOUT,)
 )
-def test_un_archivo_ilegible_o_incompleto_deja_la_disposicion_inicial(tmp_path, content):
-    path = tmp_path / "ventanas.json"
-    path.write_text(content, encoding="utf-8")
-    model = WorkspaceModel(SPECS, LayoutStore(path))
-    assert geometry(model, "actividad") == (0.0, 0.0, 0.2, 0.5)
+
+
+def test_sin_plantilla_empieza_en_la_disposicion_de_fabrica(model):
+    assert rows(model, "open") == [True, False, False]
+    assert (model.dockX, model.dockY) == (FACTORY_LAYOUT.dock.x, FACTORY_LAYOUT.dock.y)
+    assert model.inputWidth == FACTORY_LAYOUT.input_width
+
+
+def test_una_plantilla_pone_ventanas_y_barras_y_las_que_no_nombra_van_de_fabrica(model):
+    model.apply_layout(LAYOUT)
+    assert rows(model, "open") == [False, True, False]
+    assert geometry(model, "comandos") == (0.3, 0.2, 0.3, 0.5)
+    assert geometry(model, "busqueda") == (0.0, 0.5, 0.2, 0.5)  # no está en la plantilla
+    assert (model.dockX, model.dockY, model.inputX, model.inputY, model.inputWidth) == (
+        0.2, 0.9, 0.5, 0.1, 0.5
+    )
+
+
+def test_restablecer_vuelve_a_la_plantilla_y_no_a_la_de_fabrica(model):
+    model.apply_layout(LAYOUT)
+    model.move("comandos", 0.0, 0.0)
+    model.placeInput(0.1, 0.1, 0.9)
+    model.reset()
+    assert geometry(model, "comandos") == (0.3, 0.2, 0.3, 0.5)
+    assert model.inputWidth == 0.5
+
+
+def test_al_abrir_sesion_se_toma_la_plantilla_del_perfil(model):
+    model.apply(events.ConfigApplied(CONFIG))
+    model.apply(events.SessionOpened(1, "hoy", "b"))
+    assert geometry(model, "comandos") == (0.3, 0.2, 0.3, 0.5)
+    model.apply(events.SessionOpened(2, "hoy", "a"))  # sin plantilla: la de fábrica
     assert rows(model, "open") == [True, False, False]
 
 
-def test_una_disposicion_guardada_fuera_del_area_se_recoloca_y_una_ventana_nueva_usa_la_inicial(
-    tmp_path,
-):
-    path = tmp_path / "ventanas.json"
-    saved = {"open": True, "x": 3.0, "y": -1.0, "width": 0.5, "height": 0.5, "order": 4}
-    path.write_text(json.dumps({"windows": {"comandos": saved, "antigua": saved}}), "utf-8")
-    model = WorkspaceModel(SPECS, LayoutStore(path))
-    assert geometry(model, "comandos") == (0.5, 0.0, 0.5, 0.5)
-    assert geometry(model, "busqueda") == (0.0, 0.5, 0.2, 0.5)  # no estaba en el archivo
+def test_dormido_elegir_perfil_pone_sus_barras_y_en_sesion_no_cambia_nada(model):
+    model.apply(events.ConfigApplied(CONFIG))
+    model.apply(events.ProfileSelected("b"))
+    assert model.inputY == 0.1
+    model.apply(events.SessionOpened(1, "hoy", "a"))
+    model.apply(events.ProfileSelected("b"))
+    assert model.inputY == FACTORY_LAYOUT.input.y
+    model.apply(events.SessionClosed())
+    model.apply(events.ProfileSelected("b"))
+    assert model.inputY == 0.1
 
 
-def test_una_ventana_apartada_sigue_apartada_al_volver(tmp_path):
-    path = tmp_path / "ventanas.json"
-    model = WorkspaceModel(SPECS, LayoutStore(path))
-    model.set_aside("actividad")
-    model.save()
-    again = WorkspaceModel(SPECS, LayoutStore(path))
-    assert rows(again, "aside") == [True, False, False]
+def test_la_disposicion_vuelve_a_ser_plantilla_con_todas_las_ventanas(model):
+    model.apply_layout(LAYOUT)
+    model.set_open("busqueda", True)
+    model.set_aside("comandos")
+    model.moveDock(1.4, -0.2)  # fuera de la pantalla: se recoloca
+    layout = model.to_layout("nueva", "Nueva")
+    assert (layout.id, layout.name) == ("nueva", "Nueva")
+    assert set(layout.windows) == {"actividad", "comandos", "busqueda"}
+    assert layout.windows["busqueda"].open
+    assert layout.windows["comandos"] == WindowPlacement(True, 0.3, 0.2, 0.3, 0.5, 3)
+    assert layout.dock == BarPosition(1.0, 0.0)
 
 
-def test_una_disposicion_guardada_sin_apartar_se_lee_como_no_apartada(tmp_path):
-    path = tmp_path / "ventanas.json"
-    saved = {"open": True, "x": 0.1, "y": 0.1, "width": 0.3, "height": 0.3, "order": 0}
-    path.write_text(json.dumps({"windows": {"actividad": saved}}), encoding="utf-8")
-    assert rows(WorkspaceModel(SPECS, LayoutStore(path)), "aside") == [False, False, False]
+def test_aplicar_una_plantilla_no_reinicia_el_modelo_ni_avisa_si_no_cambia(model, qtbot):
+    resets, changes = [], []
+    model.modelReset.connect(lambda: resets.append(True))
+    model.dataChanged.connect(lambda *_args: changes.append(True))
+    model.apply_layout(LAYOUT)
+    model.apply_layout(LAYOUT)
+    assert resets == [] and len(changes) == 1
 
 
-def test_sin_archivo_no_se_guarda_nada(model):
-    model.move("actividad", 0.5, 0.5)
-    model.save()
-    assert not model._save_timer.isActive()
+def with_meters():
+    meters = {"recursos": MeterModel(False), "ruido": MeterModel(False)}
+    return WorkspaceModel(SPECS, meters=meters), meters
+
+
+def test_los_medidores_empiezan_como_de_fabrica_y_la_plantilla_dice_si_se_ven():
+    model, meters = with_meters()
+    assert (meters["recursos"].shown, meters["ruido"].shown) == (True, False)
+    model.apply_layout(ScreenLayout("a", "A", meters={"recursos": False, "ruido": True}))
+    assert (meters["recursos"].shown, meters["ruido"].shown) == (False, True)
+    meters["ruido"].toggle()
+    model.reset()  # restablecer vuelve a lo que dice la plantilla
+    assert meters["ruido"].shown
+
+
+def test_la_plantilla_guarda_los_medidores():
+    model, meters = with_meters()
+    meters["ruido"].toggle()
+    assert model.to_layout("n", "N").meters == {"recursos": True, "ruido": True}
+
+
+def test_un_medidor_restringido_no_se_ve_ni_se_puede_mostrar():
+    model, meters = with_meters()
+    model.apply(events.PermissionsApplied(frozenset({"recursos"})))
+    assert not meters["recursos"].allowed and not meters["recursos"].shown
+    meters["recursos"].toggle()
+    assert not meters["recursos"].shown
+    model.apply(events.PermissionsApplied(frozenset()))
+    assert meters["recursos"].shown  # vuelve como lo dejó la plantilla
+
+
+def test_la_caja_de_texto_tiene_un_ancho_minimo(model):
+    model.placeInput(0.5, 0.5, 0.0)
+    assert model.inputWidth == MIN_INPUT_WIDTH
 
 
 def test_cada_ventana_tiene_una_forma_de_marco_conocida_y_el_modelo_la_expone():
@@ -328,3 +380,83 @@ def test_cada_ventana_tiene_una_forma_de_marco_conocida_y_el_modelo_la_expone():
     assert len({spec.style for spec in WINDOWS}) > 1  # no son todas iguales
     full = WorkspaceModel(WINDOWS)
     assert rows(full, "style") == [spec.style for spec in WINDOWS]
+
+
+# --- Copias de la ventana de Comandos --------------------------------------------------------
+
+
+def test_una_consola_nueva_abre_una_copia_de_comandos_encima(model):
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert rows(model, "windowId")[-1] == "comandos:protocolo-a"
+    assert rows(model, "title")[-1] == "Comandos · a"
+    assert rows(model, "component")[-1] == "CommandsPanel.qml"
+    copy = model.placement("comandos:protocolo-a")
+    assert copy.open and rows(model, "focused")[-1]
+    assert geometry(model, "comandos:protocolo-a") != geometry(model, "comandos")
+    assert published == [events.ConsoleFocused("comandos:protocolo-a")]
+
+
+def test_la_misma_consola_reutiliza_su_ventana(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.show("busqueda")
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert rows(model, "windowId").count("comandos:protocolo-a") == 1
+    assert rows(model, "focused")[-1]
+
+
+def test_varias_copias_son_ventanas_independientes(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.ConsoleOpened("comandos:protocolo-b", "Comandos · b"))
+    assert rows(model, "windowId")[-2:] == ["comandos:protocolo-a", "comandos:protocolo-b"]
+    model.move("comandos:protocolo-a", 0.1, 0.1)
+    assert geometry(model, "comandos:protocolo-a")[:2] == (0.1, 0.1)
+    assert geometry(model, "comandos:protocolo-b")[:2] != (0.1, 0.1)
+
+
+def test_cerrar_una_copia_la_quita_y_avisa_al_nucleo():
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    published.clear()
+    model.close("comandos:protocolo-a")
+    assert "comandos:protocolo-a" not in rows(model, "windowId")
+    assert published == [
+        events.ConsoleFocused("comandos"), events.ConsoleClosed("comandos:protocolo-a")
+    ]
+    model.close("comandos")  # la principal solo se cierra
+    assert "comandos" in rows(model, "windowId")
+
+
+def test_la_consola_activa_es_la_de_la_ventana_de_comandos_de_delante():
+    published = []
+    model = WorkspaceModel(SPECS, publish=published.append)
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.ConsoleOpened("comandos:protocolo-b", "Comandos · b"))
+    model.show("busqueda")  # otra ventana delante no cambia la consola
+    model.raise_window("comandos:protocolo-a")
+    model.set_aside("comandos:protocolo-a")
+    assert published == [
+        events.ConsoleFocused("comandos:protocolo-a"),
+        events.ConsoleFocused("comandos:protocolo-b"),
+        events.ConsoleFocused("comandos:protocolo-a"),
+        events.ConsoleFocused("comandos:protocolo-b"),
+    ]
+
+
+def test_las_copias_no_entran_en_la_plantilla_y_desaparecen_con_la_sesion(model):
+    model.apply(events.ConfigApplied(Config()))
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    assert "comandos:protocolo-a" not in model.to_layout("mia", "Mía").windows
+    model.reset()  # la plantilla no se lleva las copias
+    assert model.placement("comandos:protocolo-a").open
+    model.apply(events.SessionOpened(1, "", ""))
+    assert "comandos:protocolo-a" not in rows(model, "windowId")
+
+
+def test_una_copia_no_se_ve_si_el_perfil_no_puede_usar_comandos(model):
+    model.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    model.apply(events.PermissionsApplied(frozenset({"comandos"})))
+    assert not model.placement("comandos:protocolo-a").open
+    assert rows(model, "available")[-1] is False

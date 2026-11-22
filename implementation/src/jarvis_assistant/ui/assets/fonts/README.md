@@ -7,3 +7,4 @@ Fuentes libres (SIL Open Font License 1.1), incluidas para no descargarlas en ej
 | `Rajdhani-SemiBold.ttf` | Rajdhani | `Rajdhani-OFL.txt` |
 | `Inter-Regular.ttf`, `Inter-Medium.ttf` | Inter | `Inter-OFL.txt` |
 | `JetBrainsMono-Regular.ttf` | JetBrains Mono | `JetBrainsMono-OFL.txt` |
+| `Orbitron-Variable.ttf` (variable, pesos 400-900) | Orbitron | `Orbitron-OFL.txt` |

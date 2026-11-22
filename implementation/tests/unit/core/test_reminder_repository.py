@@ -182,3 +182,46 @@ async def test_apscheduler_ejecuta_el_trabajo_en_el_bucle():
         assert scheduler.jobs() == {}
     finally:
         scheduler.shutdown()
+
+
+# --- Perfiles --------------------------------------------------------------------------------
+
+
+def test_cada_perfil_solo_ve_sus_recordatorios(db):
+    work, home = ReminderRepository(db, "trabajo"), ReminderRepository(db, "casa")
+    mine = work.create("Informe", [NOW - HOUR], NOW - HOUR, NOW - 2 * HOUR)
+    home.create("Comprar pan", [NOW - HOUR], NOW - HOUR, NOW - 2 * HOUR)
+    assert [r.content for r in work.listable()] == ["Informe"]
+    assert [r.content for r in home.listable()] == ["Comprar pan"]
+    assert [t.reminder_id for t in work.due_triggers(NOW)] == [mine]
+    assert [r.id for r in work.overdue(NOW)] == [mine]
+    assert home.get(mine) is None  # tampoco por su id
+
+
+def test_un_perfil_no_cambia_los_recordatorios_de_otro(db):
+    work, home = ReminderRepository(db, "trabajo"), ReminderRepository(db, "casa")
+    mine = work.create("Informe", [NOW + HOUR], None, NOW)
+    home.set_status(mine, "eliminado")
+    home.set_deadline(mine, NOW + 2 * HOUR)
+    reminder = work.get(mine)
+    assert reminder is not None
+    assert (reminder.status, reminder.deadline) == ("activo", None)
+
+
+# --- Permisos --------------------------------------------------------------------------------
+
+
+def test_sin_filas_todo_esta_permitido_y_restringir_se_puede_deshacer(db):
+    from jarvis_assistant.core.repositories import PermissionRepository
+
+    permissions = PermissionRepository(db)
+    assert permissions.restricted("casa") == frozenset()
+    permissions.set_allowed("casa", "comandos", False, NOW)
+    permissions.set_allowed("casa", "busqueda", False, NOW)
+    permissions.set_allowed("trabajo", "comandos", False, NOW)
+    assert permissions.restricted("casa") == {"comandos", "busqueda"}
+    permissions.set_allowed("casa", "comandos", True, NOW)
+    assert permissions.restricted("casa") == {"busqueda"}
+    assert permissions.all_restricted() == {
+        "casa": frozenset({"busqueda"}), "trabajo": frozenset({"comandos"}),
+    }  # fmt: skip

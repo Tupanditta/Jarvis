@@ -5,6 +5,7 @@ from pathlib import Path
 from jarvis_assistant.core import events
 from jarvis_assistant.core.action_api import HelpEntry, HelpGroup
 from jarvis_assistant.core.content import (
+    CatalogItem,
     Entry,
     LaunchTarget,
     OpenedItem,
@@ -16,7 +17,9 @@ from jarvis_assistant.core.content import (
 from jarvis_assistant.core.repositories import ActivityRow, SessionRow
 from jarvis_assistant.ui.bridge import UI_EVENTS
 from jarvis_assistant.ui.panel_models import (
+    CatalogModel,
     CommandsModel,
+    ConsolesModel,
     HelpModel,
     HistoryModel,
     OpenedModel,
@@ -363,3 +366,94 @@ def test_protocolo_listado_y_acciones_de_la_ventana():
     assert {events.ProtocolStarted, events.ProtocolFinished, events.ProtocolsListed} <= set(
         UI_EVENTS
     )
+
+
+# --- Varias consolas de Comandos -------------------------------------------------------------
+
+
+def test_comandos_cada_consola_solo_atiende_sus_eventos_y_pide_en_la_suya():
+    published = []
+    consoles = ConsolesModel(publish=published.append)
+    consoles.apply(events.WorkdirChanged(str(Path("C:/Users/usuario"))))
+    consoles.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    copy = consoles.get("comandos:protocolo-a")
+    assert copy is not consoles.main and consoles.get("otra") is consoles.main
+    consoles.apply(events.WorkdirChanged(str(Path("C:/Algebra")), "comandos:protocolo-a"))
+    consoles.apply(events.CommandOutputAppended(3, "git pull", ("ok",), "out",
+                                                "comandos:protocolo-a"))  # fmt: skip
+    assert copy.path == str(Path("C:/Algebra")) and copy.mode == "output"
+    assert consoles.main.path == str(Path("C:/Users/usuario")) and consoles.main.mode == ""
+    copy.refresh()
+    copy.reveal()
+    copy.home()  # la carpeta personal de la sesión, aunque la copia naciera después
+    copy.duplicate()
+    assert published == [
+        events.ActionRequested("comandos", "ls", {}, "comandos:protocolo-a"),
+        events.ActionRequested("apertura", "abrir_carpeta", {}, "comandos:protocolo-a"),
+        events.ActionRequested("comandos", "cd", {"ruta": Path("C:/Users/usuario")},
+                               "comandos:protocolo-a"),
+        events.ActionRequested("comandos", "ls", {}, "comandos:protocolo-a"),
+        events.ConsoleRequested("comandos:protocolo-a"),
+    ]  # fmt: skip
+
+
+def test_comandos_la_consola_cerrada_o_la_sesion_nueva_quitan_los_paneles_extra():
+    consoles = ConsolesModel()
+    consoles.apply(events.ConsoleOpened("comandos:protocolo-a", "Comandos · a"))
+    consoles.apply(events.ConsoleOpened("comandos:2", "Comandos 2"))
+    consoles.apply(events.ConsoleClosed("comandos:protocolo-a"))
+    assert "comandos:protocolo-a" not in consoles and "comandos:2" in consoles
+    consoles.apply(events.SessionOpened(2, "nueva"))
+    assert "comandos:2" not in consoles and "comandos" in consoles
+
+
+# --- Catálogo --------------------------------------------------------------------------------
+
+CATALOG_ITEMS = (
+    CatalogItem("aplicacion:Editor", "aplicacion", "Editor", "C:/editor.exe",
+                ("ed", "el editor"), ("-n", "--wait")),
+    CatalogItem("comando:git", "comando", "git", "git"),
+)  # fmt: skip
+
+
+def test_catalogo_lista_completa_con_alias_y_argumentos():
+    assert events.CatalogShown in UI_EVENTS
+    model = CatalogModel()
+    model.apply(events.CatalogShown(CATALOG_ITEMS))
+    assert model.items == [
+        {"id": "aplicacion:Editor", "kind": "aplicacion", "name": "Editor",
+         "target": "C:/editor.exe", "aliases": "ed, el editor", "args": "-n --wait"},
+        {"id": "comando:git", "kind": "comando", "name": "git", "target": "git",
+         "aliases": "", "args": ""},
+    ]  # fmt: skip
+    assert model.problem == ""
+
+
+def test_catalogo_anadir_y_eliminar_piden_la_accion_del_modulo():
+    published: list = []
+    model = CatalogModel(publish=published.append)
+    model.add("aplicacion", "Editor", "C:/editor.exe", "ed", "-n")
+    model.add("pagina", "Docs", "https://example.com", "", "  ")
+    model.remove("comando:git")
+    assert requested(published) == [
+        ("catalogo", "añadir", {"tipo": "aplicacion", "nombre": "Editor",
+                                "destino": "C:/editor.exe", "alias": "ed", "argumentos": "-n"}),
+        ("catalogo", "añadir", {"tipo": "pagina", "nombre": "Docs",
+                                "destino": "https://example.com", "alias": ""}),
+        ("catalogo", "eliminar", {"entrada": "comando:git"}),
+    ]  # fmt: skip
+
+
+def test_catalogo_el_formulario_se_vacia_solo_si_se_ha_anadido(qtbot):
+    model = CatalogModel()
+    added: list = []
+    model.added.connect(lambda: added.append(True))
+    model.add("pagina", "Docs", "docs", "", "")
+    model.apply(events.CatalogShown(CATALOG_ITEMS, "La dirección debe empezar por http://."))
+    assert added == [] and model.problem.startswith("La dirección")
+    model.add("pagina", "Docs", "https://example.com", "", "")
+    assert model.problem == ""
+    model.apply(events.CatalogShown(CATALOG_ITEMS))
+    assert added == [True]
+    model.apply(events.CatalogShown(CATALOG_ITEMS))  # una lista que no responde a un envío
+    assert added == [True]

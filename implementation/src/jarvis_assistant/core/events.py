@@ -13,10 +13,15 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
+from jarvis_assistant.config import Config
 from jarvis_assistant.core.action_api import HelpGroup
 from jarvis_assistant.core.content import (
+    CatalogItem,
+    CredentialItem,
     Entry,
+    IntrusionItem,
     LaunchTarget,
+    NamedItem,
     OpenedItem,
     ProtocolRow,
     ReminderItem,
@@ -51,10 +56,12 @@ _AUDIO_SOURCES = ("assistant", "none")
 
 @dataclass(frozen=True)
 class SessionOpened(Event):
-    """Se ha abierto una sesión: la interfaz muestra la pantalla con la animación de despertar."""
+    """Se ha abierto una sesión: la interfaz muestra la pantalla con la animación de despertar.
+    `profile_id`: el perfil con el que se ha abierto; la pantalla toma su plantilla."""
 
     session_id: int
     name: str
+    profile_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -106,6 +113,16 @@ class SessionChanged(Event):
     session_id: int
     name: str
     is_important: bool
+
+
+@dataclass(frozen=True)
+class SessionsDeleted(Event):
+    """Se han borrado sesiones del historial y las demás se han renumerado (ids 1..N).
+    `deleted`: los ids borrados. `renumbered`: {id anterior: id nuevo} de las que cambian; la
+    sesión actual puede estar entre ellas."""
+
+    deleted: tuple[int, ...]
+    renumbered: Mapping[int, int]
 
 
 @dataclass(frozen=True)
@@ -211,9 +228,10 @@ class WindowAsideRequested(Event):
 
 @dataclass(frozen=True)
 class WorkdirChanged(Event):
-    """Directorio de trabajo que muestra el panel de comandos."""
+    """Directorio de trabajo que muestra el panel de comandos de `console`."""
 
     path: str
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -223,6 +241,7 @@ class DirectoryListed(Event):
     path: str
     entries: tuple[Entry, ...]
     total: int
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -234,6 +253,7 @@ class DirectoryTreeBuilt(Event):
     dirs: int
     files: int
     truncated: bool
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
@@ -244,11 +264,46 @@ class CommandOutputAppended(Event):
     command: str
     lines: tuple[str, ...]
     stream: Literal["out", "err"]
+    console: str = "comandos"
 
 
 @dataclass(frozen=True)
 class CommandPanelCleared(Event):
-    """`clear`: el panel de comandos se vacía."""
+    """`clear`: el panel de comandos de `console` se vacía."""
+
+    console: str = "comandos"
+
+
+@dataclass(frozen=True)
+class ConsoleOpened(Event):
+    """Hay una consola de Comandos extra (`core/workdir.py`): su ventana se abre, o se trae al
+    frente si ya estaba. La abre un protocolo o el botón de una ventana de Comandos."""
+
+    console: str
+    title: str
+
+
+@dataclass(frozen=True)
+class ConsoleRequested(Event):
+    """Botón de una ventana de Comandos: una consola nueva en la carpeta de `source`."""
+
+    source: str
+
+
+@dataclass(frozen=True)
+class ConsoleClosed(Event):
+    """El usuario ha cerrado la ventana de una consola extra: desaparece con lo que tenía en
+    marcha."""
+
+    console: str
+
+
+@dataclass(frozen=True)
+class ConsoleFocused(Event):
+    """La ventana de Comandos que está delante ha cambiado: las órdenes sin consola van a la
+    suya."""
+
+    console: str
 
 
 @dataclass(frozen=True)
@@ -265,6 +320,16 @@ class LaunchTargetsChanged(Event):
     """Aplicaciones y páginas del catálogo, para abrirlas desde la ventana de aperturas."""
 
     targets: tuple[LaunchTarget, ...]
+
+
+@dataclass(frozen=True)
+class CatalogShown(Event):
+    """Ventana Catálogo: lista completa de aplicaciones, páginas y comandos, tras cada cambio.
+    `problem`: por qué no se ha podido añadir o eliminar lo último que se pidió; vacío si se
+    ha hecho (el formulario de la ventana se vacía)."""
+
+    items: tuple[CatalogItem, ...]
+    problem: str = ""
 
 
 @dataclass(frozen=True)
@@ -334,6 +399,15 @@ class HelpShown(Event):
 
 
 @dataclass(frozen=True)
+class ConfigApplied(Event):
+    """El núcleo aplica una configuración: al arrancar, al abrir sesión y al guardar desde la
+    ventana de configuración con la sesión cerrada. La interfaz toma de aquí los perfiles,
+    las plantillas y el sonido."""
+
+    config: Config
+
+
+@dataclass(frozen=True)
 class ConfigReloadFailed(Event):
     """Un archivo de configuración es inválido al recargar: se conserva el anterior (RF-96)."""
 
@@ -360,6 +434,7 @@ class ActionRequested(Event):
     module: str
     action: str
     params: Mapping[str, object] = field(default_factory=dict)
+    console: str | None = None  # la ventana de Comandos que la pide; None: la activa
 
 
 @dataclass(frozen=True)
@@ -386,6 +461,19 @@ class SilenceRequested(Event):
 
 
 @dataclass(frozen=True)
+class ProfileSelected(Event):
+    """El usuario elige perfil en la pantalla dormida; la próxima sesión se abre con él."""
+
+    profile_id: str
+
+
+@dataclass(frozen=True)
+class ConfigSaved(Event):
+    """La ventana de configuración ha guardado cambios. Con la sesión cerrada, el núcleo
+    vuelve a cargar la configuración; con ella abierta, se aplican al abrir la siguiente."""
+
+
+@dataclass(frozen=True)
 class OpenSessionRequested(Event):
     """«Abrir sesión» en el menú de la bandeja."""
 
@@ -405,3 +493,118 @@ class ShowHudRequested(Event):
 @dataclass(frozen=True)
 class QuitRequested(Event):
     """«Salir» en el menú de la bandeja o fin de la sesión del sistema operativo."""
+
+
+# --- Perfiles protegidos ---------------------------------------------------------------------
+# La contraseña solo viaja en `AccessAttempted`, de la interfaz al núcleo: no pasa por el
+# enrutador, no se publica como orden recibida y su `repr` no la muestra (RES-48).
+
+
+@dataclass(frozen=True)
+class ProtectedProfilesChanged(Event):
+    """Qué perfiles piden contraseña. Se publica al arrancar y al volver a cargar la
+    configuración; el selector de perfiles muestra un candado en ellos. `admin_active`: el
+    Acedor está activado y el selector lo ofrece."""
+
+    profile_ids: frozenset[str]
+    admin_active: bool = False
+
+
+@dataclass(frozen=True)
+class AccessChallenged(Event):
+    """«Hey Jarvis» (o «Abrir sesión») en un perfil protegido: la interfaz muestra la caja de
+    la contraseña en el centro de la pantalla."""
+
+    profile_id: str
+    profile_name: str
+
+
+@dataclass(frozen=True)
+class AccessDenied(Event):
+    """Contraseña incorrecta: la caja se sacude y se queda abierta."""
+
+
+@dataclass(frozen=True)
+class AccessClosed(Event):
+    """La caja de la contraseña se cierra: acceso concedido, cancelado o tercer fallo. Quien
+    la ve no sabe si se ha registrado un aviso de intrusión."""
+
+    granted: bool = False
+
+
+@dataclass(frozen=True)
+class AccessAttempted(Event):
+    """La interfaz envía la contraseña escrita en la caja."""
+
+    password: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class AccessCancelled(Event):
+    """El usuario cierra la caja de la contraseña (Esc)."""
+
+
+@dataclass(frozen=True)
+class IntrusionAlertsShown(Event):
+    """Al entrar en un perfil protegido con avisos sin confirmar: la tarjeta crítica."""
+
+    profile_id: str
+    alerts: tuple[IntrusionItem, ...]
+
+
+@dataclass(frozen=True)
+class IntrusionAcknowledged(Event):
+    """El usuario pulsa «Entendido» en la tarjeta crítica."""
+
+    alert_ids: tuple[int, ...]
+
+
+# --- Permisos y Acedor -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PermissionsApplied(Event):
+    """Al abrir sesión: las ventanas de los módulos que el perfil no puede usar no se muestran
+    ni se pueden abrir."""
+
+    hidden_panels: frozenset[str]
+
+
+@dataclass(frozen=True)
+class PermissionsShown(Event):
+    """Ventana Permisos del Acedor: perfiles, módulos y lo que cada perfil tiene restringido
+    (pares perfil, módulo)."""
+
+    profiles: tuple[NamedItem, ...]
+    modules: tuple[NamedItem, ...]
+    restricted: frozenset[tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class PermissionChangeRequested(Event):
+    """El Acedor pulsa un interruptor de la ventana Permisos."""
+
+    profile_id: str
+    module: str
+    allowed: bool
+
+
+@dataclass(frozen=True)
+class CredentialsShown(Event):
+    """Ventana Credenciales del Acedor. Las contraseñas no salen en el `repr`."""
+
+    items: tuple[CredentialItem, ...]
+
+
+@dataclass(frozen=True)
+class ProfilesListed(Event):
+    """Ventana Perfiles del Acedor: los perfiles que puede eliminar."""
+
+    profiles: tuple[NamedItem, ...]
+
+
+@dataclass(frozen=True)
+class ProfileRemovalRequested(Event):
+    """El Acedor pulsa «Eliminar» en la ventana Perfiles."""
+
+    profile_id: str

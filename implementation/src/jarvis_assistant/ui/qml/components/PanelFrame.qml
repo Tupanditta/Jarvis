@@ -12,6 +12,7 @@ Rectangle {
     property bool flat: false            // dentro del HUD: sin fondo ni borde propios
     property bool embedded: false        // dentro de una ventana flotante
     property string summary: ""          // una línea de estado para la cabecera de la ventana
+    property string windowId: ""         // la ventana (o el panel) que lo muestra
     default property alias content: body.data
     readonly property bool bare: flat || embedded
     readonly property bool rich: !flat   // con barra de herramientas, filtros y campos

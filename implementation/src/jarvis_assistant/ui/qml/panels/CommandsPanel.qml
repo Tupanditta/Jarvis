@@ -5,6 +5,9 @@
 // terminal, gestor de archivos, limpiar), ruta navegable carpeta a carpeta, filtro del
 // listado, carpetas que se abren con un clic, copia de la salida de un programa y una línea
 // para ejecutar programas permitidos.
+//
+// Cada ventana de Comandos muestra su propia consola (`windowId`): la principal o una copia
+// abierta por un protocolo o por el botón «Nueva ventana de Comandos».
 import QtQuick
 import ".."
 import "../components"
@@ -12,6 +15,8 @@ import "../components"
 PanelFrame {
     id: panel
 
+    // El panel de su consola (`ui/panel_models.py`, `ConsolesModel`).
+    readonly property var commands: consoles.get(windowId.length > 0 ? windowId : "comandos")
     readonly property string mode: commands.mode
     readonly property bool isOutput: mode === "output"
     readonly property bool browsing: mode === "listing" || mode === "tree"
@@ -51,7 +56,9 @@ PanelFrame {
                 { icon: "carpeta", hint: "Abrir en el gestor de archivos",
                   run: () => commands.reveal() },
                 { icon: "limpiar", hint: "Limpiar el panel", enabled: panel.mode.length > 0,
-                  run: () => commands.clear() }
+                  run: () => commands.clear() },
+                { icon: "nueva_ventana", hint: "Nueva ventana de Comandos en esta carpeta",
+                  run: () => commands.duplicate() }
             ]
         }
 

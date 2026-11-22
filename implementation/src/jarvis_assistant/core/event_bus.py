@@ -17,10 +17,15 @@ Unsubscribe = Callable[[], None]
 
 
 class EventBus:
-    """Bus síncrono y sin memoria. Enruta por la clase exacta del evento."""
+    """Bus síncrono y sin memoria. Enruta por la clase exacta del evento.
+
+    Las listas de manejadores son inmutables: suscribirse o darse de baja crea una tupla
+    nueva. Así `publish`, que se llama mucho más (el nivel de audio, a 20 Hz), recorre la que
+    tenía sin copiarla, y una entrega en curso no ve los cambios que hacen sus manejadores.
+    """
 
     def __init__(self) -> None:
-        self._handlers: dict[type[Event], list[Callable[[Event], None]]] = {}
+        self._handlers: dict[type[Event], tuple[Callable[[Event], None], ...]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -30,13 +35,14 @@ class EventBus:
     def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> Unsubscribe:
         """Suscribe `handler` a `event_type`. Devuelve la función que anula la suscripción."""
         entry = handler  # una entrada por suscripción, aunque el manejador se repita
-        self._handlers.setdefault(event_type, []).append(entry)  # type: ignore[arg-type]
+        handlers = self._handlers.get(event_type, ())
+        self._handlers[event_type] = (*handlers, entry)  # type: ignore[arg-type]
 
         def unsubscribe() -> None:
-            handlers = self._handlers.get(event_type, [])
+            handlers = self._handlers.get(event_type, ())
             for index, candidate in enumerate(handlers):
                 if candidate is entry:
-                    # Lista nueva: una entrega en curso sigue con la que tenía.
+                    # Tupla nueva: una entrega en curso sigue con la que tenía.
                     self._handlers[event_type] = handlers[:index] + handlers[index + 1 :]
                     return
 
@@ -46,7 +52,7 @@ class EventBus:
         """Entrega `event` a sus suscriptores. Un manejador que falla se registra y se salta."""
         if not isinstance(event, Event):
             raise TypeError(f"Solo se publican eventos: {event!r}")
-        for handler in tuple(self._handlers.get(type(event), ())):
+        for handler in self._handlers.get(type(event), ()):
             try:
                 handler(event)
             except Exception:

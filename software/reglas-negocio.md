@@ -31,15 +31,16 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 | RN-09 | **Eliminación de la sesión desbordada.** Al cerrar la sesión actual, las sesiones marcadas se eliminan según RN-12. Si el proceso termina sin cerrar la sesión, la eliminación se aplica al recuperar la sesión interrumpida (RN-47). | Idea + Refuerzo |
 | RN-46 | **Cierre con operaciones en curso.** Al cerrar la sesión: el diálogo pendiente se cancela, el protocolo en curso se detiene, los binarios externos en ejecución se terminan y toda tarea `pendiente` pasa a `error` con el motivo «sesión cerrada». Los avisos no entregados se descartan y se recalculan al abrir la siguiente sesión (RN-22). | Refuerzo |
 | RN-47 | **Sesión interrumpida.** Si el proceso termina con la sesión abierta (apagado, fallo), al arrancar de nuevo esa sesión se da por cerrada con el motivo «interrumpida», en el momento de su última actividad, y se aplican RN-09 y RN-46. Salir desde la bandeja del sistema cierra la sesión de forma ordenada antes de terminar. | Refuerzo |
+| RN-69 | **Sesiones vacías.** Una sesión sin actividades, no importante y que no ha desplazado a ninguna otra no se guarda en el historial: al cerrarla, o al recuperarla interrumpida, se elimina según RN-12. Al arrancar se eliminan las sesiones cerradas que quedaron vacías. | Idea |
 
 ## 3. Historial
 
 | ID | Regla | Origen |
 |---|---|---|
 | RN-10 | **Sesiones visibles.** El historial muestra como máximo 10 sesiones no eliminadas, primero las importantes y, dentro de cada grupo, de la más reciente a la más antigua. Las que quedan fuera se conservan ocultas. | Idea |
-| RN-11 | **Confirmación para eliminar una sesión.** Solo se elimina por su identificador si el usuario lo confirma tras verla en la interfaz. La sesión actual no se puede eliminar. | Idea + Refuerzo |
-| RN-12 | **Borrado lógico de sesiones.** Eliminar una sesión es marcarla como eliminada; el registro se conserva y deja de mostrarse. Sus actividades dejan de ser consultables. | Idea |
-| RN-53 | **Identificador de sesión.** Es un número entero correlativo, visible en el historial, que el usuario escribe en sus órdenes. | Refuerzo |
+| RN-11 | **Confirmación para eliminar sesiones.** Una o varias sesiones solo se eliminan si el usuario lo confirma tras verlas en la interfaz. Las elige por su identificador o, sin él, de la lista del historial («1, 3, 5» o «1-5»). Si alguna es importante, se avisa antes de preguntar. La sesión actual no se puede eliminar; si es la única, no hay nada que eliminar. | Idea + Refuerzo, modificada |
+| RN-12 | **Borrado físico de sesiones.** Eliminar una sesión la borra de la base de datos junto con sus actividades; no se puede recuperar. Las demás se renumeran (RN-53). | Idea, modificada |
+| RN-53 | **Identificador de sesión.** Es un número entero, visible en el historial, que el usuario escribe en sus órdenes. Las sesiones se numeran de 1 a N por orden de creación, sin huecos: al eliminar sesiones, las posteriores se renumeran y la siguiente sesión es la N+1. | Refuerzo, modificada |
 
 ## 4. Comandos
 
@@ -50,13 +51,13 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 | RN-16 | **Resultado de un binario externo.** Código de retorno 0: `completado`; cualquier otro, tiempo agotado o imposibilidad de lanzarlo: `error`. | Idea |
 | RN-40 | **Límite del árbol.** El árbol del mapeo de entorno tiene como máximo 3 niveles de profundidad y 200 entradas; la generación se detiene al alcanzar cualquiera de los dos. La carpeta raíz no cuenta como nivel ni como entrada; sus hijos directos son el nivel 1. Las entradas incluyen carpetas y archivos. | Idea |
 | RN-42 | **Rutas relativas.** En `cd`, en el mapeo de entorno, en la apertura de carpetas y en la creación, una ruta relativa se resuelve respecto al directorio de trabajo; una absoluta se usa tal cual. | Idea |
-| RN-45 | **Lista cerrada de binarios.** Solo se ejecutan los binarios declarados en la configuración. Pedir otro produce `error` y el aviso «Ese comando no está permitido». Nunca se usa un intérprete de órdenes. Cada ejecución tiene un tiempo máximo de 120 s ⚙. | Refuerzo |
+| RN-45 | **Lista cerrada de binarios.** Solo se ejecutan los binarios declarados en la configuración (`commands.toml`, editable también con el módulo Catálogo, RN-65). Pedir otro produce `error` y el aviso «Ese comando no está permitido». Nunca se usa un intérprete de órdenes. Cada ejecución tiene un tiempo máximo de 120 s ⚙. | Refuerzo |
 
 ## 5. Apertura de Aplicaciones y Páginas
 
 | ID | Regla | Origen |
 |---|---|---|
-| RN-17 | **Páginas permitidas y navegador.** Solo se abren las URLs del catálogo, y siempre con Microsoft Edge. El catálogo es un archivo de configuración que el usuario edita a mano; no se amplía con órdenes. | Idea |
+| RN-17 | **Páginas permitidas y navegador.** Solo se abren las URLs del catálogo, y siempre con Microsoft Edge. El catálogo es un archivo de configuración que el usuario edita a mano o desde la ventana del módulo Catálogo (RN-65). | Idea, modificada |
 | RN-49 | **Resolución de «abre X».** El nombre escrito se busca, por este orden, en el catálogo de aplicaciones, en el catálogo de páginas y en las aplicaciones descubiertas del sistema. Gana la primera fuente con una coincidencia que supere el umbral. Si ninguna la supera, `error` y «No encuentro X». | Refuerzo |
 
 ## 6. Creación de Archivos/Carpetas
@@ -106,3 +107,31 @@ Políticas del dominio que el asistente debe respetar, independientes de la tecn
 | RN-38 | **Tiempo máximo de espera.** Toda operación en pausa espera como máximo 20 s ⚙ sin respuesta; al vencer se cancela y el asistente dice «Operación cancelada». Nunca se ejecuta una acción por defecto. La espera no requiere repetir «Hey Jarvis». | Idea + Refuerzo |
 | RN-48 | **Interrupción de la locución.** Las frases del ciclo de vida no se pueden interrumpir: lo que el usuario envía mientras suenan se atiende al terminar. Cualquier otra locución se interrumpe escribiendo «Hey Jarvis» o con el botón de silencio de la interfaz; el asistente calla y sigue atendiendo. | Idea + Refuerzo |
 | RN-51 | **Órdenes no reconocidas.** Un texto que no alcanza el umbral de ninguna intención no produce respuesta: sin voz y sin animación. La interfaz lo muestra en los subtítulos como no reconocido. Cuenta como actividad para la cuenta de 120 s. | Idea + Refuerzo |
+
+## 10. Perfiles, permisos y Acedor
+
+| ID | Regla | Origen |
+|---|---|---|
+| RN-56 | **Perfil.** Un perfil es un entorno de trabajo que se elige en la pantalla dormida antes de abrir sesión. Da el nombre del usuario y la plantilla de la pantalla de sesión. Siempre hay al menos uno. Cada recordatorio pertenece a un perfil: una sesión solo ve y crea los de su perfil. | Idea |
+| RN-57 | **Perfil protegido.** Un perfil con contraseña la pide antes de abrir sesión y antes de editarlo en la configuración. La contraseña tiene al menos 4 caracteres y se pone, se cambia o se quita en la configuración. El asistente no la recupera si se olvida. | Idea |
+| RN-58 | **Tres intentos.** Tres contraseñas incorrectas seguidas en un perfil, al abrir sesión o en la configuración y aunque se cancele entre medias, registran un aviso de intrusión y la cuenta vuelve a cero. Un acierto también la pone a cero. Todos los fallos reciben la misma respuesta: quien falla no sabe cuántos intentos le quedan ni que se ha registrado un aviso. | Idea |
+| RN-59 | **Aviso de intrusión.** Al abrir sesión en el perfil, sus avisos sin confirmar se dan los primeros tras la frase de apertura, por voz y con una tarjeta crítica que sigue hasta que el usuario la confirma. Sin confirmar, vuelve a darse en la sesión siguiente. El Acedor recibe los avisos de todos los perfiles y los confirma aparte del dueño. | Idea |
+| RN-60 | **Acedor.** Perfil único y fijo con la máxima autoridad. Su id y su nombre están reservados y no está en el archivo de perfiles. Existe en cuanto se activa con una contraseña desde la configuración; solo entonces aparece en el selector. Su contraseña solo se cambia dando la actual. Si la olvida, se desactiva desde la línea de órdenes con el asistente cerrado: las contraseñas que custodiaba dejan de poder verse; los permisos y las contraseñas de los perfiles siguen valiendo. | Idea |
+| RN-61 | **Módulos del Acedor.** Permisos, Credenciales y Perfiles solo los usa el Acedor; ningún otro perfil los tiene ni se le pueden conceder. En su sesión, el Acedor solo usa esos módulos, el módulo Sesión y el núcleo. | Idea |
+| RN-62 | **Permisos.** Cada perfil puede usar todos los módulos salvo los que el Acedor le restrinja. Se restringen los módulos de acción, salvo Sesión, y los medidores; el núcleo no. Un módulo restringido no sale en la ayuda, sus ventanas no se muestran y sus acciones no se ejecutan, vengan de una orden, una ventana o un protocolo: la tarea queda en `error` y el asistente dice que no tiene autorización. Un medidor restringido no se ve. Los permisos se aplican al abrir cada sesión. | Idea |
+| RN-63 | **Contraseñas a la vista del Acedor.** El Acedor ve las contraseñas de los perfiles protegidos solo en su ventana, cada una oculta hasta que la descubre, y solo durante su sesión. Nunca se dicen en voz alta ni se escriben en el registro. Una contraseña puesta antes de activar al Acedor no se puede ver hasta que su dueño vuelva a entrar con ella. | Idea |
+| RN-64 | **Eliminar un perfil.** Solo el Acedor elimina perfiles, y solo con confirmación. No se elimina el Acedor ni el último perfil. Al eliminarlo, sus recordatorios pasan a `eliminado` (RN-13) y su contraseña y sus avisos dejan de contar. Desde la configuración se añaden perfiles, pero no se eliminan. | Idea |
+
+## 11. Catálogo
+
+| ID | Regla | Origen |
+|---|---|---|
+| RN-65 | **Catálogo editable.** El catálogo reúne las aplicaciones y páginas que se abren por su nombre y los comandos de terminal permitidos. Se añade desde la ventana del módulo Catálogo, rellenando su formulario; la orden escrita solo abre la ventana. Se elimina con una orden o desde la ventana, siempre con confirmación. Cada cambio se guarda en su archivo y vale en la sesión en curso. Las aplicaciones descubiertas del sistema no se ven ni se editan aquí. | Idea |
+| RN-66 | **Validación del catálogo.** Toda entrada tiene nombre. Una aplicación tiene ruta o nombre en el PATH; una página, una dirección que empieza por `http://` o `https://`; un comando, su ejecutable. Ningún nombre ni alias se repite: las aplicaciones y las páginas comparten nombres; los comandos tienen los suyos. Dos nombres son iguales si coinciden sin mayúsculas, sin tildes y sin espacios sobrantes. | Idea |
+
+## 12. Medidores
+
+| ID | Regla | Origen |
+|---|---|---|
+| RN-67 | **Medidores de la pantalla de sesión.** Recursos y Ruido ocupan cada uno una esquina inferior de la pantalla de sesión, nunca la misma. El usuario los muestra u oculta con su botón del selector y los cambia de esquina con un triple clic. La plantilla del perfil dice si se ven al abrir sesión. Solo miden mientras se ven. | Idea |
+| RN-68 | **Ruido y concentración.** El medidor de ruido muestra el ruido de fondo de los últimos 30 s, sin que un ruido breve lo mueva, y un nivel de concentración: silencio por debajo de 10 dB, alta por debajo de 30, media por debajo de 65 y baja a partir de 65. Sin micrófono lo indica. Solo capta el nivel del micrófono: nunca graba ni guarda el audio. La cifra es aproximada. | Idea |

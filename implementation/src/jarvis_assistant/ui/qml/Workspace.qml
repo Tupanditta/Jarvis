@@ -6,17 +6,15 @@
 // despertar del orbe y salen de él una a una, de la de abajo a la de arriba. Las que se abren
 // mientras tanto se suman a la cola.
 //
-// Cada ventana que aparece suena con un aviso corto. Si aparecen varias a la vez (sin
-// animaciones), suena una sola vez.
-//
 // Una ventana apartada queda como pestaña en el borde o la esquina más cercanos a su centro:
 // en el tercio de una esquina, en esa esquina; si no, en el borde más próximo, a su altura.
 // Las esquinas son de las filas de arriba y de abajo; las columnas de los lados empiezan
 // debajo de ellas. Las pestañas de un mismo borde se ponen en fila sin taparse, y en la fila
 // de arriba dejan libre el hueco del selector (`reserveLeft`, `reserveRight`). Las que no
-// caben en su fila pasan a otra, más hacia dentro.
+// caben en su fila pasan a otra, más hacia dentro. Tampoco tapan los medidores de las
+// esquinas inferiores (`reserveBottomLeft`, `reserveBottomRight`): la fila de abajo y la
+// columna de ese lado los rodean.
 import QtQuick
-import QtMultimedia
 import "components"
 
 Item {
@@ -28,11 +26,15 @@ Item {
     property bool staging: false         // abriendo sesión: las ventanas esperan al orbe
     property real reserveLeft: 0         // hueco del selector en el borde de arriba, en x
     property real reserveRight: 0
+    property size reserveBottomLeft: Qt.size(0, 0)   // medidores de esa esquina; 0 si no hay
+    property size reserveBottomRight: Qt.size(0, 0)
 
     onWidthChanged: placeTabs()
     onHeightChanged: placeTabs()
     onReserveLeftChanged: placeTabs()
     onReserveRightChanged: placeTabs()
+    onReserveBottomLeftChanged: placeTabs()
+    onReserveBottomRightChanged: placeTabs()
 
     // Recoloca las pestañas de las ventanas apartadas, una vez por vuelta del bucle de eventos.
     function placeTabs() {
@@ -109,19 +111,27 @@ Item {
             var side = top.length > 1 && middle > (reserveLeft + reserveRight) / 2 ? 1 : 0
             top[side].items.push(item)
         }
+        // Un hueco junto al selector donde no cabe una pestaña (pantalla estrecha o selector
+        // ancho): sus pestañas bajan a la fila siguiente, que ya no tiene selector.
         var topLines = 1
         for (var s = 0; s < top.length; ++s) {
-            pack(top[s].items, top[s].lo, Math.max(top[s].lo + tabW, top[s].hi), tabW)
+            var narrow = top.length > 1 && top[s].hi - top[s].lo < tabW
+            var shift = narrow ? 1 : 0
+            pack(top[s].items, narrow ? margin : top[s].lo,
+                 narrow ? w - margin : Math.max(top[s].lo + tabW, top[s].hi), tabW)
             for (var a = 0; a < top[s].items.length; ++a) {
                 var up = top[s].items[a]
                 up.win.tabX = up.at
-                up.win.tabY = margin + up.line * (tabH + gap)
-                topLines = Math.max(topLines, up.line + 1)
+                up.win.tabY = margin + (up.line + shift) * (tabH + gap)
+                topLines = Math.max(topLines, up.line + shift + 1)
             }
         }
 
+        var cornerLeft = reserveBottomLeft.width > 0 ? reserveBottomLeft.width + gap : 0
+        var cornerRight = reserveBottomRight.width > 0 ? reserveBottomRight.width + gap : 0
         var bottomLines = 1
-        pack(edges.bottom, margin, w - margin, tabW)
+        pack(edges.bottom, margin + cornerLeft,
+             Math.max(margin + cornerLeft + tabW, w - margin - cornerRight), tabW)
         for (var b = 0; b < edges.bottom.length; ++b) {
             var down = edges.bottom[b]
             down.win.tabX = down.at
@@ -132,12 +142,16 @@ Item {
         // Columnas de los lados, entre las filas de arriba y de abajo.
         var columnTop = margin + topLines * (tabH + gap)
         var columnBottom = h - margin - bottomLines * (tabH + gap)
-        pack(edges.left, columnTop, columnBottom, tabH)
+        var leftBottom = cornerLeft > 0
+            ? Math.min(columnBottom, h - reserveBottomLeft.height - gap) : columnBottom
+        var rightBottom = cornerRight > 0
+            ? Math.min(columnBottom, h - reserveBottomRight.height - gap) : columnBottom
+        pack(edges.left, columnTop, Math.max(columnTop + tabH, leftBottom), tabH)
         for (var l = 0; l < edges.left.length; ++l) {
             edges.left[l].win.tabX = margin + edges.left[l].line * (tabW + gap)
             edges.left[l].win.tabY = edges.left[l].at
         }
-        pack(edges.right, columnTop, columnBottom, tabH)
+        pack(edges.right, columnTop, Math.max(columnTop + tabH, rightBottom), tabH)
         for (var r = 0; r < edges.right.length; ++r) {
             edges.right[r].win.tabX = w - margin - tabW - edges.right[r].line * (tabW + gap)
             edges.right[r].win.tabY = edges.right[r].at
@@ -185,23 +199,6 @@ Item {
             return
         }
         cancel()
-    }
-
-    SoundEffect {
-        id: chime
-
-        property double lastPlayed: 0
-
-        source: Qt.resolvedUrl("../assets/sounds/window_open.wav")
-        volume: 0.6
-
-        function ring() {
-            var now = Date.now()
-            if (now - lastPlayed < 120)
-                return
-            lastPlayed = now
-            play()
-        }
     }
 
     Timer {
@@ -257,7 +254,6 @@ Item {
             onResized: (left, top, wide, tall) => workspace.resize(windowId, left, top, wide, tall)
             onClosed: workspace.close(windowId)
             onActivated: workspace.raise_window(windowId)
-            onAppeared: chime.ring()
             onAsideRequested: workspace.set_aside(windowId)
             onRestored: workspace.restore(windowId)
             onAsideChanged: area.placeTabs()
@@ -268,8 +264,12 @@ Item {
 
                 anchors.fill: parent
                 active: win.open
+                // Se crea por partes entre fotogramas: al abrir sesión con varias ventanas no
+                // se bloquea la animación de despertar (las ventanas esperan ocultas al orbe).
+                asynchronous: true
                 source: Qt.resolvedUrl("panels/" + win.component)
                 onLoaded: {
+                    item.windowId = win.windowId
                     item.embedded = true
                     item.active = Qt.binding(() => win.focused)
                 }

@@ -20,14 +20,15 @@ def activity(value: Activity, state: str = "LISTENING_COMMAND"):
     return events.AssistantActivityChanged(state, value)
 
 
-def make_tray():
-    log = {"published": [], "opened": [], "quit": []}
+def make_tray(**kwargs):
+    log = {"published": [], "opened": [], "quit": [], "settings": []}
     tray = TrayController(
         publish=log["published"].append,
         request_quit=lambda: log["quit"].append(True),
         config_dir=Path("C:/cfg"),
         log_dir=Path("C:/logs"),
         open_folder=log["opened"].append,
+        **kwargs,
     )
     return tray, log
 
@@ -90,9 +91,17 @@ def test_las_opciones_del_menu_publican_sus_acciones(qapp):
     assert log["opened"] == [Path("C:/cfg"), Path("C:/logs")]
     assert log["quit"] == [True]
     assert [a.text() for a in tray.menu.actions() if not a.isSeparator()] == [
-        "Abrir sesión", "Mostrar pantalla", "Mostrar HUD", "Abrir configuración", "Abrir registro",
-        "Salir",
+        "Abrir sesión", "Mostrar pantalla", "Mostrar HUD", "Abrir carpeta de configuración",
+        "Abrir registro", "Salir",
     ]
+
+
+def test_con_la_configuracion_abierta_no_se_ofrece_abrir_sesion(qapp):
+    tray, _ = make_tray()
+    tray.set_configuring(True)
+    assert not tray.open_action.isVisible()
+    tray.set_configuring(False)
+    assert tray.open_action.isVisible()
 
 
 def test_el_puente_convierte_los_eventos_del_bus_en_senales(qtbot):

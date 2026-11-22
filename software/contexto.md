@@ -20,19 +20,24 @@ La única excepción a «sin red» es la instalación: descargar las dependencia
 | Módulo | Capacidad |
 |---|---|
 | [Sesión](Modulos/Accion/sesion.md) | Gestionar la sesión de uso actual: nombre e importancia. El proceso arranca dormido, sin sesión, atendiendo solo «Hey Jarvis». Todas las frases se escriben. «Hey Jarvis» abre la sesión y pone el asistente a escuchar; «Gracias Jarvis» lo deja en reposo y «Hey Jarvis» vuelve a ponerlo a escuchar. «Buenas noches Jarvis», en cualquier momento con la sesión abierta, cierra la sesión y devuelve el asistente al modo dormido sin terminar el proceso. Las frases se aceptan diga quien las diga. |
-| [Historial](Modulos/Accion/historial.md) | Consultar las sesiones recientes y sus actividades, y eliminar una sesión por su identificador. |
+| [Historial](Modulos/Accion/historial.md) | Consultar las sesiones recientes y sus actividades, y eliminar una o varias sesiones. |
 | [Comandos](Modulos/Accion/comandos.md) | Terminal con directorio de trabajo persistente (`cd`, `ls`, `clear`), árbol de directorios de una carpeta (mapeo de entorno) y ejecución de binarios externos, por ejemplo compilar con `gcc`, informando del resultado. |
 | [Apertura de Aplicaciones y Páginas](Modulos/Accion/apertura-apps.md) | Lanzar aplicaciones instaladas, abrir URLs de un catálogo predefinido en Microsoft Edge y abrir carpetas en el gestor de archivos nativo (navegación de directorios). |
 | [Búsqueda de Archivos/Carpetas](Modulos/Accion/busqueda.md) | Localizar archivos, carpetas o ambos en disco mediante herramientas indexadas. |
 | [Creación de Archivos/Carpetas](Modulos/Accion/creacion-archivos.md) | Crear un archivo, una carpeta o un árbol de directorios sin sobrescribir nunca nada existente. |
 | [Recordatorio](Modulos/Accion/recordatorio.md) | Crear recordatorios con fechas de aviso y una fecha límite opcional, notificarlos, posponerlos y confirmarlos. |
 | [Protocolos](Modulos/Accion/protocolos.md) | Ejecutar secuencias predefinidas de tareas de varios módulos. |
+| [Catálogo](Modulos/Accion/catalogo.md) | Ver, añadir y eliminar las aplicaciones, páginas y comandos que el asistente sabe abrir o ejecutar. |
+| [Permisos](Modulos/Accion/permisos.md) | Solo el Acedor: decidir qué módulos y medidores puede usar cada perfil. |
+| [Credenciales](Modulos/Accion/credenciales.md) | Solo el Acedor: ver las contraseñas de los perfiles protegidos. |
+| [Perfiles](Modulos/Accion/perfiles.md) | Solo el Acedor: eliminar perfiles y sus datos. |
 
 Capacidades transversales:
 
 - **Entrada por texto:** el usuario escribe cada orden en una caja de texto y la envía con Enter ([entrada-texto.md](Modulos/Infraestructura/entrada-texto.md)). El asistente no escucha.
 - **Respuestas de estado:** el asistente informa por voz del resultado de cada acción.
-- **Interfaz:** pantalla de sesión con un orbe holográfico animado y un HUD flotante que muestra el estado de las tareas sin robar el foco ([Interfaz/README.md](Interfaz/README.md)).
+- **Interfaz:** pantalla de sesión con un orbe holográfico animado y un HUD flotante que muestra el estado de las tareas sin robar el foco ([Interfaz/README.md](Interfaz/README.md)). En la pantalla de sesión, los medidores de recursos (CPU y RAM del asistente) y de ruido ([hud.md](Modulos/Infraestructura/hud.md), sección 3.1).
+- **Perfiles protegidos:** un perfil puede pedir contraseña para abrir sesión; tres fallos seguidos dejan un aviso de intrusión para su dueño. El Acedor, perfil único, administra los demás ([perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md)).
 
 ### Estados de tarea
 
@@ -111,12 +116,13 @@ Para añadir un comando nuevo basta con crear un módulo en `action_modules/` qu
 - **Linux** es una plataforma prevista. Todo el código dependiente del sistema operativo está aislado en `os_adapters/`; el adaptador de Linux se construye en la última fase del plan, con herramientas equivalentes (`fd`, `xdg-open`). En Wayland no se podrá traer ventanas al frente.
 - **macOS queda fuera del alcance.**
 
-## 8. Principio de borrado lógico
+## 8. Principio de borrado
 
-Toda eliminación de sesiones y recordatorios es lógica: las filas se conservan en la base de datos y no se usa `DELETE` físico.
+La eliminación de recordatorios y de los datos de los perfiles es lógica: las filas se conservan en la base de datos. Las sesiones son la excepción.
 
-- Eliminar una sesión significa marcarla con `is_deleted = 1`.
+- Eliminar una sesión la borra del todo, con sus actividades, y renumera las demás para que los ids sigan siendo 1..N (RN-12, RN-53). Una sesión vacía no se guarda (RN-69).
 - Eliminar un recordatorio significa cambiar su `status` a `'eliminado'`.
+- Quitar una contraseña o retirar un perfil marca sus filas con `is_deleted = 1` ([perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md)).
 
 ## 9. Índice de módulos
 
@@ -132,6 +138,11 @@ Toda eliminación de sesiones y recordatorios es lógica: las filas se conservan
 | Creación de Archivos/Carpetas | [Modulos/Accion/creacion-archivos.md](Modulos/Accion/creacion-archivos.md) | `action_modules/file_manager.py` |
 | Recordatorio | [Modulos/Accion/recordatorio.md](Modulos/Accion/recordatorio.md) | `action_modules/reminder_manager.py` |
 | Protocolos | [Modulos/Accion/protocolos.md](Modulos/Accion/protocolos.md) | `action_modules/protocol_runner.py` |
+| Catálogo | [Modulos/Accion/catalogo.md](Modulos/Accion/catalogo.md) | `action_modules/catalog_manager.py` |
+| Permisos | [Modulos/Accion/permisos.md](Modulos/Accion/permisos.md) | `action_modules/administration.py` |
+| Credenciales | [Modulos/Accion/credenciales.md](Modulos/Accion/credenciales.md) | `action_modules/administration.py` |
+| Perfiles | [Modulos/Accion/perfiles.md](Modulos/Accion/perfiles.md) | `action_modules/administration.py` |
+| Perfiles protegidos y aviso de intrusión (función del núcleo) | [Modulos/Accion/perfiles-protegidos.md](Modulos/Accion/perfiles-protegidos.md) | `core/security.py`, `core/custody.py` |
 
 ### Módulos de infraestructura
 
@@ -144,7 +155,8 @@ Toda eliminación de sesiones y recordatorios es lógica: las filas se conservan
 | Enrutador de intenciones | [enrutador-intenciones.md](Modulos/Infraestructura/enrutador-intenciones.md) | `intent_router/` | Idea |
 | Sintetizador de voz (TTS) | [sintetizador.md](Modulos/Infraestructura/sintetizador.md) | `speaker/` | Idea |
 | Interfaz HUD | [hud.md](Modulos/Infraestructura/hud.md) | `ui/` | Idea |
-| Configuración | [configuracion.md](Modulos/Infraestructura/configuracion.md) | `config.py` | Refuerzo |
+| Configuración | [configuracion.md](Modulos/Infraestructura/configuracion.md) | `config/` | Refuerzo |
+| Ventana de configuración | [configurador.md](Modulos/Infraestructura/configurador.md) | `configurator/` | Refuerzo |
 | Plataforma | [plataforma.md](Modulos/Infraestructura/plataforma.md) | `os_adapters/` | Refuerzo |
 | Proceso y diagnóstico | [proceso.md](Modulos/Infraestructura/proceso.md) | `process/`, `main.py` | Refuerzo |
 

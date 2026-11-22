@@ -14,6 +14,11 @@ van a la cola de voz (`announcer.py`), que las dice de una en una en el orden en
 `run_task` es la única función que ejecuta acciones (AD-13). Un protocolo ejecuta sus tareas
 con `ctx.invoke`, que también pasa por `run_task`, como subtareas de la suya.
 
+Control de acceso: los perfiles protegidos, la caja de la contraseña, los permisos del perfil
+y la sesión del Acedor viven en `access.py`. «Hey Jarvis» en un perfil con contraseña no llega
+a la FSM; solo un acierto entra como `AccessGranted`. `run_task` rechaza sin ejecutarlas las
+acciones de los módulos que el perfil no puede usar.
+
 Diálogo: un módulo pregunta con `ctx.ask`; la pregunta abierta y su tiempo de espera viven
 en `dialogue.py`. El registro de tareas (actividades, `TaskUpdated`, subtareas y segundo plano)
 vive en `tasks.py`; `run_task` lo usa.
@@ -26,9 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from jarvis_assistant.config import Config, ConfigError, validate_protocols
+from jarvis_assistant.config import Binary, Catalog, Config, ConfigError, validate_protocols
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
+from jarvis_assistant.core.access import Access, RemoveProfile
 from jarvis_assistant.core.action_api import (
     CANCELLED_REASON,
     CLOSED_REASON,
@@ -36,6 +42,7 @@ from jarvis_assistant.core.action_api import (
     ActionContext,
     ActionModule,
     ActionResult,
+    AdminTools,
     DialogueAnswer,
     ExpectedType,
     Intent,
@@ -54,7 +61,7 @@ from jarvis_assistant.core.repositories import ActivityRepository, SessionRow
 from jarvis_assistant.core.state_machine import AssistantState, StateMachine, Transition
 from jarvis_assistant.core.task_queue import Claim, Job, TaskQueue
 from jarvis_assistant.core.tasks import TaskRecord, TaskRegistry
-from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.core.workdir import MAIN_CONSOLE, Consoles, Workdir
 from jarvis_assistant.intent_router.batch import split_orders
 from jarvis_assistant.intent_router.router import (
     ASIDE_WINDOW,
@@ -95,6 +102,9 @@ _AWAITING = (AssistantState.AWAITING_CONFIRMATION, AssistantState.AWAITING_PARAM
 
 Origin = Literal["voz", "protocolo"]
 Reload = Callable[[Config], tuple[Config, Sequence[ConfigError]]]
+# Escribe el catálogo y los binarios (`config.writer.save_launchers` sin la carpeta). Lanza una
+# excepción si no se puede.
+SaveLaunchersFile = Callable[[Catalog | None, Sequence[Binary] | None], None]
 
 
 class Sessions(Protocol):
@@ -132,12 +142,18 @@ class _Poke:
 
 
 @dataclass(frozen=True)
+class _ConfigSaved:
+    """La ventana de configuración ha guardado: con la sesión cerrada, se vuelve a cargar."""
+
+
+@dataclass(frozen=True)
 class _UserAction:
     """Acción del usuario en la interfaz que ejecuta una acción de un módulo."""
 
     module: str
     action: str
     params: Mapping[str, object]
+    console: str | None = None  # la ventana de Comandos que la pide
 
 
 class Orchestrator:
@@ -153,13 +169,18 @@ class Orchestrator:
         sessions: Sessions,
         database: Database,
         platform: "PlatformAdapter",
-        workdir: Workdir,
+        workdir: Workdir | Consoles,
         modules: Sequence[ActionModule] = (),
         reload_config: Reload | None = None,
         on_exit: Callable[[], None] = lambda: None,
         scheduler: "Scheduler | None" = None,
+        remove_profile: RemoveProfile | None = None,
+        save_launchers: SaveLaunchersFile | None = None,
     ) -> None:
-        """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos."""
+        """`scheduler`: trabajos a una fecha (`core/scheduler.py`), para los módulos.
+        `remove_profile`: quita un perfil de `profiles.toml` (lo usa el Acedor).
+        `save_launchers`: escribe el catálogo y los binarios (lo usa el módulo Catálogo).
+        `workdir`: las consolas de Comandos, o el directorio de la principal si solo hay esa."""
         self._machine = machine
         self._bus = bus
         self._clock = clock
@@ -169,11 +190,13 @@ class Orchestrator:
         self._sessions = sessions
         self._database = database
         self._platform = platform
-        self._workdir = workdir
+        self._consoles = workdir if isinstance(workdir, Consoles) else Consoles(workdir)
         self._reload_config = reload_config
         self._on_exit = on_exit
         self._scheduler = scheduler
         self._active_panel: str | None = None  # el último `PanelActivated`
+        self._save_launchers_file = save_launchers
+        self._profiles_changed = False  # el Acedor ha eliminado perfiles en esta sesión
 
         self._queue: asyncio.Queue[object] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -205,28 +228,45 @@ class Orchestrator:
             awaiting=lambda: self._machine.state in _AWAITING, announce=self._announce,
             render=render,
         )  # fmt: skip
+        self._access = Access(
+            bus=bus, clock=clock, database=database, speaker=speaker, router=router,
+            modules=self._modules, panels=self._panels, notices=self._notices,
+            config=lambda: self._config, state=lambda: self._machine.state,
+            in_session=lambda: self._session is not None,
+            poke=lambda: self._queue.put_nowait(_Poke()), forget=self._forget_profile,
+            remove_file=remove_profile,
+        )  # fmt: skip
 
         for module in modules:
             self._register(module)
         for error in self._apply_config(config):
-            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            _log_config_error(error)
 
         bus.subscribe(
             events.OpenSessionRequested, lambda _e: self.submit(fsm.OpenSessionRequested())
         )
         bus.subscribe(events.QuitRequested, lambda _e: self.submit(fsm.ShutdownRequested()))
+        bus.subscribe(events.ProfileSelected, lambda e: self._access.select(e.profile_id))
+        bus.subscribe(events.ConfigSaved, lambda _e: self.submit(_ConfigSaved()))
         bus.subscribe(events.TextSubmitted, self.submit)
+        bus.subscribe(events.AccessAttempted, self.submit)
+        bus.subscribe(events.AccessCancelled, self.submit)
+        bus.subscribe(events.IntrusionAcknowledged, self.submit)
         bus.subscribe(events.UserTyping, self.submit)
         bus.subscribe(events.WindowPressed, lambda _e: self.submit(fsm.WindowPressed()))
         bus.subscribe(
             events.ActionRequested,
-            lambda e: self.submit(_UserAction(e.module, e.action, e.params)),
+            lambda e: self.submit(_UserAction(e.module, e.action, e.params, e.console)),
         )
+        bus.subscribe(events.ConsoleRequested, self.submit)
+        bus.subscribe(events.ConsoleClosed, self.submit)
+        bus.subscribe(events.ConsoleFocused, self.submit)
         # El botón de silencio calla la respuesta en curso y las que esperaban su turno.
         bus.subscribe(events.SilenceRequested, lambda _e: self._announcer.clear())
         bus.subscribe(events.PanelActivated, self._panel_activated)
         bus.subscribe(events.SpeechStarted, lambda _e: self._refresh())
         bus.subscribe(events.SpeechFinished, lambda _e: self._refresh())
+        bus.subscribe(events.SessionsDeleted, self._sessions_deleted)
 
     @property
     def state(self) -> AssistantState:
@@ -236,8 +276,29 @@ class Orchestrator:
     def modules(self) -> Mapping[str, ActionModule]:
         return self._modules
 
+    @property
+    def _admin(self) -> AdminTools | None:
+        """Las herramientas del Acedor, solo en su sesión."""
+        return self._access.admin
+
+    @property
+    def _remove_profile_file(self) -> RemoveProfile | None:
+        return self._access.remove_file
+
+    @_remove_profile_file.setter
+    def _remove_profile_file(self, remove: RemoveProfile | None) -> None:
+        self._access.remove_file = remove
+
     def _panel_activated(self, event: events.PanelActivated) -> None:
         self._active_panel = event.panel
+
+    def _sessions_deleted(self, event: events.SessionsDeleted) -> None:
+        """Borrar sesiones anteriores renumera la actual: las tareas siguientes se registran
+        con su id nuevo."""
+        if self._session is not None and self._session.id in event.renumbered:
+            self._session = dataclasses.replace(
+                self._session, id=event.renumbered[self._session.id]
+            )
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -260,6 +321,8 @@ class Orchestrator:
     async def run(self) -> None:
         """Consume entradas y ejecuta efectos hasta que la FSM pide terminar el proceso."""
         self._loop = asyncio.get_running_loop()
+        self._bus.publish(events.ConfigApplied(self._config))
+        self._access.publish_protection()
         self._refresh()
         while not self._stopping:
             entry = await self._queue.get()
@@ -299,6 +362,7 @@ class Orchestrator:
         self._router.configure(
             config.settings.router, config.aliases, binaries=config.binaries, places=self._places
         )
+        self._speaker.set_sound(config.settings.sound.enabled)
         return errors
 
     # --- Entradas ----------------------------------------------------------------------------
@@ -306,6 +370,13 @@ class Orchestrator:
     async def _dispatch(self, entry: object) -> None:
         if isinstance(entry, events.TextSubmitted):
             await self._on_text(entry.text)
+        elif isinstance(entry, events.AccessAttempted):
+            if self._access.attempt(entry.password):
+                await self._handle(fsm.AccessGranted())
+        elif isinstance(entry, events.AccessCancelled):
+            self._access.close_gate(granted=False)
+        elif isinstance(entry, events.IntrusionAcknowledged):
+            self._access.acknowledge(entry.alert_ids)
         elif isinstance(entry, events.UserTyping):
             self._restart_silence_timer()  # teclear cuenta como actividad
         elif isinstance(entry, _SilenceElapsed):
@@ -317,8 +388,18 @@ class Orchestrator:
             self._jobs.finish(entry.job)
         elif isinstance(entry, _UserAction):
             await self._on_user_action(entry)
+        elif isinstance(entry, events.ConsoleRequested):
+            self._new_console(entry.source)
+        elif isinstance(entry, events.ConsoleClosed):
+            await self._close_console(entry.console)
+        elif isinstance(entry, events.ConsoleFocused):
+            self._consoles.focus(entry.console)
         elif isinstance(entry, _Poke):
             pass  # `_pump` hace el resto
+        elif isinstance(entry, _ConfigSaved):
+            # Con la sesión abierta, los cambios se aplican al abrir la siguiente (RF-96).
+            if self._session is None:
+                self._reload(notify=False)
         elif isinstance(entry, fsm.Input):
             await self._handle(entry)
         else:
@@ -380,7 +461,7 @@ class Orchestrator:
         intent = Intent(
             entry.module, entry.action, entry.params,
             description=entry.action.replace("_", " "),
-            panel=self._panels.get((entry.module, entry.action)),
+            panel=self._panels.get((entry.module, entry.action)), console=entry.console,
         )  # fmt: skip
         await self._handle(fsm.IntentMatched(intent))
 
@@ -392,6 +473,13 @@ class Orchestrator:
         await self._handle(fsm.SilenceTimeout())
 
     async def _handle(self, entry: fsm.Input) -> None:
+        if self._machine.state is AssistantState.DORMIDO:
+            if isinstance(entry, fsm.WakeWord | fsm.OpenSessionRequested) and (
+                self._access.challenge()
+            ):
+                return
+            if isinstance(entry, fsm.ShutdownRequested):
+                self._access.close_gate(granted=False)
         before = self._machine.state
         effects = self._machine.handle(entry)
         after = self._machine.state
@@ -476,7 +564,7 @@ class Orchestrator:
         if transition is Transition.SESSION_OPENED:
             session = self._session
             assert session is not None
-            return events.SessionOpened(session.id, session.name)
+            return events.SessionOpened(session.id, session.name, self._access.profile().id)
         if transition is Transition.LISTENING_RESUMED:
             return events.ListeningResumed()
         if transition is Transition.REST_ENTERED:
@@ -488,13 +576,16 @@ class Orchestrator:
     async def _open_session(self) -> None:
         self._reload()
         self._session = self._sessions.open_session()
-        self._workdir.reset()  # RN-14
+        self._consoles.reset()  # RN-14
         self._speaker.open_output()
+        self._access.apply_permissions()
         await self._session_hook("on_session_opened")
+        self._access.queue_intrusion_alerts(self._access.profile().id)
 
-    def _reload(self) -> None:
+    def _reload(self, *, notify: bool = True) -> None:
         """Relee la configuración (RF-96). Un archivo inválido conserva su versión anterior;
-        el aviso se da tras la frase de apertura."""
+        el aviso se da tras la frase de apertura. Sin `notify` solo se registra: al abrir la
+        sesión se vuelve a cargar y entonces se avisa."""
         if self._reload_config is None:
             return
         try:
@@ -503,12 +594,16 @@ class Orchestrator:
             logger.exception("No se ha podido recargar la configuración")
             return
         errors = [*errors, *self._apply_config(config)]
+        self._bus.publish(events.ConfigApplied(self._config))
+        self._access.publish_protection()
         reported: set[str] = set()
         for error in errors:
             if error.warning:
                 logger.warning("Configuración: %s, %s: %s", error.file, error.key, error.reason)
                 continue
-            logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
+            _log_config_error(error)
+            if not notify:
+                continue
             self._bus.publish(events.ConfigReloadFailed(error.file, error.reason))
             if error.file not in reported:
                 reported.add(error.file)
@@ -530,6 +625,10 @@ class Orchestrator:
         self._notices.clear()
         self._sessions.close_session(reason)
         self._session = None
+        self._access.end_session()  # la clave del Acedor no sobrevive a su sesión
+        if self._profiles_changed:
+            self._profiles_changed = False
+            self._reload(notify=False)  # el selector deja de ofrecer los perfiles eliminados
         if silent:
             self._bus.publish(events.SessionClosed())
         else:
@@ -587,7 +686,11 @@ class Orchestrator:
                 work = job.payload
                 if work.intent is None:
                     assert work.order is not None
-                    work.intent = intent = self._router.resolve(work.order)
+                    # Las rutas se resuelven en la consola activa, la que ejecutará la orden.
+                    intent = self._router.resolve(work.order)
+                    work.intent = intent = dataclasses.replace(
+                        intent, console=self._consoles.active
+                    )
                     specs = self._router.specs_of(intent.module, intent.action)
                     self._jobs.narrow(job, self._claim((intent.module, spec) for spec in specs))
                 work.runner = self._spawn(job, work.intent)
@@ -666,6 +769,7 @@ class Orchestrator:
             await self.run_task(
                 intent.module, intent.action, intent.params, origin="voz",
                 description=intent.description, error=intent.error, quiet=intent.quiet,
+                console=intent.console,
             )  # fmt: skip
 
     def _run_core(self, intent: Intent) -> None:
@@ -695,10 +799,41 @@ class Orchestrator:
         else:
             logger.warning("Intención del núcleo desconocida: %s", intent.key)
 
+    async def _save_launchers(
+        self, catalog: Catalog | None = None, binaries: Sequence[Binary] | None = None
+    ) -> str:
+        """`ctx.save_launchers`: escribe el catálogo o los binarios y los aplica ya, en la
+        sesión en curso; el resto de la configuración sigue esperando a la siguiente (RF-96).
+        Devuelve el motivo si no se ha podido; vacío si se ha guardado."""
+        if self._save_launchers_file is None:
+            return "no se puede escribir la configuración"
+        try:
+            self._save_launchers_file(catalog, binaries)
+        except Exception as error:
+            logger.exception("No se ha podido guardar el catálogo")
+            return str(error) or "no se ha podido escribir la configuración"
+        changes: dict[str, object] = {}
+        if catalog is not None:
+            changes["catalog"] = catalog
+        if binaries is not None:
+            changes["binaries"] = tuple(binaries)
+        for error in self._apply_config(dataclasses.replace(self._config, **changes)):
+            _log_config_error(error)
+        await self._session_hook("on_config_changed")
+        return ""
+
+    def _forget_profile(self, profile_id: str) -> None:
+        """El Acedor ha eliminado `profile_id`: sale de la configuración de la sesión y, al
+        cerrarla, se vuelve a cargar."""
+        self._config = dataclasses.replace(
+            self._config, profiles=tuple(p for p in self._config.profiles if p.id != profile_id)
+        )
+        self._profiles_changed = True
+
     def _presentation(self) -> Phrase:
         """«Preséntate»: una sola frase con quién es, cómo funciona, sus módulos (los del
         registro, para que la lista no se desfase) y cómo saber más."""
-        name = self._config.settings.user.name.strip()
+        name = self._access.profile().user_name
         modules = enumeration(
             [group.title.lower() for group in self._router.help() if group.module != CORE_MODULE]
         )
@@ -736,11 +871,17 @@ class Orchestrator:
     def _deliver(self, notice: Notice) -> None:
         """Entrega un aviso: activa su panel al empezar a decirlo."""
         panel = notice.panel
+
+        def started() -> None:
+            if panel is not None:
+                self._bus.publish(events.PanelActivated(panel))
+            if notice.on_start is not None:
+                notice.on_start()
+
         self._announcer.submit(
             Announcement(
                 (notice.phrase,),
-                on_start=None if panel is None
-                else lambda: self._bus.publish(events.PanelActivated(panel)),
+                on_start=None if panel is None and notice.on_start is None else started,
                 on_delivered=notice.on_delivered,
             )
         )  # fmt: skip
@@ -773,6 +914,7 @@ class Orchestrator:
         error: Phrase | None = None,
         quiet: bool = False,
         task: TaskRecord | None = None,
+        console: str | None = None,
     ) -> ActionResult:
         """Ejecuta una acción como tarea: la registra en `pendiente`, llama al módulo, captura
         cualquier excepción (RNF-23), fija el estado final y deja la respuesta en la cola de
@@ -780,17 +922,31 @@ class Orchestrator:
 
         `error`: una entidad no se pudo resolver; la tarea se crea ya en `error` con esa frase.
         Con `quiet`, la respuesta solo se dice si es un error. `task`: una subtarea ya creada
-        con `ctx.subtask`, que es la que se ejecuta.
+        con `ctx.subtask`, que es la que se ejecuta. Una orden de consulta (`record=False`)
+        fuera de un protocolo se ejecuta sin tarea: no queda como actividad. `console`: la
+        consola de Comandos donde se ejecuta; sin ella (o si ya no existe), la activa.
         """
         if self._session is None:
             raise RuntimeError("No hay sesión abierta")
-        if task is None:
+        if console is None or not self._consoles.exists(console):
+            console = self._consoles.active
+        if task is not None:
+            self._tasks.publish(task, "pendiente")
+        elif parent is not None or self._recorded(module, action):
             task = self._tasks.new(
                 self._session.id, module, description or f"{module} {action}", parent
             )
-        else:
-            self._tasks.publish(task, "pendiente")
-        panel = self._panels.get((module, action))
+        permitted = self._access.permitted(module)
+        if not permitted:
+            # Ni una orden escrita, ni una ventana, ni un protocolo: el módulo no se ejecuta.
+            logger.info("Módulo %s no autorizado en este perfil", module)
+            title = getattr(self._modules.get(module), "title", module)
+            error = Phrase("permisos.denegado", {"modulo": title})
+        if task is not None and module == MAIN_CONSOLE:
+            task.console = console  # al cerrar su ventana se detiene lo que siga en marcha
+        panel = self._panels.get((module, action)) if permitted else None
+        if panel == MAIN_CONSOLE:
+            panel = console  # la ventana de su consola
         if panel is not None:
             self._bus.publish(events.PanelActivated(panel))
         self._executing += 1
@@ -800,11 +956,12 @@ class Orchestrator:
             if error is not None:
                 result = ActionResult("error", error)
             else:
-                ctx = self._context(origin, task, speech)
+                ctx = self._context(origin, task, speech, console)
                 result = await self._modules[module].execute(action, params, ctx)
         except asyncio.CancelledError:
-            self._tasks.finish(task, "error", self._cancel_reason)
-            self._tasks.fail_unrun(task, self._cancel_reason)
+            if task is not None:
+                self._tasks.finish(task, "error", self._cancel_reason)
+                self._tasks.fail_unrun(task, self._cancel_reason)
             raise
         except Exception:
             logger.exception("La acción %s.%s ha fallado", module, action)
@@ -812,19 +969,25 @@ class Orchestrator:
         finally:
             self._executing -= 1
             self._refresh()
-        self._tasks.fail_unrun(task, CANCELLED_REASON)  # subtareas que el módulo no ha ejecutado
-        if result.description:
-            task.description = result.description
-        if result.background and result.status == "completado":
-            self._tasks.publish(task, "pendiente")  # sigue en segundo plano
-        else:
-            self._tasks.finish(task, result.status, self._tasks.detail(result))
+        if task is not None:
+            self._tasks.fail_unrun(task, CANCELLED_REASON)  # subtareas que no ha ejecutado
+            if result.description:
+                task.description = result.description
+            if result.background and result.status == "completado":
+                self._tasks.publish(task, "pendiente")  # sigue en segundo plano
+            else:
+                self._tasks.finish(task, result.status, self._tasks.detail(result))
         if result.speech is not None:
             speech.append(result.speech)
         if quiet and result.status == "completado":
             speech = []
         self._announce(*speech, on_delivered=result.on_spoken)
         return result
+
+    def _recorded(self, module: str, action: str) -> bool:
+        """La acción se registra como actividad salvo que todas sus intenciones digan que no."""
+        specs = self._router.specs_of(module, action)
+        return not specs or any(spec.record for spec in specs)
 
     async def _invoke(
         self,
@@ -838,6 +1001,7 @@ class Orchestrator:
         subtask: Subtask | None = None,
         description: str | None = None,
         resolve: bool = False,
+        console: str | None = None,
     ) -> ActionResult:
         """`ctx.invoke`: ejecuta una acción como subtarea de `parent`, por la misma interfaz y
         con el mismo `run_task` que una orden del usuario. Lo que la tarea llevaba dicho se
@@ -851,20 +1015,26 @@ class Orchestrator:
         error = None
         if resolve:
             try:
-                params = self._router.resolve_params(module, action, params)
+                with self._consoles.using(console or self._consoles.active):
+                    params = self._router.resolve_params(module, action, params)
             except ParamError as unresolved:
                 error = unresolved.phrase
             except KeyError:
                 error = Phrase("general.error")
         return await self.run_task(
             module, action, params, origin="protocolo", parent=parent.id,
-            description=description, error=error, quiet=quiet, task=task,
+            description=description, error=error, quiet=quiet, task=task, console=console,
         )  # fmt: skip
 
     def _context(
-        self, origin: Origin, task: TaskRecord | None, speech: list[Phrase] | None = None
+        self,
+        origin: Origin,
+        task: TaskRecord | None,
+        speech: list[Phrase] | None = None,
+        console: str = MAIN_CONSOLE,
     ) -> ActionContext:
-        """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola."""
+        """`speech`: donde se acumula lo que la tarea dice; sin tarea, va directo a la cola.
+        `console`: la consola de Comandos de la tarea."""
 
         async def say(phrase: Phrase) -> None:
             if speech is None:
@@ -892,12 +1062,18 @@ class Orchestrator:
         async def invoke(
             module: str, action: str, params: Mapping[str, object], **options: Any
         ) -> ActionResult:
+            options.setdefault("console", ctx.console)  # las subtareas, en la misma consola
             return await self._invoke(task, speech, module, action, params, **options)
 
-        return ActionContext(
+        def open_console(key: str, title: str, inherit: bool = False) -> None:
+            opened = self._open_console(key, title, ctx.workdir.path if inherit else None)
+            if opened is not None:
+                ctx.console, ctx.workdir = opened, self._consoles.get(opened)
+
+        ctx = ActionContext(
             session=self._session,
             origin=origin,
-            workdir=self._workdir,
+            workdir=self._consoles.get(console),
             clock=self._clock,
             config=self._config,
             db=self._database,
@@ -913,7 +1089,13 @@ class Orchestrator:
             active_panel=self._active_panel,
             subtask=self._subtask_of(task),
             invoke=invoke,
+            profile=self._access.profile().id,
+            admin=self._admin,
+            console=console,
+            open_console=open_console,
+            save_launchers=self._save_launchers,
         )
+        return ctx
 
     def _subtask_of(self, task: TaskRecord | None) -> Callable[[str, str], Subtask]:
         """`ctx.subtask` de la tarea `task`."""
@@ -924,6 +1106,35 @@ class Orchestrator:
             return self._tasks.subtask(self._session.id, task, module, description)
 
         return subtask
+
+    # --- Consolas de Comandos ----------------------------------------------------------------
+
+    def _open_console(self, key: str, title: str, start: Path | None = None) -> str | None:
+        """`ctx.open_console`: la consola propia de `key` (un protocolo), nueva o la que ya
+        tenía, en `start` (o la carpeta del usuario) y activa. None si el perfil no puede usar
+        Comandos: la tarea sigue en la consola que tenía."""
+        if self._session is None or not self._access.permitted(MAIN_CONSOLE):
+            return None
+        console, _created = self._consoles.open_for(key, title, start)
+        self._show_console(console)
+        return console
+
+    def _new_console(self, source: str) -> None:
+        """Botón de una ventana de Comandos: consola nueva en la carpeta de `source`."""
+        if self._session is None or not self._access.permitted(MAIN_CONSOLE):
+            return
+        self._show_console(self._consoles.open_copy(source))
+
+    def _show_console(self, console: str) -> None:
+        self._consoles.focus(console)
+        self._bus.publish(events.ConsoleOpened(console, self._consoles.title(console)))
+        self._bus.publish(events.WorkdirChanged(str(self._consoles.get(console).path), console))
+
+    async def _close_console(self, console: str) -> None:
+        """La ventana de una consola extra se ha cerrado: lo que sigue en marcha en ella (un
+        programa lanzado con «ejecuta») se detiene."""
+        if self._consoles.close(console):
+            await self._tasks.cancel_background(CANCELLED_REASON, console=console)
 
     # --- Cuenta de inactividad ---------------------------------------------------------------
 
@@ -948,7 +1159,8 @@ class Orchestrator:
     def _refresh(self) -> None:
         """Publica la actividad si ha cambiado y mantiene el temporizador del nivel."""
         state = self._machine.state
-        if self._speaker.speaking:
+        # Lo que se dice con la caja de la contraseña abierta no despierta al asistente.
+        if self._speaker.speaking and not self._access.gate_speaking():
             activity = Activity.HABLANDO
         elif state in _AWAITING:
             activity = Activity.ESPERANDO  # la tarea que pregunta sigue en ejecución
@@ -976,6 +1188,10 @@ class Orchestrator:
         self._bus.publish(events.AudioLevel(min(1.0, max(0.0, level)), source))
         if source != "none" and not self._stopping:
             self._schedule_level()
+
+
+def _log_config_error(error: ConfigError) -> None:
+    logger.error("Configuración: %s, clave %s: %s", error.file, error.key, error.reason)
 
 
 def _changes_state(entry: fsm.Input) -> bool:

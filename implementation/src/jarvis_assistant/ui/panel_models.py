@@ -15,6 +15,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from jarvis_assistant.core import events
+from jarvis_assistant.core.action_api import MAIN_CONSOLE
 
 Publish = Callable[[events.Event], None]
 
@@ -35,8 +36,11 @@ def _crumbs(path: str) -> list[dict[str, str]]:
 
 
 class CommandsModel(QObject):
-    """Panel de comandos: el directorio de trabajo y, debajo, el último resultado (listado,
-    árbol o salida de un binario). `clear` lo vacía."""
+    """Panel de una consola de comandos: el directorio de trabajo y, debajo, el último
+    resultado (listado, árbol o salida de un binario). `clear` lo vacía.
+
+    Solo atiende los eventos de su consola (`console`) y sus controles piden las acciones en
+    ella: cada ventana de Comandos es independiente de las demás."""
 
     changed = Signal()
 
@@ -47,12 +51,16 @@ class CommandsModel(QObject):
         output_lines: int = DEFAULT_OUTPUT_LINES,
         parent: QObject | None = None,
         publish: Publish = lambda _event: None,
+        console: str = MAIN_CONSOLE,
+        home: str = "",
     ) -> None:
+        """`home`: la carpeta personal, si ya se sabe (una consola abierta en plena sesión)."""
         super().__init__(parent)
         self._output_lines = output_lines
         self._publish = publish
+        self.console = console
         self._path = ""
-        self._home = ""  # la carpeta en la que empieza la sesión
+        self._home = home  # la carpeta en la que empieza la sesión
         self._reset()
 
     def _reset(self) -> None:
@@ -67,6 +75,8 @@ class CommandsModel(QObject):
         self._lines: list[dict[str, Any]] = []
 
     def apply(self, event: object) -> None:
+        if getattr(event, "console", self.console) != self.console:
+            return  # de otra consola
         if isinstance(event, events.WorkdirChanged):
             self._path = event.path
             self._home = self._home or event.path  # el primero de la sesión
@@ -103,7 +113,7 @@ class CommandsModel(QObject):
     # --- Acciones de la ventana --------------------------------------------------------------
 
     def _request(self, action: str, **params: object) -> None:
-        self._publish(events.ActionRequested(self.MODULE, action, params))
+        self._publish(events.ActionRequested(self.MODULE, action, params, self.console))
 
     @Slot(str)
     def goTo(self, path: str) -> None:
@@ -146,7 +156,12 @@ class CommandsModel(QObject):
     @Slot()
     def reveal(self) -> None:
         """Abre el directorio de trabajo en el gestor de archivos."""
-        self._publish(events.ActionRequested("apertura", "abrir_carpeta"))
+        self._publish(events.ActionRequested("apertura", "abrir_carpeta", console=self.console))
+
+    @Slot()
+    def duplicate(self) -> None:
+        """Abre otra ventana de Comandos, independiente, en la carpeta de esta."""
+        self._publish(events.ConsoleRequested(self.console))
 
     @Slot(result=str)
     def outputText(self) -> str:
@@ -154,6 +169,11 @@ class CommandsModel(QObject):
         return "\n".join(line["text"] for line in self._lines)
 
     # --- Propiedades -------------------------------------------------------------------------
+
+    @property
+    def home_path(self) -> str:
+        """La carpeta en la que empezó la sesión: la de «Carpeta personal»."""
+        return self._home
 
     @Property(str, notify=changed)
     def path(self) -> str:
@@ -199,6 +219,56 @@ class CommandsModel(QObject):
     @Property("QVariantList", notify=changed)
     def lines(self) -> list:
         return self._lines
+
+
+class ConsolesModel(QObject):
+    """Los paneles de las consolas de Comandos: el de la principal y uno por cada consola
+    extra (`ConsoleOpened`). La ventana de una consola toma el suyo con `get`."""
+
+    def __init__(
+        self,
+        output_lines: int = DEFAULT_OUTPUT_LINES,
+        parent: QObject | None = None,
+        publish: Publish = lambda _event: None,
+    ) -> None:
+        super().__init__(parent)
+        self._output_lines = output_lines
+        self._publish = publish
+        self.main = CommandsModel(output_lines, self, publish)
+        self._models: dict[str, CommandsModel] = {MAIN_CONSOLE: self.main}
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.ConsoleOpened) and event.console not in self._models:
+            self._models[event.console] = CommandsModel(
+                self._output_lines, self, self._publish, event.console, self.main.home_path
+            )
+        elif isinstance(event, events.ConsoleClosed):
+            self.remove(event.console)
+            return
+        elif isinstance(event, events.SessionOpened | events.SessionClosed):
+            self._drop_extras()
+        for model in list(self._models.values()):
+            model.apply(event)
+
+    def _drop_extras(self) -> None:
+        for console in [key for key in self._models if key != MAIN_CONSOLE]:
+            self.remove(console)
+
+    def remove(self, console: str) -> None:
+        """La ventana de la consola se ha cerrado: su panel desaparece."""
+        if console == MAIN_CONSOLE:
+            return
+        model = self._models.pop(console, None)
+        if model is not None:
+            model.deleteLater()
+
+    def __contains__(self, console: str) -> bool:
+        return console in self._models
+
+    @Slot(str, result=QObject)
+    def get(self, console: str) -> QObject:
+        """El panel de la consola; el de la principal si no la hay."""
+        return self._models.get(console, self.main)
 
 
 class OpenedModel(QObject):
@@ -252,6 +322,85 @@ class OpenedModel(QObject):
     @Property(bool, notify=changed)
     def focusSupported(self) -> bool:
         return self._focus_supported
+
+
+class CatalogModel(QObject):
+    """Ventana Catálogo: aplicaciones, páginas y comandos de terminal, con su formulario para
+    añadir y el botón de eliminar de cada fila (eliminar lo confirma el asistente).
+
+    `problem` es el motivo por el que no se ha podido hacer lo último que se pidió desde la
+    ventana; `added` avisa a QML de que se ha añadido lo que envió, para vaciar el formulario.
+    """
+
+    MODULE = "catalogo"
+
+    changed = Signal()
+    problemChanged = Signal()
+    added = Signal()
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._items: list[dict[str, Any]] = []
+        self._problem = ""
+        self._submitting = False  # se ha enviado el formulario y falta la respuesta
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.CatalogShown):
+            self._items = [
+                {"id": item.id, "kind": item.kind, "name": item.name, "target": item.target,
+                 "aliases": ", ".join(item.aliases), "args": " ".join(item.args)}
+                for item in event.items
+            ]  # fmt: skip
+            self.changed.emit()
+            if self._submitting:
+                self._submitting = False
+                if not event.problem:
+                    self.added.emit()
+            self._set_problem(event.problem)
+        elif isinstance(event, events.SessionClosed):
+            self._submitting = False
+            self._set_problem("")
+
+    def _set_problem(self, problem: str) -> None:
+        if problem != self._problem:
+            self._problem = problem
+            self.problemChanged.emit()
+
+    @Slot(str, str, str, str, str)
+    def add(self, kind: str, name: str, target: str, aliases: str, args: str) -> None:
+        """Botón «Añadir» del formulario. Los alias y los argumentos, uno por línea o
+        separados por comas."""
+        self._submitting = True
+        self._set_problem("")
+        params = {"tipo": kind, "nombre": name, "destino": target, "alias": aliases}
+        if args.strip():
+            params["argumentos"] = args
+        self._publish(events.ActionRequested(self.MODULE, "añadir", params))
+
+    @Slot(str)
+    def remove(self, item_id: str) -> None:
+        """Botón «Eliminar» de una fila: el asistente pide confirmación."""
+        self._set_problem("")
+        self._publish(events.ActionRequested(self.MODULE, "eliminar", {"entrada": item_id}))
+
+    @Slot()
+    def load(self) -> None:
+        self._publish(events.ActionRequested(self.MODULE, "ver"))
+
+    @Slot()
+    def dismissProblem(self) -> None:
+        self._set_problem("")
+
+    @Property("QVariantList", notify=changed)
+    def items(self) -> list:
+        return self._items
+
+    @Property(str, notify=problemChanged)
+    def problem(self) -> str:
+        return self._problem
 
 
 class SearchModel(QObject):
@@ -589,3 +738,79 @@ class HelpModel(QObject):
     @Property("QVariantList", notify=changed)
     def rows(self) -> list:
         return self._rows
+
+
+class AdminModel(QObject):
+    """Ventanas del Acedor: Permisos (tabla perfil × módulo), Credenciales y Perfiles.
+
+    Las contraseñas solo se guardan mientras dura la sesión del Acedor: al cerrarla se olvidan.
+    Cada una se muestra en su ventana solo cuando el usuario lo pide (lo decide QML)."""
+
+    permissionsChanged = Signal()
+    credentialsChanged = Signal()
+    profilesChanged = Signal()
+
+    def __init__(
+        self, parent: QObject | None = None, publish: Publish = lambda _event: None
+    ) -> None:
+        super().__init__(parent)
+        self._publish = publish
+        self._modules: list[dict[str, str]] = []
+        self._matrix: list[dict[str, Any]] = []
+        self._credentials: list[dict[str, Any]] = []
+        self._profiles: list[dict[str, str]] = []
+
+    def apply(self, event: object) -> None:
+        if isinstance(event, events.PermissionsShown):
+            self._modules = [{"id": m.id, "name": m.name} for m in event.modules]
+            self._matrix = [
+                {"id": p.id, "name": p.name,
+                 "allowed": [(p.id, m.id) not in event.restricted for m in event.modules]}
+                for p in event.profiles
+            ]  # fmt: skip
+            self.permissionsChanged.emit()
+        elif isinstance(event, events.CredentialsShown):
+            self._credentials = [
+                {"id": item.profile_id, "name": item.profile_name,
+                 "password": item.password or "", "available": item.password is not None}
+                for item in event.items
+            ]  # fmt: skip
+            self.credentialsChanged.emit()
+        elif isinstance(event, events.ProfilesListed):
+            self._profiles = [{"id": p.id, "name": p.name} for p in event.profiles]
+            self.profilesChanged.emit()
+        elif isinstance(event, events.SessionClosed):
+            self._credentials = []
+            self.credentialsChanged.emit()
+
+    @Slot(str, str, bool)
+    def setPermission(self, profile_id: str, module: str, allowed: bool) -> None:
+        self._publish(events.PermissionChangeRequested(profile_id, module, allowed))
+
+    @Slot()
+    def showPermissions(self) -> None:
+        self._publish(events.ActionRequested("permisos", "ver"))
+
+    @Slot()
+    def showCredentials(self) -> None:
+        self._publish(events.ActionRequested("credenciales", "ver"))
+
+    @Slot(str)
+    def removeProfile(self, profile_id: str) -> None:
+        self._publish(events.ProfileRemovalRequested(profile_id))
+
+    @Property("QVariantList", notify=permissionsChanged)
+    def modules(self) -> list:
+        return self._modules
+
+    @Property("QVariantList", notify=permissionsChanged)
+    def matrix(self) -> list:
+        return self._matrix
+
+    @Property("QVariantList", notify=credentialsChanged)
+    def credentials(self) -> list:
+        return self._credentials
+
+    @Property("QVariantList", notify=profilesChanged)
+    def profiles(self) -> list:
+        return self._profiles

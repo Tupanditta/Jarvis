@@ -16,26 +16,34 @@ from pathlib import Path
 
 from jarvis_assistant import __version__
 from jarvis_assistant import config as config_module
+from jarvis_assistant.action_modules.administration import (
+    CredentialVault,
+    PermissionManager,
+    ProfileManager,
+)
 from jarvis_assistant.action_modules.app_launcher import AppLauncher
+from jarvis_assistant.action_modules.catalog_manager import CatalogManager
 from jarvis_assistant.action_modules.command_runner import CommandRunner
 from jarvis_assistant.action_modules.file_manager import FileCreation, FileSearch
 from jarvis_assistant.action_modules.protocol_runner import ProtocolRunner
 from jarvis_assistant.action_modules.reminder_manager import ReminderManager
 from jarvis_assistant.action_modules.session_manager import History, SessionManager
 from jarvis_assistant.config import Config
+from jarvis_assistant.config.writer import remove_profile, save_launchers
 from jarvis_assistant.core import events
 from jarvis_assistant.core import state_machine as fsm
 from jarvis_assistant.core.action_api import ActionModule
 from jarvis_assistant.core.clock import Clock, SystemClock
 from jarvis_assistant.core.database import Database
 from jarvis_assistant.core.event_bus import EventBus
-from jarvis_assistant.core.orchestrator import Orchestrator, Reload
+from jarvis_assistant.core.orchestrator import Orchestrator, Reload, SaveLaunchersFile
 from jarvis_assistant.core.scheduler import ApsScheduler, ClockScheduler, Scheduler
+from jarvis_assistant.core.security import ProfileVault
 from jarvis_assistant.core.state_machine import StateMachine
-from jarvis_assistant.core.workdir import Workdir
+from jarvis_assistant.core.workdir import Consoles, Workdir
 from jarvis_assistant.intent_router.router import IntentRouter
 from jarvis_assistant.os_adapters.base import PlatformAdapter
-from jarvis_assistant.paths import LAYOUT_FILE_NAME, AppPaths, missing_models
+from jarvis_assistant.paths import PROFILE_FILE_NAME, AppPaths, missing_models
 from jarvis_assistant.process.logging_setup import (
     LEVELS,
     install_asyncio_handler,
@@ -58,7 +66,9 @@ _MISSING_MODELS_NOTICE_MS = 6000
 # va aparte, antes que todos: también lo usa el orquestador para abrir y cerrar la sesión.
 ACTION_MODULES: list[Callable[[], ActionModule]] = [
     CommandRunner, AppLauncher, FileSearch, FileCreation, History, ReminderManager,
-    ProtocolRunner,
+    ProtocolRunner, CatalogManager,
+    # Solo para el Acedor (`admin = True`).
+    PermissionManager, CredentialVault, ProfileManager,
 ]
 
 
@@ -97,6 +107,8 @@ def build_app(
     home: Path | None = None,
     reload_config: Reload | None = None,
     windows: Sequence[str] = (),
+    remove_profile: Callable[[str], None] | None = None,
+    save_launchers: SaveLaunchersFile | None = None,
 ) -> App:
     """Construye el grafo completo sin lanzar hilos ni abrir dispositivos.
 
@@ -114,9 +126,10 @@ def build_app(
         clock=adapters.clock,
         settings=settings.tts,
     )
-    workdir = Workdir(home or Path.home())
+    workdir = Workdir(home or Path.home())  # el de la consola principal
+    consoles = Consoles(workdir)
     router = IntentRouter(
-        settings.router, config.aliases, workdir=workdir, now=adapters.clock.now,
+        settings.router, config.aliases, workdir=consoles, now=adapters.clock.now,
         windows=windows,
     )
     sessions = SessionManager(adapters.database, adapters.clock, bus)
@@ -130,11 +143,13 @@ def build_app(
         sessions=sessions,
         database=adapters.database,
         platform=adapters.platform,
-        workdir=workdir,
+        workdir=consoles,
         modules=[sessions, *(create() for create in ACTION_MODULES)],
         reload_config=reload_config,
         on_exit=on_exit,
         scheduler=adapters.scheduler or ClockScheduler(adapters.clock),
+        remove_profile=remove_profile,
+        save_launchers=save_launchers,
     )
     return App(config, bus, machine, router, sessions, speaker, orchestrator, adapters, workdir)
 
@@ -150,6 +165,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="interfaz con eventos simulados, sin voz ni modelos",
     )
     parser.add_argument("--ui-debug", action="store_true", help="contador de frames")
+    parser.add_argument(
+        "--reiniciar-acedor", action="store_true", dest="reset_admin",
+        help="desactiva al Acedor si ha olvidado su contraseña; las contraseñas custodiadas "
+        "dejan de poder verse",
+    )
     return parser.parse_args(argv)
 
 
@@ -192,9 +212,13 @@ class CoreThread:
         on_exit: Callable[[], None],
         reload_config: Reload | None = None,
         windows: Sequence[str] = (),
+        remove_profile: Callable[[str], None] | None = None,
+        save_launchers: SaveLaunchersFile | None = None,
     ) -> None:
         self._config = config
         self._windows = tuple(windows)
+        self._remove_profile = remove_profile
+        self._save_launchers = save_launchers
         self._bus = bus
         self._make_adapters = make_adapters
         self._on_exit = on_exit
@@ -231,11 +255,13 @@ class CoreThread:
         adapters = self._make_adapters()
         app = build_app(
             self._config, adapters, bus=self._bus, reload_config=self._reload_config,
-            windows=self._windows,
+            windows=self._windows, remove_profile=self._remove_profile,
+            save_launchers=self._save_launchers,
         )
         self.app = app
         try:
             app.sessions.recover_interrupted()
+            app.sessions.discard_empty()  # las vacías que se guardaron antes
             await app.speaker.preload()
             logger.info("Listo en %.1f s", time.monotonic() - started)
             if self._config.settings.startup.open_session_on_start:
@@ -260,12 +286,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     instance = acquire_single_instance(MUTEX_NAME)
     if instance is None:
+        if args.reset_admin:
+            print("Cierre Jarvis antes de reiniciar al Acedor.", file=sys.stderr)
+            return 1
         return 0
     try:
+        if args.reset_admin:
+            return reset_admin(paths)
         return _run(args, platform, paths)
     finally:
         instance.close()
         logger.info("Jarvis termina")
+
+
+def reset_admin(paths: AppPaths) -> int:
+    """`--reiniciar-acedor`: el Acedor deja de estar activo hasta que se le ponga otra
+    contraseña en la configuración. Las contraseñas de los perfiles siguen valiendo."""
+    database = Database(paths.db_path)
+    try:
+        database.migrate()
+        ProfileVault(database).reset_admin()
+    finally:
+        database.close()
+    logger.warning("Acedor reiniciado desde la línea de órdenes")
+    print("Acedor reiniciado. Actívelo de nuevo en Configuración, Perfiles.")
+    return 0
 
 
 def _load_config(args: argparse.Namespace, paths: AppPaths) -> Config:
@@ -305,6 +350,7 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication
 
+    from jarvis_assistant.configurator.window import ConfigWindow
     from jarvis_assistant.process.tray import TrayController
     from jarvis_assistant.ui.app import UiApp
     from jarvis_assistant.ui.bridge import UiBridge
@@ -340,13 +386,58 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         qt_app.exec()
         return 1
 
+    # La ventana de configuración solo se abre desde la pantalla dormida. Se crea al abrirla y
+    # se destruye al cerrarla: durante la sesión no ocupa memoria ni hace trabajo. Mientras
+    # está abierta no se puede iniciar sesión. Al guardar, el núcleo vuelve a cargar la
+    # configuración (`ConfigSaved`).
+    settings_window: list[ConfigWindow] = []
+    # La ventana tiene su propia conexión a la base de datos (las contraseñas de los perfiles):
+    # la del núcleo solo se usa en su hilo.
+    settings_db: list[Database] = []
+
+    def set_configuring(configuring: bool) -> None:
+        ui.set_configuring(configuring)
+        tray.set_configuring(configuring)
+
+    def close_settings() -> None:
+        if settings_window:
+            window = settings_window.pop()
+            # Se destruye en la siguiente vuelta del bucle, cuando QML ya no la está usando;
+            # con ella, su motor QML y sus dos ventanas.
+            QTimer.singleShot(0, lambda: window.deleteLater())
+        while settings_db:
+            settings_db.pop().close()
+        set_configuring(False)
+
+    def open_settings() -> None:
+        if not settings_window:
+            database = Database(paths.db_path)
+            settings_db.append(database)
+            window = ConfigWindow(
+                paths.config_dir,
+                on_saved=lambda: bus.publish_threadsafe(events.ConfigSaved()),
+                owner=ui.screen,
+                vault=ProfileVault(database),
+            )
+            window.closed.connect(close_settings)
+            settings_window.append(window)
+        set_configuring(True)
+        try:
+            settings_window[0].show()
+        except Exception:
+            # Sin ventana no hay nada que cerrar: si no se deshace, la pantalla queda
+            # bloqueada como si la configuración siguiera abierta.
+            logger.exception("No se ha podido abrir la configuración")
+            close_settings()
+
     ui = UiApp(
         publish=bus.publish_threadsafe,
         settings=config.settings.ui,
         platform=platform,
         debug=args.ui_debug,
         output_lines=config.settings.commands.output_lines,
-        layout_path=paths.data_dir / LAYOUT_FILE_NAME,
+        profile_path=paths.data_dir / PROFILE_FILE_NAME,
+        open_settings=open_settings,
     )
 
     def exit_ui() -> None:
@@ -369,6 +460,10 @@ def _run(args: argparse.Namespace, platform: PlatformAdapter, paths: AppPaths) -
         on_exit=bridge.exitRequested.emit,
         reload_config=lambda previous: config_module.load(paths.config_dir, previous=previous),
         windows=[spec.title for spec in WINDOWS],
+        remove_profile=lambda profile_id: remove_profile(paths.config_dir, profile_id),
+        save_launchers=lambda catalog, binaries: save_launchers(
+            paths.config_dir, catalog, binaries
+        ),
     )
     core.start()
     tray.show()

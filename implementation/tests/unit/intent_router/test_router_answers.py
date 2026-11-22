@@ -76,6 +76,34 @@ def test_un_nombre_no_valido_no_es_una_respuesta(router, text):
     assert entry == Answer(valid=False)
 
 
+@pytest.mark.parametrize(
+    ("text", "ids"),
+    [
+        ("1, 3, 5", (1, 3, 5)),
+        ("1,3,5", (1, 3, 5)),
+        ("5, 1, 3, 3", (1, 3, 5)),
+        ("1-5", (1, 2, 3, 4, 5)),
+        ("2 - 4", (2, 3, 4)),
+        ("1-3, 7", (1, 2, 3, 7)),
+        ("4", (4,)),
+        ("1 3 5", (1, 3, 5)),
+        ("las sesiones 1 y 3", (1, 3)),
+        ("uno, tres y cinco", (1, 3, 5)),
+        ("treinta y dos", (32,)),
+        ("1, 3,", (1, 3)),
+    ],
+)
+def test_ids_de_sesion_separados_por_comas_o_en_intervalo(router, text, ids):
+    entry = router.route(text, S.AWAITING_PARAMETER, dialogue(ExpectedType.SESSION_IDS))
+    assert entry == Answer(ids)
+
+
+@pytest.mark.parametrize("text", ["sí", "todas", "5-1", "1-2-3", "-3", "1, x", ",", "1-5000"])
+def test_lo_que_no_son_ids_de_sesion_no_es_una_respuesta(router, text):
+    entry = router.route(text, S.AWAITING_PARAMETER, dialogue(ExpectedType.SESSION_IDS))
+    assert entry == Answer(valid=False)
+
+
 @pytest.mark.parametrize("expected", list(ExpectedType))
 def test_las_frases_de_control_y_la_de_activacion_valen_en_cualquier_dialogo(router, expected):
     state = S.AWAITING_CONFIRMATION if expected is ExpectedType.BOOLEAN else S.AWAITING_PARAMETER

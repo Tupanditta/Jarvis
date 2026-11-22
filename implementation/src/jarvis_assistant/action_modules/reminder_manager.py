@@ -88,18 +88,19 @@ class ReminderManager:
                 "mostrar", ("recordatorios", "muestra los recordatorios",
                             "qué recordatorios tengo"),
                 (), "Mostrar los recordatorios", "Muestra los recordatorios", PANEL,
+                record=False,
             ),
             IntentSpec(
                 "leer", ("lee el recordatorio {n}", "recordatorio {n}", "lee el {n}"),
                 (index,), "Leer un recordatorio", "Lee el recordatorio uno", PANEL,
-                in_protocols=False,
+                in_protocols=False, record=False,
             ),
             # También tras un aviso, que la pide con los avisados en `avisados` (`_offer`).
             IntentSpec(
                 "dictar", ("léeme los recordatorios", "lee los recordatorios",
                            "díctame los recordatorios", "dicta los recordatorios"),
                 (), "Dictar todos los recordatorios", "Léeme los recordatorios", PANEL,
-                in_protocols=False,
+                in_protocols=False, record=False,
             ),
             # Sin panel: confirmar mira si el panel ya está activo antes de activarlo (RN-25).
             IntentSpec(
@@ -138,7 +139,7 @@ class ReminderManager:
         """Avisa de lo que venció sin sesión y programa lo que está por venir (RN-22)."""
         self._ctx = ctx
         self._last, self._highlighted, self._fired = None, frozenset(), []
-        reminders = ReminderRepository(ctx.db)
+        reminders = ReminderRepository(ctx.db, ctx.profile)
         now = ctx.clock.now()
         due = reminders.due_triggers(now)
         for trigger in due:
@@ -225,7 +226,7 @@ class ReminderManager:
                 return ActionResult.cancelled()  # «Operación cancelada.» ya se ha dicho
             triggers.append(first)
         deadline = await self._ask_more(ctx, triggers, subject)
-        reminder_id = ReminderRepository(ctx.db).create(
+        reminder_id = ReminderRepository(ctx.db, ctx.profile).create(
             content, triggers, deadline, ctx.clock.now()
         )
         logger.info("Recordatorio %d creado con %d avisos", reminder_id, len(triggers))
@@ -294,7 +295,8 @@ class ReminderManager:
             return ActionResult("error", Phrase("recordatorio.max_avisos"))
         if deadline is not None and deadline < max(triggers):
             return ActionResult("error", Phrase("recordatorio.limite_anterior"))
-        reminder_id = ReminderRepository(ctx.db).create(content, triggers, deadline, now)
+        reminders = ReminderRepository(ctx.db, ctx.profile)
+        reminder_id = reminders.create(content, triggers, deadline, now)
         self._scheduled(reminder_id, ctx)
         return ActionResult(
             "completado", Phrase("recordatorio.creado", {"fecha": self._moment(min(triggers), ctx)})
@@ -351,7 +353,8 @@ class ReminderManager:
         description = "Dictar los recordatorios"
         wanted = None if notified is None else set(notified)
         if wanted is not None:
-            chosen = [r for r in ReminderRepository(ctx.db).listable() if r.id in wanted]
+            listable = ReminderRepository(ctx.db, ctx.profile).listable()
+            chosen = [r for r in listable if r.id in wanted]
             if not chosen:
                 return ActionResult("completado", description=description)  # ya atendidos
             question = (
@@ -365,7 +368,8 @@ class ReminderManager:
                 return ActionResult(
                     "completado", Phrase("recordatorio.no_dictar"), description=description
                 )
-        listed = ReminderRepository(ctx.db).listable()  # pudo cambiar mientras se preguntaba
+        # Pudo cambiar mientras se preguntaba.
+        listed = ReminderRepository(ctx.db, ctx.profile).listable()
         chosen = [r for r in listed if wanted is None or r.id in wanted]
         if not chosen:
             return ActionResult(
@@ -409,7 +413,7 @@ class ReminderManager:
     ) -> ActionResult:
         """El último aviso dado se repite dentro de `duration` (10 minutos si no se dice). La
         fecha límite no cambia (RN-27). Sin índice: el último notificado o leído."""
-        reminders = ReminderRepository(ctx.db)
+        reminders = ReminderRepository(ctx.db, ctx.profile)
         if n is None:
             reminder = None if self._last is None else reminders.get(self._last)
             if reminder is None or reminder.status == DELETED:
@@ -446,7 +450,7 @@ class ReminderManager:
             return ActionResult("error", Phrase("entidad.fecha_pasada"))
         if any(trigger.at > deadline for trigger in reminder.pending):
             return ActionResult("error", Phrase("recordatorio.limite_anterior"))
-        ReminderRepository(ctx.db).set_deadline(reminder.id, deadline)
+        ReminderRepository(ctx.db, ctx.profile).set_deadline(reminder.id, deadline)
         self._scheduled(reminder.id, ctx)
         return ActionResult(
             "completado",
@@ -476,7 +480,7 @@ class ReminderManager:
         target = ctx or self._ctx
         if target is None:
             return
-        reminders = ReminderRepository(target.db)
+        reminders = ReminderRepository(target.db, target.profile)
         reminder = reminders.get(reminder_id)
         if reminder is None:
             return
@@ -495,7 +499,7 @@ class ReminderManager:
         ctx = self._ctx
         if ctx is None:
             return
-        reminders = ReminderRepository(ctx.db)
+        reminders = ReminderRepository(ctx.db, ctx.profile)
         reminder = reminders.get(reminder_id)
         if reminder is None or reminder.status != ACTIVE:
             return
@@ -541,7 +545,7 @@ class ReminderManager:
         ctx = self._ctx
         if ctx is None:
             return
-        reminder = ReminderRepository(ctx.db).get(reminder_id)
+        reminder = ReminderRepository(ctx.db, ctx.profile).get(reminder_id)
         if reminder is not None and reminder.status == ACTIVE:
             self._notify_deadline(reminder_id)
 
@@ -551,7 +555,7 @@ class ReminderManager:
         ctx = self._ctx
         if ctx is None:
             return
-        listed = ReminderRepository(ctx.db).listable()
+        listed = ReminderRepository(ctx.db, ctx.profile).listable()
         position = next((i for i, r in enumerate(listed, 1) if r.id == reminder_id), None)
         reminder = next((r for r in listed if r.id == reminder_id), None)
         if position is None or reminder is None or reminder.deadline is None:
@@ -569,7 +573,7 @@ class ReminderManager:
         ctx = self._ctx
         if ctx is None:
             return
-        reminders = ReminderRepository(ctx.db)
+        reminders = ReminderRepository(ctx.db, ctx.profile)
         reminder = reminders.get(reminder_id)
         if reminder is None or reminder.status != ACTIVE:
             return
@@ -605,7 +609,7 @@ class ReminderManager:
         ctx = self._ctx
         if ctx is None:
             return
-        reminder = ReminderRepository(ctx.db).get(reminder_id)
+        reminder = ReminderRepository(ctx.db, ctx.profile).get(reminder_id)
         if reminder is not None and reminder.status in (ACTIVE, OVERDUE):
             logger.info("Recordatorio %d autoconfirmado", reminder_id)
             self._remove(reminder_id)
@@ -614,7 +618,7 @@ class ReminderManager:
 
     def _scheduled(self, reminder_id: int, ctx: ActionContext) -> None:
         """Tras un cambio: reprograma el recordatorio y publica la lista."""
-        reminder = ReminderRepository(ctx.db).get(reminder_id)
+        reminder = ReminderRepository(ctx.db, ctx.profile).get(reminder_id)
         if reminder is not None:
             self._schedule(reminder)
         self._publish(ctx)
@@ -654,7 +658,7 @@ class ReminderManager:
         target = ctx or self._ctx
         if target is None:
             return []
-        listed = ReminderRepository(target.db).listable()
+        listed = ReminderRepository(target.db, target.profile).listable()
         items = tuple(
             ReminderItem(
                 index, reminder.id, reminder.content, reminder.status,  # type: ignore[arg-type]
@@ -667,7 +671,7 @@ class ReminderManager:
 
     def _at(self, n: int, ctx: ActionContext) -> ReminderRow | None:
         """El recordatorio que ocupa la posición `n` del panel (RN-50)."""
-        listed = ReminderRepository(ctx.db).listable()
+        listed = ReminderRepository(ctx.db, ctx.profile).listable()
         return listed[n - 1] if 1 <= n <= len(listed) else None
 
     def _moment(self, when: datetime, ctx: ActionContext) -> str:

@@ -3,7 +3,13 @@
 Cada módulo tiene una ventana. El registro `WINDOWS` es el único sitio donde se declara una:
 añadir la ventana de un módulo nuevo es añadir aquí su `WindowSpec` y su archivo en
 `qml/panels/`. `WorkspaceModel` guarda la disposición (abierta o cerrada, posición, tamaño y
-orden de apilado) y la expone a QML; `LayoutStore` la conserva entre ejecuciones.
+orden de apilado) y la expone a QML, junto con la posición de las dos barras: el selector de
+ventanas y la caja de texto.
+
+Al abrir sesión, la disposición sale de la plantilla del perfil (`config.ScreenLayout`). En la
+pantalla dormida, la del perfil elegido, para que la caja de texto ya esté en su sitio. Durante
+la sesión el usuario mueve las ventanas libremente; eso no cambia la plantilla. El editor de
+plantillas de la ventana de configuración usa este mismo modelo.
 
 Una ventana abierta puede estar apartada: reducida a una pestaña con su título, pegada al
 borde o la esquina más cercanos. Conserva su posición y su tamaño, a los que vuelve al
@@ -11,12 +17,20 @@ recuperarla. Dónde queda la pestaña lo calcula QML (`Workspace.qml`).
 
 La posición y el tamaño son fracciones del área de trabajo, no píxeles: la disposición vale
 igual en cualquier resolución. QML aplica los tamaños mínimos, que sí son píxeles.
+
+La ventana de Comandos es la única que admite copias: cada consola extra (`ConsoleOpened`, de
+un protocolo o del botón de la ventana) añade una fila con su propia ventana, que nace encima de
+la de Comandos, algo desplazada. Las copias no entran en las plantillas, y al cerrarlas
+desaparecen (`ConsoleClosed`). El modelo avisa (`ConsoleFocused`) cuando cambia la ventana de
+Comandos que está delante: las órdenes sin consola van a esa.
+
+Los medidores (`config.METERS`) no son ventanas, pero la plantilla dice si se ven al abrir
+sesión y el perfil puede tenerlos restringidos. El modelo recibe sus modelos (`meters`) y les
+aplica ambas cosas.
 """
-import json
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, replace
-from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
 
 from PySide6.QtCore import (
@@ -32,12 +46,25 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from jarvis_assistant.config import (
+    ADMIN_PROFILE_ID,
+    FACTORY_LAYOUT,
+    METERS,
+    BarPosition,
+    Config,
+    ScreenLayout,
+    WindowPlacement,
+)
+from jarvis_assistant.config.layouts import MIN_INPUT_WIDTH
 from jarvis_assistant.core import events
+from jarvis_assistant.core.action_api import MAIN_CONSOLE, is_console
+from jarvis_assistant.ui.meter import MeterModel
 
 logger = logging.getLogger(__name__)
 
-SAVE_DELAY_MS = 400
 MIN_FRACTION = 0.08  # ninguna ventana ocupa menos que esto del área, en ancho o en alto
+COPY_OFFSET = (0.02, 0.035)  # desplazamiento de cada copia respecto a la anterior
+COPY_STEPS = 6  # tras tantas copias, la siguiente vuelve al sitio de la primera
 
 _Index = QModelIndex | QPersistentModelIndex
 
@@ -58,6 +85,8 @@ class WindowSpec:
     min_width: int = 300  # píxeles
     min_height: int = 220
     style: str = "round"  # forma del marco y textura del fondo: una de `FRAME_STYLES`
+    admin: bool = False  # solo en la sesión del Acedor
+    copy_of: str | None = None  # una copia de esa ventana: no entra en las plantillas
 
 
 # Formas de marco que sabe dibujar `qml/components/outline.js`.
@@ -82,6 +111,15 @@ WINDOWS: tuple[WindowSpec, ...] = (
                0.24, 0.60, 0.19, 0.38),
     WindowSpec("protocolo", "Protocolo", "protocolo", "ProtocolPanel.qml",
                0.57, 0.60, 0.18, 0.38, style="cut"),
+    WindowSpec("catalogo", "Catálogo", "aplicacion", "CatalogPanel.qml",
+               0.38, 0.10, 0.24, 0.62, min_width=340, min_height=320, style="bracket"),
+    # Las del Acedor.
+    WindowSpec("permisos", "Permisos", "candado", "PermissionsPanel.qml",
+               0.015, 0.03, 0.30, 0.60, open=True, min_width=420, admin=True),
+    WindowSpec("credenciales", "Credenciales", "llave", "CredentialsPanel.qml",
+               0.765, 0.03, 0.22, 0.45, style="cut", admin=True),
+    WindowSpec("perfiles", "Perfiles", "sesion", "ProfilesPanel.qml",
+               0.765, 0.52, 0.22, 0.42, style="leaf", admin=True),
 )  # fmt: skip
 
 
@@ -110,78 +148,89 @@ class Placement:
         )
 
 
-class LayoutStore:
-    """Disposición guardada en un archivo JSON. Un archivo ilegible se ignora."""
-
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def load(self) -> dict[str, Mapping[str, Any]]:
-        try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return {}
-        except (OSError, ValueError):
-            logger.warning("No se ha podido leer la disposición de las ventanas: %s", self._path)
-            return {}
-        windows = data.get("windows") if isinstance(data, dict) else None
-        if not isinstance(windows, dict):
-            return {}
-        return {key: value for key, value in windows.items() if isinstance(value, dict)}
-
-    def save(self, placements: Mapping[str, Placement]) -> None:
-        data = {"windows": {key: asdict(placement) for key, placement in placements.items()}}
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except OSError:
-            logger.warning("No se ha podido guardar la disposición de las ventanas: %s", self._path)
-
-
-def _restored(spec: WindowSpec, order: int, saved: Mapping[str, Any] | None) -> Placement:
-    """La disposición guardada de la ventana si es válida; si no, la inicial."""
-    initial = Placement(spec.open, spec.x, spec.y, spec.width, spec.height, order)
+def _initial(spec: WindowSpec, order: int, saved: WindowPlacement | None) -> Placement:
+    """La disposición de la ventana en la plantilla o, si no la nombra, la de fábrica."""
     if saved is None:
-        return initial
-    try:
-        return Placement(
-            bool(saved["open"]),
-            float(saved["x"]), float(saved["y"]), float(saved["width"]), float(saved["height"]),
-            int(saved["order"]),
-            bool(saved.get("aside", False)),
-        ).bounded()  # fmt: skip
-    except (KeyError, TypeError, ValueError):
-        return initial
+        return Placement(spec.open, spec.x, spec.y, spec.width, spec.height, order)
+    return Placement(
+        saved.open, saved.x, saved.y, saved.width, saved.height, saved.order
+    ).bounded()
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return min(high, max(low, value))
 
 
 class WorkspaceModel(QAbstractListModel):
     """Las ventanas flotantes, en el orden del registro. No contiene reglas de negocio."""
 
     changed = Signal()
+    barsChanged = Signal()
 
     ROLES = ("windowId", "title", "icon", "component", "open", "fx", "fy", "fw", "fh",
-             "order", "focused", "aside", "minWidth", "minHeight", "style")  # fmt: skip
+             "order", "focused", "aside", "minWidth", "minHeight", "style",
+             "available")  # fmt: skip
     _FIRST_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(
         self,
         specs: Sequence[WindowSpec] = WINDOWS,
-        store: LayoutStore | None = None,
         parent: QObject | None = None,
+        meters: Mapping[str, MeterModel] | None = None,
+        publish: Callable[[events.Event], None] = lambda _event: None,
+        removal_delay_ms: int = 0,
     ) -> None:
+        """`meters`: id del medidor (`config.METERS`) → su modelo. `publish`: avisa al núcleo
+        de las consolas que se cierran o pasan delante. `removal_delay_ms`: lo que tarda en
+        desaparecer la fila de una copia cerrada, para que su ventana se desvanezca."""
         super().__init__(parent)
-        self._specs = tuple(specs)
+        self._specs: list[WindowSpec] = list(specs)
+        self._base = tuple(spec for spec in self._specs if spec.copy_of is None)
+        self._meters = dict(meters or {})
+        self._publish = publish
+        self._removal_delay_ms = removal_delay_ms
+        self._closing: set[str] = set()  # copias cerradas que esperan a desaparecer
+        self._copies = 0  # copias abiertas en la sesión: para desplazar la siguiente
+        self._console = MAIN_CONSOLE  # la consola de la ventana de Comandos de delante
         self._rows = {spec.id: row for row, spec in enumerate(self._specs)}
-        self._store = store
-        saved = store.load() if store is not None else {}
-        self._placements = {
-            spec.id: _restored(spec, row, saved.get(spec.id))
-            for row, spec in enumerate(self._specs)
+        self._config: Config | None = None
+        self._in_session = False
+        self._layout = FACTORY_LAYOUT
+        self._dock = FACTORY_LAYOUT.dock
+        self._input = FACTORY_LAYOUT.input
+        self._input_width = FACTORY_LAYOUT.input_width
+        # Ventanas que el perfil de la sesión no puede usar (`PermissionsApplied`): no se ven
+        # ni se abren. Hasta saberlo, las del Acedor.
+        self._hidden = frozenset(spec.id for spec in self._specs if spec.admin)
+        self._placements: dict[str, Placement] = {}
+        self._placements = self._initial_placements(FACTORY_LAYOUT)
+        self._apply_meters(FACTORY_LAYOUT)
+        self.changed.connect(self._track_console)
+
+    def _initial_placements(self, layout: ScreenLayout) -> dict[str, Placement]:
+        """La de la plantilla para las ventanas del registro; las copias conservan la suya."""
+        placements = {
+            spec.id: _initial(spec, row, layout.windows.get(spec.id))
+            for row, spec in enumerate(self._base)
         }
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(SAVE_DELAY_MS)
-        self._save_timer.timeout.connect(self.save)
+        placements = {
+            key: replace(p, open=False) if self._is_hidden(key) else p
+            for key, p in placements.items()
+        }
+        for spec in self._specs:
+            if spec.copy_of is not None:
+                placements[spec.id] = self._placements[spec.id]
+        return placements
+
+    def _is_hidden(self, window_id: str) -> bool:
+        """El perfil no puede usar la ventana; una copia, si no puede usar la original."""
+        row = self._rows.get(window_id)
+        copy_of = None if row is None else self._specs[row].copy_of
+        return window_id in self._hidden or copy_of in self._hidden
+
+    @property
+    def specs(self) -> tuple[WindowSpec, ...]:
+        return tuple(self._specs)
 
     # --- Modelo ------------------------------------------------------------------------------
 
@@ -224,6 +273,8 @@ class WorkspaceModel(QAbstractListModel):
                 return spec.min_width
             case "minHeight":
                 return spec.min_height
+            case "available":
+                return not self._is_hidden(spec.id)
         return None
 
     def placement(self, window_id: str) -> Placement:
@@ -246,8 +297,6 @@ class WorkspaceModel(QAbstractListModel):
             index = self.index(self._rows[window_id])
             self.dataChanged.emit(index, index)
         self.changed.emit()
-        if self._store is not None:
-            self._save_timer.start()
 
     def _top(self) -> int:
         return max(placement.order for placement in self._placements.values()) + 1
@@ -256,8 +305,24 @@ class WorkspaceModel(QAbstractListModel):
 
     def apply(self, event: object) -> None:
         """Un módulo que muestra algo abre su ventana y la trae al frente. «Aparta …» aparta
-        una ventana por su título o, sin título, todas; «desaparta …» las devuelve."""
-        if isinstance(event, events.PanelActivated) and event.panel in self._rows:
+        una ventana por su título o, sin título, todas; «desaparta …» las devuelve. Al abrir
+        sesión se toma la plantilla de su perfil; dormido, la del perfil elegido."""
+        if isinstance(event, events.ConfigApplied):
+            self._config = event.config
+        elif isinstance(event, events.ProfileSelected) and not self._in_session:
+            self._apply_profile(event.profile_id)
+        elif isinstance(event, events.SessionOpened):
+            self._in_session = True
+            self._remove_copies()
+            self._apply_profile(event.profile_id)
+        elif isinstance(event, events.SessionClosed):
+            self._in_session = False
+            self._remove_copies()
+        elif isinstance(event, events.ConsoleOpened):
+            self.open_copy(event.console, event.title, MAIN_CONSOLE)
+        elif isinstance(event, events.PermissionsApplied):
+            self._set_hidden(event.hidden_panels)
+        elif isinstance(event, events.PanelActivated) and event.panel in self._rows:
             self.show(event.panel)
         elif isinstance(event, events.WindowAsideRequested):
             if event.window is None:
@@ -273,6 +338,67 @@ class WorkspaceModel(QAbstractListModel):
                 else:
                     self.restore(window_id)
 
+    def _apply_profile(self, profile_id: str) -> None:
+        if self._config is None:
+            return
+        if profile_id == ADMIN_PROFILE_ID:
+            self.apply_layout(self._config.layout(""))  # el Acedor usa la de fábrica
+        else:
+            self.apply_layout(self._config.layout(self._config.profile(profile_id).layout))
+
+    def _set_hidden(self, hidden: frozenset[str]) -> None:
+        for meter_id, meter in self._meters.items():
+            meter.set_allowed(meter_id not in hidden)
+        hidden = frozenset(window for window in hidden if window in self._rows)
+        if hidden == self._hidden:
+            return
+        self._hidden = hidden
+        self._placements = {
+            key: replace(p, open=False) if self._is_hidden(key) else p
+            for key, p in self._placements.items()
+        }
+        self.dataChanged.emit(self.index(0), self.index(len(self._specs) - 1))
+        self.changed.emit()
+
+    def apply_layout(self, layout: ScreenLayout) -> None:
+        """Toma la disposición de la plantilla: ventanas y barras.
+
+        Solo cambia los datos de las filas, sin reiniciar el modelo: así QML conserva las
+        ventanas y sus paneles en lugar de destruirlos y crearlos de nuevo (unos 80 ms con
+        todas abiertas, justo durante la animación de despertar). Sin cambios, no avisa."""
+        self._layout = layout
+        placements = self._initial_placements(layout)
+        if placements != self._placements:
+            self._placements = placements
+            self.dataChanged.emit(self.index(0), self.index(len(self._specs) - 1))
+            self.changed.emit()
+        bars = (layout.dock, layout.input, layout.input_width)
+        if bars != (self._dock, self._input, self._input_width):
+            self._dock, self._input, self._input_width = bars
+            self.barsChanged.emit()
+        self._apply_meters(layout)
+
+    def _apply_meters(self, layout: ScreenLayout) -> None:
+        for spec in METERS:
+            meter = self._meters.get(spec.id)
+            if meter is not None:
+                meter.set_shown(layout.meter_shown(spec))
+
+    def to_layout(self, layout_id: str, name: str) -> ScreenLayout:
+        """La disposición actual como plantilla: todas las ventanas, sin apartar, las barras
+        y los medidores. La usa el editor de plantillas."""
+        windows = {
+            spec.id: WindowPlacement(p.open, p.x, p.y, p.width, p.height, p.order)
+            for spec in self._base
+            for p in (self._placements[spec.id],)
+        }
+        meters = {
+            spec.id: self._meters[spec.id].wanted for spec in METERS if spec.id in self._meters
+        }
+        return ScreenLayout(
+            layout_id, name, self._dock, self._input, self._input_width, windows, meters
+        )
+
     def _find(self, name: str) -> str | None:
         """La ventana con ese título o ese identificador, sin distinguir mayúsculas."""
         wanted = name.casefold()
@@ -286,8 +412,9 @@ class WorkspaceModel(QAbstractListModel):
     def show(self, window_id: str) -> None:
         """Abre la ventana, si no lo está, la recupera si estaba apartada y la pone encima."""
         current = self._placements.get(window_id)
-        if current is None:
+        if current is None or self._is_hidden(window_id):
             return
+        self._closing.discard(window_id)  # una copia que se cerraba vuelve
         if current.open and window_id == self._front():
             return
         self._set(
@@ -308,10 +435,20 @@ class WorkspaceModel(QAbstractListModel):
     @Slot(str)
     def close(self, window_id: str) -> None:
         """Cierra la ventana. Una apartada se desvanece como pestaña; al volver a abrirla ya
-        no está apartada (`show`)."""
+        no está apartada (`show`). Una copia, además, desaparece con su consola."""
         current = self._placements.get(window_id)
-        if current is not None:
-            self._set(window_id, replace(current, open=False), everything=True)
+        if current is None:
+            return
+        self._set(window_id, replace(current, open=False), everything=True)
+        if self._specs[self._rows[window_id]].copy_of is not None:
+            self._closing.add(window_id)
+            self._publish(events.ConsoleClosed(window_id))
+            if self._removal_delay_ms <= 0:
+                self._remove_closed(window_id)
+            else:
+                QTimer.singleShot(
+                    self._removal_delay_ms, self, lambda: self._remove_closed(window_id)
+                )
 
     @Slot(str)
     def set_aside(self, window_id: str) -> None:
@@ -375,27 +512,125 @@ class WorkspaceModel(QAbstractListModel):
 
     @Slot()
     def reset(self) -> None:
-        """Vuelve a la disposición inicial."""
-        self.beginResetModel()
-        self._placements = {
-            spec.id: _restored(spec, row, None) for row, spec in enumerate(self._specs)
-        }
-        self.endResetModel()
+        """Vuelve a la disposición de la plantilla."""
+        self.apply_layout(self._layout)
+
+    @Slot(str, bool)
+    def set_open(self, window_id: str, opened: bool) -> None:
+        """Abre o cierra la ventana sin cambiar nada más (editor de plantillas)."""
+        current = self._placements.get(window_id)
+        if current is None or (opened and self._is_hidden(window_id)):
+            return
+        if current.open != opened:
+            self._set(window_id, replace(current, open=opened, aside=False), everything=True)
+
+    # --- Copias de la ventana de Comandos ----------------------------------------------------
+
+    def open_copy(self, window_id: str, title: str, original: str) -> None:
+        """Abre la copia `window_id` de la ventana `original` con el título `title`, encima
+        de las demás. Si ya existe, solo la abre y la trae al frente."""
+        if window_id in self._rows:
+            self.show(window_id)
+            return
+        row = self._rows.get(original)
+        if row is None:
+            logger.warning("No hay ventana %s para copiarla", original)
+            return
+        spec = replace(self._specs[row], id=window_id, title=title, copy_of=original)
+        base = self._placements[original]
+        step = self._copies % COPY_STEPS + 1
+        self._copies += 1
+        placement = replace(
+            base, open=True, aside=False, order=self._top(),
+            x=base.x - COPY_OFFSET[0] * step, y=base.y + COPY_OFFSET[1] * step,
+        ).bounded()  # fmt: skip
+        position = len(self._specs)
+        self.beginInsertRows(QModelIndex(), position, position)
+        self._specs.append(spec)
+        self._rows[window_id] = position
+        self._placements[window_id] = placement
+        self.endInsertRows()
+        # Las demás dejan de estar delante.
+        self.dataChanged.emit(self.index(0), self.index(len(self._specs) - 1))
         self.changed.emit()
-        if self._store is not None:
-            self._save_timer.start()
+
+    def _remove_closed(self, window_id: str) -> None:
+        if window_id in self._closing:
+            self._remove(window_id)
+
+    def _remove(self, window_id: str) -> None:
+        row = self._rows.get(window_id)
+        if row is None or self._specs[row].copy_of is None:
+            return
+        self._closing.discard(window_id)
+        self.beginRemoveRows(QModelIndex(), row, row)
+        del self._specs[row]
+        del self._placements[window_id]
+        self._rows = {spec.id: index for index, spec in enumerate(self._specs)}
+        self.endRemoveRows()
+        self.changed.emit()
+
+    def _remove_copies(self) -> None:
+        """Sesión nueva o cerrada: las copias desaparecen; la siguiente vuelve a empezar."""
+        for spec in [spec for spec in self._specs if spec.copy_of is not None]:
+            self._remove(spec.id)
+        self._copies = 0
+
+    def _front_console(self) -> str:
+        """La consola de la ventana de Comandos abierta y sin apartar que está más arriba;
+        la principal si no hay ninguna."""
+        opened = [
+            (p.order, key) for key, p in self._placements.items()
+            if is_console(key) and p.open and not p.aside
+        ]  # fmt: skip
+        return max(opened)[1] if opened else MAIN_CONSOLE
+
+    def _track_console(self) -> None:
+        console = self._front_console()
+        if console != self._console:
+            self._console = console
+            self._publish(events.ConsoleFocused(console))
+
+    # --- Barras ------------------------------------------------------------------------------
+
+    @Slot(float, float)
+    def moveDock(self, x: float, y: float) -> None:
+        """Centro del selector de ventanas, en fracciones de la pantalla."""
+        self._dock = BarPosition(_clamp(x), _clamp(y))
+        self.barsChanged.emit()
+
+    @Slot(float, float, float)
+    def placeInput(self, x: float, y: float, width: float) -> None:
+        """Centro y ancho de la caja de texto, en fracciones de la pantalla."""
+        self._input = BarPosition(_clamp(x), _clamp(y))
+        self._input_width = _clamp(width, MIN_INPUT_WIDTH)
+        self.barsChanged.emit()
+
+    @Property(float, notify=barsChanged)
+    def dockX(self) -> float:
+        return self._dock.x
+
+    @Property(float, notify=barsChanged)
+    def dockY(self) -> float:
+        return self._dock.y
+
+    @Property(float, notify=barsChanged)
+    def inputX(self) -> float:
+        return self._input.x
+
+    @Property(float, notify=barsChanged)
+    def inputY(self) -> float:
+        return self._input.y
+
+    @Property(float, notify=barsChanged)
+    def inputWidth(self) -> float:
+        return self._input_width
 
     @Slot(str, result=str)
     def component(self, window_id: str) -> str:
         """Archivo QML del panel; vacío si no hay ninguno con ese nombre."""
         row = self._rows.get(window_id)
         return "" if row is None else self._specs[row].component
-
-    def save(self) -> None:
-        """Guarda la disposición ahora (también al salir, si había un guardado pendiente)."""
-        self._save_timer.stop()
-        if self._store is not None:
-            self._store.save(self._placements)
 
     @Property(int, notify=changed)
     def openCount(self) -> int:
