@@ -1,12 +1,13 @@
 # Personalizar Jarvis
 
-Cómo añadir sus aplicaciones, páginas web, carpetas, programas y protocolos. Sirve para una persona y para un agente de IA; el agente debe cumplir además las [Instrucciones para agentes](#instrucciones-para-agentes).
+Cómo añadir sus aplicaciones, páginas web, carpetas, programas, protocolos, perfiles y plantillas. Sirve para una persona y para un agente de IA; el agente debe cumplir además las [Instrucciones para agentes](#instrucciones-para-agentes).
 
 ## Lo esencial
 
-- **Su configuración está en `%APPDATA%\Jarvis\config\`**, fuera del repositorio. Se abre con «Abrir configuración» en el icono de la bandeja.
+- **Su configuración está en `%APPDATA%\Jarvis\config\`**, fuera del repositorio. La carpeta se abre con «Abrir carpeta de configuración» en el icono de la bandeja.
+- **Sin editar archivos:** perfiles, plantillas y sonido se cambian en la ventana de configuración (botón «Configuración» de la pantalla dormida). Aplicaciones, páginas y comandos, con el módulo Catálogo («Muestra el catálogo»). Vea [MANUAL.md](MANUAL.md#7-la-ventana-de-configuración).
 - **Nunca escriba datos personales en el repositorio.** La carpeta `implementation/src/jarvis_assistant/resources/config_defaults/` contiene plantillas genéricas que se suben a Git.
-- **Los cambios se aplican al abrir sesión:** «Buenas noches Jarvis» y luego «Hey Jarvis».
+- **Los cambios se aplican al abrir sesión:** «Buenas noches Jarvis» y luego «Hey Jarvis». Los del módulo Catálogo valen al momento.
 - **Si se equivoca, no se rompe nada:** Jarvis avisa y sigue con la versión anterior del archivo.
 
 ## Índice
@@ -19,8 +20,10 @@ Cómo añadir sus aplicaciones, páginas web, carpetas, programas y protocolos. 
 6. [Estructuras de carpetas](#6-estructuras-de-carpetas-structurestoml)
 7. [Protocolos](#7-protocolos-protocolstoml)
 8. [Sustituciones de texto](#8-sustituciones-de-texto-aliasestoml)
-9. [Ajustes generales](#9-ajustes-generales-settingstoml)
-10. [Instrucciones para agentes](#instrucciones-para-agentes)
+9. [Perfiles](#9-perfiles-profilestoml)
+10. [Plantillas de pantalla](#10-plantillas-de-pantalla-layoutstoml)
+11. [Ajustes generales](#11-ajustes-generales-settingstoml)
+12. [Instrucciones para agentes](#instrucciones-para-agentes)
 
 ## 1. Los archivos
 
@@ -34,9 +37,19 @@ Todos están en `%APPDATA%\Jarvis\config\`, en formato [TOML](https://toml.io/es
 | `structures.toml` | Plantillas de carpetas. | «crea la estructura {plantilla} llamada {nombre}» |
 | `protocols.toml` | Varias tareas en una sola orden. | «protocolo {nombre}» |
 | `aliases.toml` | Sustituciones de texto antes de interpretar la orden. | Todas |
-| `settings.toml` | Tiempos, umbrales, volumen, interfaz y su nombre. | — |
+| `profiles.toml` | Perfiles: nombre, nombre de usuario y plantilla. | Se elige en la pantalla dormida |
+| `layouts.toml` | Plantillas de la pantalla de sesión. | — |
+| `settings.toml` | Tiempos, umbrales, volumen, sonido e interfaz. | — |
 
-Jarvis los crea en el primer arranque a partir de las plantillas del repositorio. Después solo lee los de `%APPDATA%`; nunca los modifica. Para recuperar una plantilla, borre o renombre su archivo y arranque Jarvis de nuevo: solo se copian los que faltan.
+Jarvis los crea en el primer arranque a partir de las plantillas del repositorio. Después lee los de `%APPDATA%`. Solo los escriben, conservando sus comentarios:
+
+- la ventana de configuración, al pulsar Guardar (`profiles.toml`, `layouts.toml` y `settings.toml`);
+- el módulo Catálogo (`catalog.toml` y `commands.toml`);
+- el Acedor, al eliminar un perfil (`profiles.toml`).
+
+Para recuperar una plantilla, borre o renombre su archivo y arranque Jarvis de nuevo: solo se copian los que faltan.
+
+Las contraseñas no están en estos archivos: se guardan en la base de datos, `%LOCALAPPDATA%\Jarvis\data\jarvis.db`, nunca en claro.
 
 Para guardar una copia de su configuración, use una carpeta o un repositorio privados, distintos de este.
 
@@ -61,6 +74,8 @@ Un `ERROR` hace que Jarvis descarte ese archivo; un `AVISO` no. Esta comprobaci�
 
 Para «abre {nombre}», Jarvis busca en este orden: sus `[[apps]]`, sus `[[pages]]` y las aplicaciones del menú Inicio.
 
+Lo más cómodo es el módulo Catálogo: «Añade al catálogo» abre un formulario que comprueba los datos antes de guardar, y «Quita {nombre} del catálogo» elimina una entrada. A mano:
+
 ```toml
 discover_installed_apps = true              # incluir las aplicaciones del menú Inicio
 
@@ -78,7 +93,8 @@ url = "https://example.com/docs"
 
 - `path` acepta un `.exe`, un acceso directo `.lnk` o un nombre del `PATH` (`"notepad"`). Use `/` o `\\` en las rutas.
 - Una aplicación del menú Inicio funciona sin añadirla. Añádala solo para darle alias o lanzar un ejecutable concreto.
-- Las páginas se abren siempre en Microsoft Edge, y solo las de este archivo.
+- Las páginas se abren siempre en Microsoft Edge, y solo las de este archivo. La dirección empieza por `http://` o `https://`.
+- Ningún nombre ni alias se repite entre aplicaciones y páginas. Se comparan sin mayúsculas, sin tildes y sin espacios sobrantes.
 
 ## 4. Lugares con nombre (`places.toml`)
 
@@ -104,7 +120,7 @@ aliases = ["guit"]         # opcional
 timeout_seconds = 60       # opcional; por defecto, 120
 ```
 
-Vienen incluidos `git`, `gcc`, `g++`, `make`, `python`, `pip`, `node` y `npm`.
+Vienen incluidos `git`, `gcc`, `g++`, `make`, `python`, `pip`, `node` y `npm`. También se añaden y eliminan con el módulo Catálogo.
 
 ## 6. Estructuras de carpetas (`structures.toml`)
 
@@ -179,13 +195,66 @@ Cambia un texto por otro en **todas** las órdenes antes de interpretarlas. Úse
 "guit" = "git"
 ```
 
-## 9. Ajustes generales (`settings.toml`)
+## 9. Perfiles (`profiles.toml`)
+
+Lo más cómodo es el apartado Perfiles de la ventana de configuración: ahí se ponen también las contraseñas. A mano:
+
+```toml
+[[profiles]]
+id = "trabajo"          # minúsculas, números, - y _; no cambia al renombrar
+name = "Trabajo"        # nombre en el selector; único
+user_name = "Jane Doe"  # nombre que dice «preséntate»; vacío: no lo dice
+layout = "programar"    # id de una plantilla de layouts.toml; vacío: la de fábrica
+```
+
+- Sin ningún perfil, Jarvis usa uno «Predeterminado» con el `user.name` de `settings.toml`.
+- El id y el nombre `acedor` están reservados.
+- Un perfil cuya plantilla no existe usa la de fábrica y deja un aviso en el registro.
+- Quitar un perfil de este archivo lo saca del selector. Eliminarlo desde la sesión del Acedor da además de baja sus recordatorios y su contraseña ([MANUAL.md](MANUAL.md#8-el-acedor)).
+
+## 10. Plantillas de pantalla (`layouts.toml`)
+
+Qué ventanas se abren al iniciar sesión, dónde y con qué tamaño, y dónde van el selector de ventanas y la caja de texto. Lo más cómodo es el editor del apartado Plantillas de la ventana de configuración, que coloca todo con el ratón. A mano:
+
+```toml
+[[layouts]]
+id = "programar"
+name = "Programar"
+
+[layouts.dock]           # selector de ventanas, por su centro
+x = 0.5
+y = 0.032
+
+[layouts.input]          # caja de texto, por su centro
+x = 0.5
+y = 0.935
+width = 0.235
+
+[layouts.windows.comandos]
+open = true              # abierta al iniciar sesión
+x = 0.6
+y = 0.05
+width = 0.38
+height = 0.6
+order = 1                # apilado: la mayor queda encima
+
+[layouts.meters]         # medidores a la vista al iniciar sesión
+recursos = true          # CPU y RAM
+ruido = false            # decibelios
+```
+
+- Posiciones y tamaños en fracciones de la pantalla (0–1).
+- La plantilla `fabrica` siempre existe y no se escribe aquí.
+- Una ventana que la plantilla no nombra toma su disposición de fábrica.
+
+## 11. Ajustes generales (`settings.toml`)
 
 | Clave | Predeterminado | Efecto |
 |---|---|---|
-| `user.name` | `""` | Su nombre, para «preséntate». |
+| `user.name` | `""` | Obsoleto: el nombre lo da cada perfil. Solo se usa si no hay perfiles. |
 | `input.inactivity_to_idle_seconds` | `120` | Segundos sin escribir antes del reposo (5–600). |
 | `tts.volume` | `1.0` | Volumen de la voz (0–1). |
+| `sound.enabled` | `true` | Con `false`, Jarvis no suena; los subtítulos siguen. También en la ventana de configuración. |
 | `router.intent_threshold` | `80` | Exigencia al reconocer órdenes (0–100). Más bajo: más tolerante y más confusiones. |
 | `router.catalog_threshold` | `75` | Lo mismo para nombres de aplicaciones, páginas y protocolos. |
 | `router.default_hour` | `9` | Hora de una fecha sin hora. |
@@ -207,6 +276,8 @@ Un agente de IA que configura Jarvis por encargo debe:
 3. **Copiar antes de editar:** guarde `{archivo}.bak` junto al original.
 4. **Añadir, no sustituir:** conserve las entradas y los comentarios existentes.
 5. **No inventar rutas:** compruebe que cada ejecutable y carpeta existen o pregunte al usuario.
-6. **En protocolos**, usar solo las [acciones disponibles](#acciones-disponibles), con los parámetros escritos como frases.
-7. **Validar** con el comando de la [sección 2](#2-aplicar-y-comprobar-los-cambios). Si hay un `ERROR`, corregirlo o restaurar el `.bak`.
-8. **Informar** al usuario de qué archivos ha cambiado y de que los cambios se aplican al abrir la siguiente sesión.
+6. **No tocar contraseñas ni la base de datos.** Las contraseñas las pone el usuario en la ventana de configuración. No use el id ni el nombre `acedor` en `profiles.toml`.
+7. **No editar con la ventana de configuración abierta:** si el usuario pulsa Guardar, puede sobrescribir sus cambios.
+8. **En protocolos**, usar solo las [acciones disponibles](#acciones-disponibles), con los parámetros escritos como frases.
+9. **Validar** con el comando de la [sección 2](#2-aplicar-y-comprobar-los-cambios). Si hay un `ERROR`, corregirlo o restaurar el `.bak`.
+10. **Informar** al usuario de qué archivos ha cambiado y de que los cambios se aplican al abrir la siguiente sesión.

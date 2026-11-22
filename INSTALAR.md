@@ -8,6 +8,7 @@ Procedimiento completo para instalar Jarvis en Windows. Lo puede seguir una pers
 - **Qué necesita:** Windows 10 u 11 y Python 3.11 o posterior. El resto se instala solo.
 - **Red solo durante la instalación:** después, Jarvis funciona sin conexión.
 - **Al terminar:** escriba «Hey Jarvis» en la ventana de Jarvis. Siga con [MANUAL.md](MANUAL.md).
+- **¿Ya tiene la versión 1.0?** Siga [Actualizar desde una versión anterior](#actualizar-desde-una-versión-anterior).
 
 **Si es usted un agente**, siga los pasos en orden. Cada paso dice cómo comprobar que ha salido bien. No pase al siguiente si la comprobación falla: consulte [Problemas frecuentes](#problemas-frecuentes).
 
@@ -33,7 +34,7 @@ Tiempo aproximado: de 5 a 15 minutos, según la conexión. Se descargan varios c
 2. Instale los paquetes de Python **solo dentro del entorno virtual**: `.\.venv\Scripts\pip.exe install …`. Nunca use `pip install` global.
 3. No pida permisos de administrador. Nada de este procedimiento los necesita, salvo instalar Python o Git para todo el equipo, cosa que se evita con `--scope user`.
 4. Ejecute los guiones `.ps1` con `powershell -NoProfile -ExecutionPolicy Bypass -File …`. `Bypass` solo afecta a esa ejecución; no cambie la política del sistema.
-5. No escriba datos del usuario en el repositorio. Su configuración va en `%APPDATA%\Jarvis\config\` ([PERSONALIZAR.md](PERSONALIZAR.md)).
+5. No escriba datos del usuario en el repositorio. Su configuración va en `%APPDATA%\Jarvis\config\` ([PERSONALIZAR.md](PERSONALIZAR.md)). No pida ni ponga contraseñas de perfiles: las pone el usuario en la ventana de configuración.
 6. No haga commits ni cambie la configuración de Git.
 
 ## 0. Preguntar al usuario
@@ -116,7 +117,7 @@ py -3.11 -m venv .venv          # o: python -m venv .venv
 **Comprobación:**
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import jarvis_assistant, PySide6, piper; print('OK')"
+.\.venv\Scripts\python.exe -c "import jarvis_assistant, PySide6, piper, tomlkit, cryptography; print('OK')"
 ```
 
 Debe mostrar `OK`.
@@ -177,7 +178,7 @@ Debe mostrar `True`.
 
 Haga solo lo que el usuario haya pedido en el paso 0. Siga [PERSONALIZAR.md](PERSONALIZAR.md), sección «Instrucciones para agentes».
 
-- **Nombre:** en `%APPDATA%\Jarvis\config\settings.toml`, ponga `name = "<nombre>"` en la sección `[user]`.
+- **Nombre:** en `%APPDATA%\Jarvis\config\profiles.toml`, añada un perfil con `user_name = "<nombre>"` ([PERSONALIZAR.md](PERSONALIZAR.md#9-perfiles-profilestoml)). El usuario también puede hacerlo después en la ventana de configuración.
 - **Everything:** instálelo desde [voidtools.com](https://www.voidtools.com/) junto con su línea de órdenes `es.exe`, que debe quedar en el `PATH`. Si no está seguro de cómo hacerlo, deje que el usuario lo instale.
 - **Aplicaciones, páginas y carpetas:** añádalas a `catalog.toml` y `places.toml` como explica PERSONALIZAR.md.
 
@@ -191,7 +192,8 @@ Diga al usuario, con sus palabras:
 2. Para empezar, escriba «Hey Jarvis» en la caja de texto de la ventana de Jarvis y pulse Enter. Después escriba «ayuda» para ver las órdenes.
 3. Para cerrar la sesión, escriba «Buenas noches Jarvis». Para salir del todo, use «Salir» en el icono de la bandeja.
 4. Si ha activado el inicio automático, Jarvis arrancará solo con Windows.
-5. La guía de uso es [MANUAL.md](MANUAL.md) y la de configuración, [PERSONALIZAR.md](PERSONALIZAR.md).
+5. Para crear perfiles, ponerles contraseña, diseñar plantillas o quitar el sonido, pulse «Configuración» en la pantalla dormida.
+6. La guía de uso es [MANUAL.md](MANUAL.md) y la de configuración, [PERSONALIZAR.md](PERSONALIZAR.md).
 
 ## Problemas frecuentes
 
@@ -203,6 +205,17 @@ Diga al usuario, con sus palabras:
 | `fetch_models.py` termina con `Error:` | Sin conexión o descarga interrumpida. | Compruebe la red y vuelva a ejecutarlo. |
 | El registro dice `Faltan modelos`. | No se completó el paso 4. | Ejecute el paso 4 y arranque de nuevo. |
 | Lanzar Jarvis no hace nada. | Ya hay una instancia en marcha: solo puede haber una. | Busque el icono en la bandeja o termine el proceso con `stop_jarvis.ps1`. |
-| Jarvis no habla. | No hay altavoz o el volumen está a cero. | Compruebe el sonido de Windows. Los subtítulos funcionan sin voz. |
+| Jarvis no habla. | Sonido desactivado en la configuración, sin altavoz o volumen a cero. | Active el apartado Sonido de la configuración y compruebe el sonido de Windows. Los subtítulos funcionan sin voz. |
+| `ModuleNotFoundError: No module named 'tomlkit'` o `'cryptography'` | Entorno de la versión 1.0 sin las dependencias nuevas. | Repita `.\.venv\Scripts\pip.exe install -e .` (paso 3). |
 
 Para desinstalar, siga [implementation/README.md](implementation/README.md#desinstalar).
+
+## Actualizar desde una versión anterior
+
+1. Cierre Jarvis: «Salir» en el icono de la bandeja, o `stop_jarvis.ps1`.
+2. **Haga una copia de seguridad** de la carpeta de datos, `%LOCALAPPDATA%\Jarvis\data\`. Al primer arranque, la base de datos se actualiza sola y renumera las sesiones; no se puede deshacer.
+3. Actualice el código, por ejemplo con `git pull` en la carpeta del repositorio.
+4. Desde `implementation\`, reinstale las dependencias: `.\.venv\Scripts\pip.exe install -e .`. La versión 2.0 añade `tomlkit` y `cryptography`.
+5. Siga desde el [paso 5](#5-arrancar-y-comprobar). Su configuración de `%APPDATA%\Jarvis\config\` se conserva; los archivos nuevos (`profiles.toml`, `layouts.toml`) se crean solos.
+
+Los cambios de cada versión están en [CHANGELOG.md](CHANGELOG.md).

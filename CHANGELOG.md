@@ -13,12 +13,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 - **Selector de perfiles** en la pantalla dormida, bajo el orbe. Se cambia con el ratón o con ←/→ cuando la caja de texto está vacía. Solo aparece con dos perfiles o más.
 - **Plantillas de pantalla** (`layouts.toml`): definen qué ventanas flotantes se abren al iniciar sesión, su posición y tamaño, y dónde van el selector de ventanas y la caja de texto.
 - Botón **«Restablecer disposición»** en el selector de ventanas para volver a la plantilla del perfil.
+- **Recordatorios por perfil**: cada sesión solo ve y crea los recordatorios de su perfil.
 
 #### Ventana de configuración
-- Nueva **ventana de configuración** que se abre desde la pantalla dormida o desde la bandeja del sistema. Permite cambiar el funcionamiento del asistente con el ratón, sin editar archivos.
+- Nueva **ventana de configuración** que se abre con el botón «Configuración» de la pantalla dormida. Permite cambiar el funcionamiento del asistente con el ratón, sin editar archivos.
 - Secciones: **Perfiles**, **Plantillas** (con editor visual de la disposición) y **Sonido**.
 - Opción para activar o desactivar el sonido del asistente (`[sound] enabled` en `settings.toml`). Con el sonido desactivado se siguen mostrando los subtítulos.
-- Mientras la ventana está abierta no se puede iniciar sesión.
+- Mientras la ventana está abierta no se puede iniciar sesión. Lo que se guarda se aplica al abrir la siguiente sesión.
 
 #### Perfiles protegidos y Acedor
 - **Contraseña por perfil**: tras «Hey Jarvis», un perfil protegido pide su contraseña en una caja que no muestra lo que se escribe. Los perfiles protegidos llevan un candado en el selector.
@@ -28,7 +29,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 - Las contraseñas de los perfiles se guardan como hash scrypt con sal. Para que el Acedor pueda consultarlas, se guarda además una copia sellada con su clave pública (X25519 + AES-GCM, nueva dependencia `cryptography`).
 
 #### Ventanas exclusivas del Acedor
-- **Permisos**: tabla con una fila por perfil y una casilla por módulo o medidor. El Acedor decide qué puede usar cada perfil.
+- **Permisos**: tabla con una fila por perfil y una casilla por módulo o medidor. El Acedor decide qué puede usar cada perfil, desde la tabla o con órdenes («Da permiso de comandos a Trabajo», «Quita permiso de comandos a Casa»).
 - **Credenciales**: muestra las contraseñas de los perfiles protegidos, ocultas hasta pulsar el ojo.
 - **Perfiles**: lista los perfiles y permite eliminar uno, con sus datos, tras confirmación.
 
@@ -45,6 +46,10 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 #### Historial de sesiones
 - **Eliminar varias sesiones a la vez**: «Elimina sesiones» muestra el historial y pide cuáles, por lista («1, 3, 5») o por intervalo («1-5»).
 - Aviso antes de eliminar si alguna de las sesiones elegidas está marcada como importante.
+
+#### Recordatorios y búsqueda
+- Tras un aviso de recordatorios, Jarvis **ofrece dictarlos**. También se pueden pedir con «Léeme los recordatorios».
+- Una búsqueda con **un solo resultado** ofrece abrirlo.
 
 #### Comandos y protocolos
 - Cada tarea trabaja en **su propia consola**: carpeta de trabajo, panel y programa en marcha independientes.
